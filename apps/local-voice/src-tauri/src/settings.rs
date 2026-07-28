@@ -538,12 +538,17 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::Live;
 }
 
+/// Off by default: live injection currently garbles the text (see
+/// docs/KNOWN-LIMITATIONS.md). Enable only when experimenting with it.
 fn default_stream_injection() -> bool {
-    true
+    false
 }
 
+/// Off by default until it has been verified end to end against a real target
+/// application. The mechanism is implemented and unit-tested, but "compiles and
+/// passes unit tests" is not the same as "puts correct text in your document".
 fn default_segment_injection() -> bool {
-    true
+    false
 }
 
 /// 800 ms: long enough that a mid-sentence thinking pause does not split the

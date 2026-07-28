@@ -14,6 +14,37 @@ begrenzt — unabhängig davon, wie gut das Gegenteil klingen würde.
 | **Ein Low-Level-Hook kann still entfernt werden** | Überschreitet er `LowLevelHooksTimeout`, entfernt Windows ihn **ohne jede Benachrichtigung** | Periodisches Neusetzen sowie Neusetzen nach Session-Unlock. |
 | **Mikrofon kann still stumm bleiben** | Windows 11 hat einen separaten Schalter für Desktop-App-Mikrofonzugriff. Ist er aus, wird das Gerät weiterhin aufgelistet, liefert aber nur Stille | Erkennung über dauerhaft nahezu null Pegel, dann Verweis auf die Systemeinstellung. |
 
+## Defekt: Live-Injektion des Streams (stream_injection)
+
+**Standardmäßig abgeschaltet.** Die Funktion ist implementiert, kompiliert und
+unit-getestet — liefert aber im realen Einsatz falschen Text.
+
+Beobachtet 2026-07-29: Gesprochen wurde „Hi, mein Name ist Patrick Wolff.",
+eingefügt wurde `Hi, mein ttttttt ffffffffffff`. Der Anfang stimmt, danach werden
+einzelne Zeichen vielfach wiederholt. Zusätzlich kommt gar nichts an, wenn nicht
+sofort nach dem Hotkey gesprochen wird.
+
+Was bereits ausgeschlossen ist:
+- Die Injektion feuert (Log zeigt Aufrufe, keine Fehler, kein Panic).
+- Die Clipboard-Race war eine **erste, andere** Ursache und ist behoben — der
+  Wechsel auf direktes Tippen hat das ursprüngliche Symptom („nur erster Satz")
+  beseitigt und dieses neue erzeugt.
+
+Noch nicht geklärt, in Reihenfolge der Wahrscheinlichkeit:
+1. **Delta-Berechnung gegen `committed`.** Wird das bestätigte Präfix nicht rein
+   angehängt, sondern zwischendurch neu formatiert oder gekürzt, ist der per
+   Byte-Offset geschnittene Zuwachs falsch. Der Byte-Offset ist die verdächtigste
+   Stelle im ganzen Mechanismus.
+2. **`enigo.text()` bei schneller Folge.** Zeichenwiederholung ist ein typisches
+   Artefakt fehlender bzw. verschluckter Key-Up-Ereignisse bei synthetischer
+   Unicode-Eingabe.
+3. **Startverhalten.** Dass ohne sofortiges Sprechen nichts ankommt, deutet auf
+   einen Zustand, der zurückgesetzt wird, bevor der erste Zuwachs vorliegt.
+
+Nächster Schritt wäre, den Rohwert von `committed` je Emission zu protokollieren
+und mit dem tatsächlich getippten Fragment zu vergleichen — ohne diese Messung
+ist jede weitere Änderung geraten.
+
 ## Noch nicht implementiert (Stand 2026-07-28)
 
 - Der vollständige vertikale Pfad Hotkey bis Einfügen ist **noch nicht real durchlaufen**.
