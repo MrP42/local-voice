@@ -1,0 +1,66 @@
+# cargo-deny configuration.
+#
+# Codifies the licence policy verified in M0.1. Run with:
+#   cargo deny --no-default-features check licenses
+#   cargo deny --no-default-features check advisories
+#
+# Rationale for the allow list: every entry below was observed in the actual
+# dependency graph for x86_64-pc-windows-msvc and is either permissive or
+# file-level weak copyleft. No GPL/LGPL/AGPL crate is present on the Windows
+# target — the LGPL hits that appear when scanning all targets at once come from
+# Linux/macOS-only dependencies that are never linked into our build.
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    # Weak, file-level copyleft. Obligations attach only to modified MPL files,
+    # which we do not modify. Used by the symphonia audio decoders, cssparser and
+    # selectors. Compatible with shipping our own code under a permissive licence.
+    "MPL-2.0",
+]
+
+# Deliberately NOT allowed, so the build fails loudly if one ever appears:
+# GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-*, SSPL, BUSL, Commons Clause, CC-BY-NC.
+
+exceptions = []
+
+[advisories]
+version = 2
+yanked = "warn"
+# Unmaintained crates are worth knowing about but are not vulnerabilities, and
+# several are Linux-only (gtk-layer-shell). Surface them without failing the gate.
+unmaintained = "warn"
+
+ignore = [
+    # quick-xml DoS advisories, reached only through `plist`, which Tauri uses for
+    # macOS Info.plist handling and build-time codegen. `plist 1.8.0` pins
+    # quick-xml "^0.38", so the patched 0.41 cannot be selected without an
+    # upstream release. Not reachable from our Windows runtime path, and both are
+    # denial-of-service class requiring attacker-controlled XML input, which the
+    # app never parses. Re-check when Tauri bumps plist.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "allow"   # upstream pins maintainer forks of rdev / vad-rs (see UPSTREAM.md)

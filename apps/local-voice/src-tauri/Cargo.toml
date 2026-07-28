@@ -1,11 +1,11 @@
 [package]
-name = "handy"
-version = "0.9.4"
-description = "Handy"
-authors = ["cjpais"]
+name = "sprechstift"
+version = "0.1.0"
+description = "Sprechstift - lokale Diktiersoftware"
+authors = ["Patrick Wolff"]
 edition = "2021"
 license = "MIT"
-default-run = "handy"
+default-run = "sprechstift"
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
@@ -16,7 +16,7 @@ incremental = true # Compile your binary in smaller steps.
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "handy_app_lib"
+name = "sprechstift_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # [[bin]]
@@ -85,6 +85,13 @@ hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downl
   "tokio",
 ] }
 
+[features]
+# GPU acceleration for the Whisper/GGUF backend on Windows x86_64. Opt-in because
+# building it requires the LunarG Vulkan SDK on the build machine (headers, import
+# library and the glslc shader compiler). The NVIDIA runtime driver alone is not
+# enough. Without this feature the app runs the ggml CPU backends.
+gpu-vulkan = ["transcribe-cpp/vulkan"]
+
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
 
@@ -92,7 +99,6 @@ signal-hook = "0.3"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-single-instance = "2.3.2"
-tauri-plugin-updater = "2.10.0"
 
 [target.'cfg(windows)'.dependencies]
 # ONNX Runtime on Windows is CPU-only (no ort-directml), matching macOS/Linux.
@@ -127,10 +133,16 @@ winreg = "0.55"
 # handy.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
 # signtool verify entirely. CI pins -DGGML_NATIVE=OFF (see build.yml) so the
 # static build targets a portable ARM baseline, not the build runner's CPU.
+# local-voice change vs upstream: the Vulkan backend is opt-in rather than always
+# on. Building it requires the LunarG Vulkan SDK (Vulkan_LIBRARY, Vulkan_INCLUDE_DIR
+# and glslc); without it the whole crate fails to configure, which blocks the build
+# on any machine that only has the NVIDIA runtime driver installed. Keeping GPU
+# behind a feature means a fresh checkout compiles with the CPU backends, and GPU
+# acceleration is a deliberate, documented opt-in:
+#   cargo build --features gpu-vulkan
 [target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
 transcribe-cpp = { version = "0.1.3", default-features = false, features = [
   "dynamic-backends",
-  "vulkan",
 ] }
 
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
