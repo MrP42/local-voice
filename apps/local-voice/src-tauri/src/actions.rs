@@ -709,7 +709,11 @@ impl ShortcutAction for TranscribeAction {
                     // the result so the history entry is complete — and crucially do
                     // NOT transcribe the full recording again, which would duplicate
                     // text that is already in the user's document.
-                    let used_segment_mode = rm.segmenter.is_running();
+                    // Either mechanism may already have put text in the document:
+                    // sentence mode (batch models) or committed-prefix streaming
+                    // (streaming models). In both cases the final paste must be
+                    // suppressed or the text lands twice.
+                    let used_segment_mode = rm.segmenter.is_running() || tm.stream_injected_any();
                     let segment_text = if used_segment_mode {
                         let text = rm.segmenter.finish(&ah, &tm);
                         debug!(

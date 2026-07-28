@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering, AtomicUsize};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -236,6 +236,12 @@ impl Drop for StreamWorkerGuard {
 
 #[derive(Clone)]
 pub struct TranscriptionManager {
+    /// Bytes of the streaming run's *committed* text already inserted into the
+    /// target application. Committed text is final by definition, so injecting
+    /// only its growth is safe: nothing already in the user's document is ever
+    /// revised or has to be retracted.
+    stream_injected_len: Arc<AtomicUsize>,
+
     engine: Arc<Mutex<Option<LoadedEngine>>>,
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
@@ -287,6 +293,7 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            stream_injected_len: Arc::new(AtomicUsize::new(0)),
         };
 
         // Start the idle watcher
@@ -776,6 +783,7 @@ impl TranscriptionManager {
     /// `None` so the caller falls back to batch transcription. Frames sent
     /// before the stream begins queue on the channel and are not lost.
     pub fn start_stream(&self) {
+        self.reset_stream_injection();
         if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
             warn!("start_stream called while a stream worker is already active");
             return;
@@ -1107,6 +1115,58 @@ impl TranscriptionManager {
             tentative: tentative.to_string(),
         }
         .emit(&self.app_handle);
+
+        self.inject_committed_growth(committed);
+    }
+
+    /// Insert whatever is new in the committed prefix into the focused application,
+    /// so text lands at the caret while the user is still speaking rather than
+    /// arriving as one block at the end.
+    ///
+    /// Only *committed* text is used. The tentative tail still changes from chunk to
+    /// chunk, and there is no way to un-type something already delivered to another
+    /// process, so injecting it would corrupt the user's document.
+    fn inject_committed_growth(&self, committed: &str) {
+        if !get_settings(&self.app_handle).stream_injection {
+            return;
+        }
+        let already = self.stream_injected_len.load(Ordering::Acquire);
+        if committed.len() <= already {
+            // Nothing new. A shrink would mean the worker restarted its commit
+            // buffer; ignore it rather than re-inserting text.
+            return;
+        }
+        // Guard the slice against a non-char boundary: committed text is UTF-8 and
+        // German output is full of multi-byte characters.
+        if !committed.is_char_boundary(already) {
+            return;
+        }
+        let delta = committed[already..].to_string();
+        if delta.trim().is_empty() {
+            self.stream_injected_len.store(committed.len(), Ordering::Release);
+            return;
+        }
+        self.stream_injected_len
+            .store(committed.len(), Ordering::Release);
+
+        let app = self.app_handle.clone();
+        // Paste off the worker thread so inference is never blocked by clipboard
+        // and SendInput latency.
+        std::thread::spawn(move || {
+            if let Err(e) = crate::clipboard::paste(delta, app) {
+                warn!("stream injection failed: {e}");
+            }
+        });
+    }
+
+    /// Whether this run already inserted streamed text into the target app.
+    pub fn stream_injected_any(&self) -> bool {
+        self.stream_injected_len.load(Ordering::Acquire) > 0
+    }
+
+    /// Reset the injection cursor at the start of a run.
+    pub fn reset_stream_injection(&self) {
+        self.stream_injected_len.store(0, Ordering::Release);
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {

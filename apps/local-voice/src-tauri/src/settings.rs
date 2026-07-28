@@ -461,6 +461,10 @@ pub struct AppSettings {
     pub vad_enabled: bool,
     /// Emit each spoken sentence as soon as the speaker pauses, instead of
     /// pasting the whole dictation in one block when recording stops.
+    /// With a streaming-capable model, insert committed text at the caret while
+    /// the user is still speaking instead of pasting once at the end.
+    #[serde(default = "default_stream_injection")]
+    pub stream_injection: bool,
     #[serde(default = "default_segment_injection")]
     pub segment_injection: bool,
     /// Silence after speech, in ms, that counts as a sentence boundary.
@@ -532,6 +536,10 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_stream_injection() -> bool {
+    true
 }
 
 fn default_segment_injection() -> bool {
@@ -910,6 +918,7 @@ pub fn get_default_settings() -> AppSettings {
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
+        stream_injection: default_stream_injection(),
         segment_injection: default_segment_injection(),
         segment_pause_ms: default_segment_pause_ms(),
         overlay_style: default_overlay_style(),
