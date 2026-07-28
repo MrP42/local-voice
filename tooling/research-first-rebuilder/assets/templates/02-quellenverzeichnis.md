@@ -1,6 +1,6 @@
 # Quellenverzeichnis (Gate 2)
 
-| # | URL | Was es ist | Abgerufen | Erreichbar | Quellenklasse | Interessenlage |
+| # | Vollständige URL (https://…) + ggf. Commit/Blob-SHA | Was es ist | Abgerufen | Erreichbar | Quellenklasse | Interessenlage |
 |---|---|---|---|---|---|---|
 
 Quellenklassen: `primär-verifizierbar` · `primär-interessengeleitet` · `sekundär-unabhängig` ·

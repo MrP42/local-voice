@@ -10,24 +10,39 @@ Nur real ausgeführte und verifizierte Dinge stehen unter „verifiziert".
 | Hilfsskripte real getestet | **verifiziert** — `repo_health.py` gegen echtes und nicht existierendes Repo; `license_scan.py` gegen 5 konstruierte Lizenzfälle (Stock-Apache, Apache+Commons-Clause, Stub, Brand-Carve-out, keine Lizenz) |
 | Dabei gefundene und behobene Fehler | 2 Windows-Encoding-Bugs (cp1252) + ein Apache-2.0-Falschalarm |
 | Installation | **verifiziert** — 23 Dateien unter `~/.claude/skills/research-first-rebuilder/`, Dev-Evals korrekt ausgeschlossen |
-| Eval-Läufe | **teilweise** — 4 Testfälle x (mit/ohne Skill) gestartet; 2 Paare vollständig, 2 Paare unvollständig |
-| Grading | **teilweise** — programmatischer Grader (`grade.py`) geschrieben und ausgeführt |
-| Benchmark-Aggregation, Eval-Viewer, Description-Optimierung | **offen** |
+| Eval-Läufe | **abgeschlossen** — 4 Testfälle x (mit/ohne Skill), alle 8 Läufe real ausgeführt |
+| Grading | **abgeschlossen** — programmatischer Grader (`grade.py`), Assertions teils per Skript ausgeführt (z. B. Bugfix wird importiert und mit 4 Payloads aufgerufen) |
+| A/B gegen Baseline | **durchgeführt** — Ergebnis unten |
+| Skill-Überarbeitung nach Eval | **durchgeführt** — v1.0.0 → v1.1.0, installiert |
+| Benchmark-Aggregation, Eval-Viewer, Description-Optimierung (`run_loop.py`) | **offen** |
 
-### Bisherige Eval-Ergebnisse (real ausgeführt)
+### Eval-Ergebnis Iteration 1 (real ausgeführt)
 
 | Testfall | mit Skill | ohne Skill |
 |---|---|---|
-| `not-a-rebuild-simple-bugfix` (Nicht-Trigger) | **5/5** | 5/5 |
+| `local-dictation-alternative` | **9/9** | 8/9 |
+| `dont-reinvent-find-fork` | **8/8** | 8/8 |
 | `refuse-asset-theft-but-help` | **6/6** | 6/6 |
-| `local-dictation-alternative` | unvollständig | unvollständig |
-| `dont-reinvent-find-fork` | unvollständig | unvollständig |
+| `not-a-rebuild-simple-bugfix` (Nicht-Trigger) | **5/5** | 5/5 |
+| **Summe** | **28/28** | **27/28** |
 
-**Ehrliche Einordnung:** Der Nicht-Trigger-Fall bestätigt, dass der Skill bei einem simplen
-Bugfix **nicht** den 10-Gate-Workflow auslöst — das war die wichtigste negative Anforderung.
-Beim Ablehnungsfall ist **kein** Vorteil gegenüber der Baseline messbar; ein zunächst
-scheinbarer Vorteil war ein Fehler in meinem Grader-Regex und wurde korrigiert, statt ihn
-stehen zu lassen. Ein belastbarer Gesamtvergleich Skill gegen Baseline liegt **noch nicht** vor.
+**Ehrliche Einordnung.** Der Abstand ist dünn und darf nicht als starker Beleg gelesen werden:
+die Assertion-Menge ist nahe der Sättigung und damit wenig trennscharf — ein starkes Basismodell
+erfüllt die meisten Kriterien ohnehin. Belastbar sind zwei Befunde:
+
+1. **Nicht-Trigger funktioniert.** Beim simplen Bugfix löst der Skill den 10-Gate-Workflow
+   korrekt **nicht** aus und produziert keine Rechercheartefakte.
+2. **Beim Ablehnungsfall gibt es keinen Vorteil** gegenüber der Baseline (6/6 zu 6/6).
+
+Der qualitativ sichtbare Unterschied liegt in der **Struktur und Nachvollziehbarkeit** der
+Artefakte: der Skill-Lauf lieferte ein Quellenverzeichnis mit Repository, Commit- **und**
+Blob-SHA je Lizenzbeleg und bemerkte dabei, dass zwei Projekte byte-identische Lizenzdateien
+führen. Solche Qualität erfassen binäre Assertions schlecht.
+
+**Zwei zunächst gemessene Skill-Vorteile waren Fehler in meinem eigenen Grader** (zu enge
+Regex für Ablehnungsformulierungen; Messung des `https://`-Präfixes statt der tatsächlichen
+Nachvollziehbarkeit). Beide wurden korrigiert, statt das schmeichelhaftere Ergebnis stehen zu
+lassen.
 
 ## Phase 3 — Anwendung „Sprechstift"
 

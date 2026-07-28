@@ -2,6 +2,31 @@
 
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach SemVer.
 
+## [1.1.0] - 2026-07-28
+
+### Geaendert
+
+- Evidenzdisziplin praezisiert: Quellen sind so zu notieren, dass ein Dritter sie ohne
+  Rueckfrage wiederfindet - vollstaendige `https://`-URL plus, bei Repositories, Commit- und
+  Blob-SHA. Ausloeser war die erste Eval-Runde: der Skill lieferte auf einen Commit gepinnte,
+  sehr gut nachvollziehbare Quellenverzeichnisse, notierte sie aber als `github.com/org/repo`
+  ohne Schema. Inhaltlich stark, fuer den Leser unnoetig muehsam.
+- Template `02-quellenverzeichnis.md` verlangt die Spalte jetzt explizit in dieser Form.
+
+### Eval-Ergebnis Iteration 1 (4 Testfaelle, je mit und ohne Skill, real ausgefuehrt)
+
+| Konfiguration | bestandene Assertions |
+|---|---|
+| mit Skill | 28/28 |
+| ohne Skill (Baseline) | 27/28 |
+
+Der Abstand ist duenn und ehrlich als solcher zu lesen: die Assertion-Menge ist nahe der
+Saettigung und damit wenig trennscharf. Zwei Befunde sind trotzdem belastbar - der
+Nicht-Trigger-Fall (simpler Bugfix) loest den 10-Gate-Workflow korrekt **nicht** aus, und der
+Ablehnungsfall zeigt **keinen** Vorteil gegenueber der Baseline. Zwei zunaechst gemessene
+Vorteile stellten sich als Fehler im Grader heraus und wurden korrigiert, statt sie stehen zu
+lassen.
+
 ## [1.0.0] — 2026-07-28
 
 ### Hinzugefügt

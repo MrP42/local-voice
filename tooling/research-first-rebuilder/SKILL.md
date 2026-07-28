@@ -77,6 +77,13 @@ Aussage:
 | **INFERRED** | eigene Schlussfolgerung, als solche erkennbar |
 | **UNKNOWN** | nicht öffentlich feststellbar |
 
+Notiere Quellen so, dass ein Dritter sie **ohne Rückfrage wiederfinden** kann: eine
+vollständige, anklickbare `https://`-URL, und bei Repositories zusätzlich Commit- und ggf.
+Blob-SHA. Ein auf einen Commit gepinnter Beleg ist wertvoller als ein blanker Link, weil er
+auch dann noch gilt, wenn sich der Branch bewegt — aber beides zusammen kostet nichts und
+erspart dem Leser die Suche. Ein Kurzname wie `github.com/org/repo` ohne Schema ist die
+schlechtere Variante.
+
 `UNKNOWN` ist ein vollwertiges, gutes Ergebnis. Wo etwas unbekannt ist, entwirf eine eigene
 sinnvolle Lösung und markiere sie als Eigenentwicklung — nicht als Nachbau.
 
