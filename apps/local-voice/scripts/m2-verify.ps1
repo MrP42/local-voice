@@ -163,6 +163,7 @@ function New-Result {
 function Invoke-Dictation {
     param(
         [string]$Fixture,
+        $Target,
         [int]$SettleSeconds = 25,
         [switch]$CancelMidway,
         [switch]$NoAudio
@@ -173,6 +174,14 @@ function Invoke-Dictation {
     Start-Sleep -Milliseconds 600                 # trailing silence for the VAD
 
     if ($CancelMidway) { Send-Cancel; return }
+
+    # Make sure the intended window is really foreground before we stop: the app
+    # captures the paste target at stop time, and a window that is merely visible
+    # is not necessarily focused.
+    if ($Target -and $Target.MainWindowHandle -ne 0) {
+        [M2.Native]::SetForegroundWindow($Target.MainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 400
+    }
 
     Send-Hotkey                                   # stop -> transcribe -> inject
     Start-Sleep -Seconds $SettleSeconds
@@ -189,14 +198,14 @@ Write-Host "App PID $($app.Id); harness starting" -ForegroundColor Cyan
 $cases = @(
     @{ n='normal';      f='de_test_01.wav';   expect=@('Spracherkennung','Februar') }
     @{ n='umlauts';     f='de_umlaute.wav';   expect=@('ltere','Straße','großen','Köln') }
-    @{ n='punctuation'; f='de_punkt.wav';     expect=@('\?')                          }
+    @{ n='punctuation'; f='de_punkt.wav';     expect=@('morgen','wäre','großartig')     }
     @{ n='multiline';   f='de_multiline.wav'; expect=@('Zeile')                        }
 )
 
 foreach ($c in $cases) {
     if ($Scenario -ne 'all' -and $Scenario -ne $c.n) { continue }
     $np = Start-Notepad
-    Invoke-Dictation -Fixture "$FixtureDir\$($c.f)"
+    Invoke-Dictation -Fixture "$FixtureDir\$($c.f)" -Target $np
     $txt = Get-NotepadText -Proc $np
     $ok = $txt -and $txt.Trim().Length -gt 0
     if ($ok) { foreach ($e in $c.expect) { if ($txt -notmatch $e) { $ok = $false } } }
@@ -207,7 +216,7 @@ foreach ($c in $cases) {
 
 if ($Scenario -in @('all','cancel')) {
     $np = Start-Notepad
-    Invoke-Dictation -Fixture "$FixtureDir\de_test_01.wav" -CancelMidway
+    Invoke-Dictation -Fixture "$FixtureDir\de_test_01.wav" -Target $np -CancelMidway
     Start-Sleep -Seconds 4
     $txt = Get-NotepadText -Proc $np
     $ok = -not $txt -or $txt.Trim().Length -eq 0

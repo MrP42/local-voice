@@ -1,10 +1,10 @@
-﻿# M2 harness run 2026-07-28 23:54:55
+﻿# M2 harness run 2026-07-29 00:11:01
 
 | Scenario | Result | Detail |
 |---|---|---|
 | normal | PASS | text length 100 |
-| umlauts | FAIL | text length 103 |
-| punctuation | PASS | text length 84 |
+| umlauts | FAIL | text length 0 |
+| punctuation | FAIL | text length 77 |
 | multiline | PASS | text length 101 |
 | cancel | PASS | notepad should stay empty; got '' |
 | silence | PASS | no speech -> '' |
@@ -16,14 +16,9 @@
 Guten Tag. Dies ist ein Test der lokalen Spracherkennung. Der Termin ist am 3. Februar um 14.30 Uhr.
 ```
 
-### umlauts
-```
-Der ältere Herr aus der Straße hatte großen Ärger mit seinen Fußballschuhen und trank Glühwein in Köln.
-```
-
 ### punctuation
 ```
-Alter, kommst du morgen mit? Das wäre wirklich großartig. Ich warte, bis du da bist.
+Kommst du morgen mit. Das wäre wirklich großartig. Ich warte, bis du da bist.
 ```
 
 ### multiline
