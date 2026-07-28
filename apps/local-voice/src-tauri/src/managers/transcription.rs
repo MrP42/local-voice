@@ -287,12 +287,31 @@ fn injection_queue(app: &tauri::AppHandle) -> &'static std::sync::mpsc::Sender<S
         let app = app.clone();
         std::thread::spawn(move || {
             while let Ok(fragment) = rx.recv() {
+                // Ctrl+V, not synthetic per-character typing.
+                //
+                // Measured: enigo.text() garbles rapid successive fragments. The
+                // deltas handed to it were verifiably correct
+                // (" Name ist Patrick Wolf"), yet the document received
+                // "ttttttt" - single characters repeating. That is Windows key
+                // auto-repeat: under rapid fire some KEYEVENTF_UNICODE key-up
+                // events are dropped, and the key keeps repeating until the next
+                // event arrives.
+                //
+                // Ctrl+V is two key events regardless of text length, so it cannot
+                // exhibit that failure. The earlier clipboard attempt failed for a
+                // different reason: it restored the previous clipboard after every
+                // fragment, and the asynchronous paste then read stale content.
+                // Here we deliberately do NOT restore per fragment - the run
+                // restores once when it ends.
+                use tauri_plugin_clipboard_manager::ClipboardExt;
+                if let Err(e) = app.clipboard().write_text(fragment.clone()) {
+                    warn!("stream injection: clipboard write failed: {e}");
+                    continue;
+                }
                 let Some(state) = app.try_state::<crate::input::EnigoState>() else {
                     warn!("stream injection: Enigo not initialised");
                     continue;
                 };
-                // Recover from a poisoned mutex rather than disabling dictation for
-                // the rest of the session.
                 let mut enigo = match state.0.lock() {
                     Ok(g) => g,
                     Err(poisoned) => {
@@ -300,9 +319,13 @@ fn injection_queue(app: &tauri::AppHandle) -> &'static std::sync::mpsc::Sender<S
                         poisoned.into_inner()
                     }
                 };
-                if let Err(e) = crate::input::paste_text_direct(&mut enigo, &fragment) {
+                if let Err(e) = crate::input::send_paste_ctrl_v(&mut enigo) {
                     warn!("stream injection failed: {e}");
                 }
+                drop(enigo);
+                // Give the target application time to service the paste before the
+                // next fragment overwrites the clipboard.
+                std::thread::sleep(std::time::Duration::from_millis(120));
             }
         });
         tx
@@ -1161,10 +1184,32 @@ impl TranscriptionManager {
     /// chunk, and there is no way to un-type something already delivered to another
     /// process, so injecting it would corrupt the user's document.
     fn inject_committed_growth(&self, committed: &str) {
-        if !get_settings(&self.app_handle).stream_injection {
+        let settings = get_settings(&self.app_handle);
+        if !settings.stream_injection {
             return;
         }
         let already = self.stream_injected_len.load(Ordering::Acquire);
+
+        // Boundary evidence for diagnosing the injection path. Lengths and offsets
+        // are always safe to record; the transcript itself is the user's spoken
+        // content and must never land in a log file by default. Content is only
+        // included when the user has explicitly turned on debug mode.
+        if settings.debug_mode {
+            log::info!(
+                "STREAMDIAG committed(len={})={:?} | already={} | append_only={}",
+                committed.len(),
+                committed,
+                already,
+                already <= committed.len(),
+            );
+        } else {
+            log::debug!(
+                "STREAMDIAG committed_len={} already={} append_only={}",
+                committed.len(),
+                already,
+                already <= committed.len(),
+            );
+        }
         if committed.len() <= already {
             // Nothing new. A shrink would mean the worker restarted its commit
             // buffer; ignore it rather than re-inserting text.
@@ -1176,6 +1221,11 @@ impl TranscriptionManager {
             return;
         }
         let delta = committed[already..].to_string();
+        if settings.debug_mode {
+            log::info!("STREAMDIAG delta(len={})={:?}", delta.len(), delta);
+        } else {
+            log::debug!("STREAMDIAG delta_len={}", delta.len());
+        }
         if delta.trim().is_empty() {
             self.stream_injected_len.store(committed.len(), Ordering::Release);
             return;
