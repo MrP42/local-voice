@@ -459,6 +459,13 @@ pub struct AppSettings {
     pub extra_recording_buffer_ms: u64,
     #[serde(default = "default_vad_enabled")]
     pub vad_enabled: bool,
+    /// Emit each spoken sentence as soon as the speaker pauses, instead of
+    /// pasting the whole dictation in one block when recording stops.
+    #[serde(default = "default_segment_injection")]
+    pub segment_injection: bool,
+    /// Silence after speech, in ms, that counts as a sentence boundary.
+    #[serde(default = "default_segment_pause_ms")]
+    pub segment_pause_ms: u64,
     /// Which recording overlay to show: None / Minimal / Live. Streaming mode is
     /// not gated on this — that follows model capability. Migrated from the old
     /// `overlay_position` (position `none` → style `None`).
@@ -525,6 +532,16 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_segment_injection() -> bool {
+    true
+}
+
+/// 800 ms: long enough that a mid-sentence thinking pause does not split the
+/// sentence, short enough that text still follows the speaker closely.
+fn default_segment_pause_ms() -> u64 {
+    800
 }
 
 fn default_vad_enabled() -> bool {
@@ -893,6 +910,8 @@ pub fn get_default_settings() -> AppSettings {
         transcribe_gpu_device: default_transcribe_gpu_device(),
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
+        segment_injection: default_segment_injection(),
+        segment_pause_ms: default_segment_pause_ms(),
         overlay_style: default_overlay_style(),
     }
 }

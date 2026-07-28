@@ -558,6 +558,12 @@ impl ShortcutAction for TranscribeAction {
             match rm.try_start_recording(&binding_id, vad_policy) {
                 Ok(()) => {
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
+                    // Sentence mode: emit each sentence as the speaker pauses rather
+                    // than pasting one block at the end. Armed here, after capture is
+                    // confirmed, so a failed start never leaves a live segmenter.
+                    if get_settings(&app).segment_injection {
+                        rm.segmenter.start(app.clone(), Arc::clone(&tm));
+                    }
                     // Small delay to ensure microphone stream is active
                     let app_clone = app.clone();
                     let rm_clone = Arc::clone(&rm);
@@ -584,6 +590,7 @@ impl ShortcutAction for TranscribeAction {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
+            rm.segmenter.cancel();
             utils::hide_recording_overlay(app);
             change_tray_icon(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
@@ -665,6 +672,8 @@ impl ShortcutAction for TranscribeAction {
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
+            rm.segmenter.cancel();
+                rm.segmenter.cancel();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
                     return;
@@ -675,6 +684,8 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
+            rm.segmenter.cancel();
+                rm.segmenter.cancel();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
                 } else {
@@ -692,7 +703,29 @@ impl ShortcutAction for TranscribeAction {
                     // running, finalize it and use its text (all audio was already
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
+
+                    // Sentence mode already transcribed and inserted everything up to
+                    // the last pause. Flush the tail, then take its combined text as
+                    // the result so the history entry is complete — and crucially do
+                    // NOT transcribe the full recording again, which would duplicate
+                    // text that is already in the user's document.
+                    let used_segment_mode = rm.segmenter.is_running();
+                    let segment_text = if used_segment_mode {
+                        let text = rm.segmenter.finish(&ah, &tm);
+                        debug!(
+                            "Segment mode: {} segment(s) emitted, combined {} chars",
+                            rm.segmenter.segments_emitted(),
+                            text.len()
+                        );
+                        Some(text)
+                    } else {
+                        None
+                    };
+
+                    let transcription_result = if let Some(text) = segment_text {
+                        Ok(text)
+                    } else {
+                    match tm.finalize_stream() {
                         // A finalized stream with usable text wins. An empty result
                         // (no active stream, produced nothing, or a finalize error
                         // after the engine was returned) falls back to a full batch
@@ -702,6 +735,7 @@ impl ShortcutAction for TranscribeAction {
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
                         Ok(_) => tm.transcribe(samples),
                         Err(err) => Err(err),
+                    }
                     };
 
                     // Await WAV save and verify
@@ -798,6 +832,16 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
+                                    if used_segment_mode {
+                                        // Every sentence was inserted as it was
+                                        // spoken; pasting the combined text again
+                                        // would duplicate it in the user's document.
+                                        debug!("Segment mode: skipping final paste");
+                                        utils::hide_recording_overlay(&ah_clone);
+                                        change_tray_icon(&ah_clone, TrayIconState::Idle);
+                                        return;
+                                    }
+
                                     match utils::paste(final_text, ah_clone.clone()) {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",
@@ -853,6 +897,8 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
+            rm.segmenter.cancel();
+                rm.segmenter.cancel();
                 utils::hide_recording_overlay(&ah);
                 change_tray_icon(&ah, TrayIconState::Idle);
             }

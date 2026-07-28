@@ -263,6 +263,7 @@ fn create_audio_recorder(
     vad_path: &Path,
     app_handle: &tauri::AppHandle,
     stream_router: Arc<StreamRouter>,
+    segmenter: Arc<crate::segmenter::SentenceSegmenter>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     // A single Silero engine covers both the offline and streaming policies (never
     // active at once within a recording), so the recorder reconfigures its
@@ -294,8 +295,12 @@ fn create_audio_recorder(
         })
         .with_audio_callback({
             let router = stream_router;
+            let segmenter = segmenter.clone();
             move |frame| {
                 router.feed(frame);
+                // Frames here are already post-VAD, so a gap between calls is a
+                // real speech pause. The segmenter uses that as a sentence boundary.
+                segmenter.feed(frame);
             }
         });
 
@@ -317,6 +322,8 @@ pub struct AudioRecordingManager {
     close_generation: Arc<AtomicU64>,
     cancel_generation: Arc<AtomicU64>,
     stream_router: Arc<StreamRouter>,
+    /// Emits sentences as the speaker pauses; see `crate::segmenter`.
+    pub segmenter: Arc<crate::segmenter::SentenceSegmenter>,
     /// Resolution of a *named* microphone (selected or clamshell) to its cpal
     /// device, cached so on-demand recording starts skip the full device
     /// enumeration (~40-110ms). Keyed by the resolved name, so a settings
@@ -352,6 +359,9 @@ impl AudioRecordingManager {
             close_generation: Arc::new(AtomicU64::new(0)),
             cancel_generation: Arc::new(AtomicU64::new(0)),
             stream_router,
+            segmenter: Arc::new(crate::segmenter::SentenceSegmenter::new(
+                settings.segment_pause_ms,
+            )),
             cached_device: Arc::new(Mutex::new(None)),
         };
 
@@ -510,6 +520,7 @@ impl AudioRecordingManager {
                 &vad_path,
                 &self.app_handle,
                 Arc::clone(&self.stream_router),
+                Arc::clone(&self.segmenter),
             )?);
         }
         Ok(())
