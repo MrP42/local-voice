@@ -275,6 +275,40 @@ pub struct TranscriptionManager {
     active_engine_lease: Arc<AtomicU64>,
 }
 
+/// Single consumer that types streamed fragments in the order they were produced.
+///
+/// Ordering is the whole point: the stream worker emits fragments sequentially, so
+/// they must reach the target application in that same order. A thread per fragment
+/// would race on the Enigo mutex and scramble the sentence.
+fn injection_queue(app: &tauri::AppHandle) -> &'static std::sync::mpsc::Sender<String> {
+    static QUEUE: std::sync::OnceLock<std::sync::mpsc::Sender<String>> = std::sync::OnceLock::new();
+    QUEUE.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let app = app.clone();
+        std::thread::spawn(move || {
+            while let Ok(fragment) = rx.recv() {
+                let Some(state) = app.try_state::<crate::input::EnigoState>() else {
+                    warn!("stream injection: Enigo not initialised");
+                    continue;
+                };
+                // Recover from a poisoned mutex rather than disabling dictation for
+                // the rest of the session.
+                let mut enigo = match state.0.lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => {
+                        warn!("stream injection: Enigo mutex poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+                if let Err(e) = crate::input::paste_text_direct(&mut enigo, &fragment) {
+                    warn!("stream injection failed: {e}");
+                }
+            }
+        });
+        tx
+    })
+}
+
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
         let manager = Self {
@@ -1149,14 +1183,10 @@ impl TranscriptionManager {
         self.stream_injected_len
             .store(committed.len(), Ordering::Release);
 
-        let app = self.app_handle.clone();
-        // Paste off the worker thread so inference is never blocked by clipboard
-        // and SendInput latency.
-        std::thread::spawn(move || {
-            if let Err(e) = crate::clipboard::paste(delta, app) {
-                warn!("stream injection failed: {e}");
-            }
-        });
+        // Hand the fragment to a single ordered worker. Spawning a thread per
+        // chunk would let two fragments race for the Enigo mutex and type out of
+        // order, which silently scrambles the sentence.
+        injection_queue(&self.app_handle).send(delta).ok();
     }
 
     /// Whether this run already inserted streamed text into the target app.
