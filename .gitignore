@@ -1,0 +1,11 @@
+target/
+node_modules/
+dist/
+*.log
+.env
+*.wav
+*.gguf
+*.bin
+models/
+**/__pycache__/
+*-workspace/
