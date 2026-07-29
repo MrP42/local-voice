@@ -63,6 +63,58 @@ pub struct StreamTextEvent {
     pub tentative: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamTextMode {
+    Native,
+    /// Parakeet's streaming decoder only appends token IDs, so its normalized
+    /// full text is append-only. The native committed projection can stall at a
+    /// sentence boundary because it compares normalized full text with
+    /// individually decoded token text whose whitespace is not normalized.
+    ParakeetAuthoritative,
+}
+
+struct StreamTextProjector {
+    mode: StreamTextMode,
+    committed: String,
+}
+
+impl StreamTextProjector {
+    fn new(mode: StreamTextMode) -> Self {
+        Self {
+            mode,
+            committed: String::new(),
+        }
+    }
+
+    fn project(&mut self, text: &transcribe_cpp::StreamText) -> StreamTextEvent {
+        if self.mode == StreamTextMode::Native {
+            return StreamTextEvent {
+                committed: text.committed.clone(),
+                tentative: text.tentative.clone(),
+            };
+        }
+
+        if text.full.starts_with(&self.committed) {
+            self.committed.clone_from(&text.full);
+        } else {
+            // Parakeet's raw token stream is append-only. If that invariant ever
+            // changes upstream, keep the already-injected prefix rather than
+            // duplicating or dropping text in the target application.
+            warn!(
+                "Parakeet streaming full text rewrote its committed prefix \
+                 (previous_bytes={}, current_bytes={}); preserving the injected prefix",
+                self.committed.len(),
+                text.full.len()
+            );
+        }
+
+        StreamTextEvent {
+            committed: self.committed.clone(),
+            tentative: String::new(),
+        }
+    }
+}
+
 /// Phase of the streaming overlay card, emitted to drive its UI state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
@@ -917,7 +969,7 @@ impl TranscriptionManager {
         // Only transcribe-cpp models expose streaming; ONNX engines fall back to
         // batch. The loaded session (not the ModelManager copy) is the source of
         // truth for run-path capabilities.
-        let (supports_streaming, supports_translate, languages) = match &engine {
+        let (supports_streaming, supports_translate, languages, stream_text_mode) = match &engine {
             LoadedEngine::TranscribeCpp(session) => {
                 let model = session.model();
                 let caps = model.capabilities();
@@ -935,6 +987,11 @@ impl TranscriptionManager {
                     caps.supports_streaming,
                     caps.supports_translate,
                     caps.languages,
+                    if model.arch() == "parakeet" {
+                        StreamTextMode::ParakeetAuthoritative
+                    } else {
+                        StreamTextMode::Native
+                    },
                 )
             }
             _ => {
@@ -943,7 +1000,7 @@ impl TranscriptionManager {
                      streaming is unavailable, using batch transcription",
                     model_id
                 );
-                (false, false, Vec::new())
+                (false, false, Vec::new(), StreamTextMode::Native)
             }
         };
 
@@ -1007,6 +1064,7 @@ impl TranscriptionManager {
             );
 
             let mut perf = StreamPerf::new();
+            let mut text_projector = StreamTextProjector::new(stream_text_mode);
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     StreamCmd::Feed(pcm) => {
@@ -1024,8 +1082,12 @@ impl TranscriptionManager {
                                 );
                                 if update.committed_changed || update.tentative_changed {
                                     let text = stream.text();
+                                    let projected = text_projector.project(&text);
                                     perf.record_emit();
-                                    self.emit_stream_text(&text.committed, &text.tentative);
+                                    self.emit_stream_text(
+                                        &projected.committed,
+                                        &projected.tentative,
+                                    );
                                 }
                                 perf.maybe_log();
                             }
@@ -1038,8 +1100,6 @@ impl TranscriptionManager {
                     StreamCmd::Finalize(reply) => {
                         let finalize_start = Instant::now();
                         let result = match stream.finalize() {
-                            // After finalize the committed prefix holds the full
-                            // text; display() = committed + tentative is the safe read.
                             Ok(update) => {
                                 perf.record_compute(finalize_start.elapsed());
                                 perf.record_update(
@@ -1048,7 +1108,16 @@ impl TranscriptionManager {
                                     update.audio_committed_ms,
                                     update.buffered_ms,
                                 );
-                                Some(stream.text().display())
+                                // Finalize can commit buffered audio without another
+                                // feed update. Emit that last growth before replying so
+                                // continuous injection never loses the tail.
+                                let text = stream.text();
+                                let projected = text_projector.project(&text);
+                                let final_text =
+                                    format!("{}{}", projected.committed, projected.tentative);
+                                perf.record_emit();
+                                self.emit_stream_text(&projected.committed, &projected.tentative);
+                                Some(final_text)
                             }
                             Err(e) => {
                                 perf.record_compute(finalize_start.elapsed());
@@ -2197,6 +2266,44 @@ mod tests {
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
+    }
+
+    #[test]
+    fn parakeet_stream_text_projection_advances_past_native_sentence_boundary_stall() {
+        let mut projector = StreamTextProjector::new(StreamTextMode::ParakeetAuthoritative);
+        let first = projector.project(&transcribe_cpp::StreamText {
+            full: "First sentence.".to_string(),
+            committed: "First sentence.".to_string(),
+            tentative: String::new(),
+        });
+        let projected = projector.project(&transcribe_cpp::StreamText {
+            full: "First sentence. Second sentence".to_string(),
+            committed: "First sentence.".to_string(),
+            tentative: "Second sentence".to_string(),
+        });
+
+        assert_eq!(first.committed, "First sentence.");
+        assert_eq!(projected.committed, "First sentence. Second sentence");
+        assert!(projected.tentative.is_empty());
+    }
+
+    #[test]
+    fn parakeet_stream_text_projection_preserves_prefix_on_unexpected_rewrite() {
+        let mut projector = StreamTextProjector::new(StreamTextMode::ParakeetAuthoritative);
+        let first = projector.project(&transcribe_cpp::StreamText {
+            full: "First sentence.".to_string(),
+            committed: "First sentence.".to_string(),
+            tentative: String::new(),
+        });
+        let rewritten = projector.project(&transcribe_cpp::StreamText {
+            full: "Different sentence.".to_string(),
+            committed: String::new(),
+            tentative: "Different sentence.".to_string(),
+        });
+
+        assert_eq!(first.committed, "First sentence.");
+        assert_eq!(rewritten.committed, "First sentence.");
+        assert!(rewritten.tentative.is_empty());
     }
 }
 

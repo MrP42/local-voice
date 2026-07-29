@@ -101,6 +101,30 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TranscriptionSource {
+    Segmenter,
+    StreamOrBatch,
+}
+
+impl TranscriptionSource {
+    fn for_segmenter(is_running: bool) -> Self {
+        if is_running {
+            Self::Segmenter
+        } else {
+            Self::StreamOrBatch
+        }
+    }
+}
+
+fn should_start_segmenter(segment_injection: bool, model_supports_streaming: bool) -> bool {
+    segment_injection && !model_supports_streaming
+}
+
+fn should_suppress_final_paste(source: TranscriptionSource, stream_injected_any: bool) -> bool {
+    source == TranscriptionSource::Segmenter || stream_injected_any
+}
+
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
@@ -561,7 +585,8 @@ impl ShortcutAction for TranscribeAction {
                     // Sentence mode: emit each sentence as the speaker pauses rather
                     // than pasting one block at the end. Armed here, after capture is
                     // confirmed, so a failed start never leaves a live segmenter.
-                    if get_settings(&app).segment_injection {
+                    if should_start_segmenter(settings.segment_injection, model_supports_streaming)
+                    {
                         rm.segmenter.start(app.clone(), Arc::clone(&tm));
                     }
                     // Small delay to ensure microphone stream is active
@@ -704,43 +729,36 @@ impl ShortcutAction for TranscribeAction {
                     // fed to the stream); otherwise batch-transcribe the samples.
                     let transcription_time = Instant::now();
 
-                    // Sentence mode already transcribed and inserted everything up to
-                    // the last pause. Flush the tail, then take its combined text as
-                    // the result so the history entry is complete — and crucially do
-                    // NOT transcribe the full recording again, which would duplicate
-                    // text that is already in the user's document.
-                    // Either mechanism may already have put text in the document:
-                    // sentence mode (batch models) or committed-prefix streaming
-                    // (streaming models). In both cases the final paste must be
-                    // suppressed or the text lands twice.
-                    let used_segment_mode = rm.segmenter.is_running() || tm.stream_injected_any();
-                    let segment_text = if used_segment_mode {
-                        let text = rm.segmenter.finish(&ah, &tm);
-                        debug!(
-                            "Segment mode: {} segment(s) emitted, combined {} chars",
-                            rm.segmenter.segments_emitted(),
-                            text.len()
-                        );
-                        Some(text)
-                    } else {
-                        None
-                    };
-
-                    let transcription_result = if let Some(text) = segment_text {
-                        Ok(text)
-                    } else {
-                    match tm.finalize_stream() {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or a finalize error
-                        // after the engine was returned) falls back to a full batch
-                        // transcription of the same audio. A finalize timeout is
-                        // surfaced instead — the worker may still hold the engine,
-                        // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
-                        Err(err) => Err(err),
-                    }
-                    };
+                    // The sentence segmenter owns non-streaming runs only. Streaming
+                    // runs must always reach finalize, even when they already injected
+                    // committed text, so buffered audio is flushed and the worker
+                    // returns its engine.
+                    let transcription_source =
+                        TranscriptionSource::for_segmenter(rm.segmenter.is_running());
+                    let transcription_result =
+                        if transcription_source == TranscriptionSource::Segmenter {
+                            let text = rm.segmenter.finish(&ah, &tm);
+                            debug!(
+                                "Segment mode: {} segment(s) emitted, combined {} chars",
+                                rm.segmenter.segments_emitted(),
+                                text.len()
+                            );
+                            Ok(text)
+                        } else {
+                            match tm.finalize_stream() {
+                                // A finalized stream with usable text wins. An empty result
+                                // (no active stream, produced nothing, or a finalize error
+                                // after the engine was returned) falls back to a full batch
+                                // transcription of the same audio. A finalize timeout is
+                                // surfaced instead — the worker may still hold the engine,
+                                // so a batch fallback would contend with it.
+                                Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                                Ok(_) => tm.transcribe(samples),
+                                Err(err) => Err(err),
+                            }
+                        };
+                    let suppress_final_paste =
+                        should_suppress_final_paste(transcription_source, tm.stream_injected_any());
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -836,11 +854,10 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    if used_segment_mode {
-                                        // Every sentence was inserted as it was
-                                        // spoken; pasting the combined text again
-                                        // would duplicate it in the user's document.
-                                        debug!("Segment mode: skipping final paste");
+                                    if suppress_final_paste {
+                                        // Streaming committed text or sentence-mode
+                                        // segments already landed in the target app.
+                                        debug!("Continuous injection: skipping final paste");
                                         utils::hide_recording_overlay(&ah_clone);
                                         change_tray_icon(&ah_clone, TrayIconState::Idle);
                                         return;
@@ -977,7 +994,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 
 #[cfg(test)]
 mod tests {
-    use super::{complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay};
+    use super::{
+        complete_unless_cancelled, is_blank_transcription, should_start_segmenter,
+        should_suppress_final_paste, should_use_streaming_overlay, TranscriptionSource,
+    };
     use crate::settings::OverlayStyle;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1032,5 +1052,25 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+    }
+
+    #[test]
+    fn streamed_injection_suppresses_only_the_final_paste() {
+        let source = TranscriptionSource::for_segmenter(false);
+
+        assert_eq!(source, TranscriptionSource::StreamOrBatch);
+        assert!(!should_suppress_final_paste(source, false));
+        assert!(should_suppress_final_paste(source, true));
+        assert!(should_suppress_final_paste(
+            TranscriptionSource::Segmenter,
+            false
+        ));
+    }
+
+    #[test]
+    fn streaming_models_do_not_start_the_batch_segmenter() {
+        assert!(should_start_segmenter(true, false));
+        assert!(!should_start_segmenter(true, true));
+        assert!(!should_start_segmenter(false, false));
     }
 }
