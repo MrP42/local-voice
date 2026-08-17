@@ -94,7 +94,8 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 | Prüfung | Ergebnis |
 |---|---|
 | `cargo test --lib` frisch ausgeführt | **verifiziert** — 198 passed, 0 failed (vorher 190; 8 neue) |
-| `cargo build --release` frisch | **verifiziert** — Exit 0, 5 min 53 s, `sprechstift.exe` 43,7 MB vom 17.08.2026 19:01 |
+| `cargo build --release` frisch | Exit 0 — **aber als Funktionsbeleg wertlos**, siehe Falle 3 unten |
+| `npx tauri build --no-bundle` | siehe unten |
 | Frontend `npm run build` | **verifiziert** — Exit 0 |
 | Kein Transkript-Klartext im Release-Binary | **verifiziert am Artefakt** — siehe unten |
 | Native Windows-Abnahme (`scripts/m3-verify.ps1`) | **offen** — Skript existiert, ist aber noch nicht gelaufen |
@@ -116,10 +117,37 @@ Längen-Varianten schon.
 | `Transcription completed in {:?} ({} chars)` | ja |
 | `Text refinement rejected: stage=` | ja |
 
-Die Toolchain war zu Beginn nicht lauffähig: `cargo` fehlte in beiden Shell-PATHs (liegt unter
-`~\.cargo\bin`), und der CMake-Cache von `transcribe-cpp-sys` war auf den Ninja-Generator
-festgeschrieben, während der Build den Visual-Studio-Generator anforderte. Beides ist behoben,
-der Weg dorthin steht in `docs/BUILD-WINDOWS.md`.
+### Drei Toolchain-Fallen, die erst der native Lauf sichtbar gemacht hat
+
+1. **`cargo` fehlte in beiden Shell-PATHs** (liegt unter `~\.cargo\bin`). In Git Bash meldet
+   `cargo test` dann `command not found` — und liefert durch eine Pipe trotzdem **Exit 0**.
+2. **CMake-Generator-Konflikt** bei `transcribe-cpp-sys`: Der Cache stand auf Ninja, der Build
+   forderte Visual Studio. Der Cache liegt hinter einer NTFS-Junction; nur `%LOCALAPPDATA%\tcs`
+   zu löschen genügt nicht.
+3. **`cargo build --release` erzeugt kein lauffähiges Produkt.** Das ist der teuerste Fund:
+   Der Build endet mit Exit 0, die EXE startet, das Tray-Symbol erscheint — und die Anwendung
+   ist funktionsunfähig, weil die Webview `http://localhost:1420` lädt statt des eingebetteten
+   Frontends. Ohne Frontend registriert niemand die Shortcuts (das tut bewusst das Frontend,
+   nicht das Backend), der globale Hotkey ist tot.
+
+Alle drei sind in `docs/BUILD-WINDOWS.md` mit Nachweis und Abhilfe beschrieben.
+
+### Erster nativer Abnahmelauf: fehlgeschlagen, Ursache geklärt
+
+Der erste Lauf von `m3-verify.ps1` meldete fünfmal „0 chars". **Nicht der Einfügepfad war
+schuld** — das Log zeigte nach dem Start keine einzige Zeile mehr, die Hotkeys kamen also nie
+an. Ursache war Falle 3. Nachweis am Artefakt:
+
+```
+sprechstift.exe enthält "localhost:1420"        -> ja   (falsch)
+sprechstift.exe enthält "index-<hash>.js"       -> nein (falsch)
+Fenstertitel laut UI Automation                 -> "localhost – Netzwerkfehler"
+```
+
+Zwei Folgeänderungen am Harness, damit dieser Fehler nie wieder als Fehler des Diktatpfads
+erscheint: ein Preflight bricht mit Build-Checkliste ab, wenn der Hotkey die App nicht
+erreicht, und das Skript stirbt nicht mehr auf seinem eigenen Fehlerpfad (`$txt` war null),
+sondern schreibt den Bericht auch bei Fehlschlägen.
 
 ## Nächste Schritte
 
