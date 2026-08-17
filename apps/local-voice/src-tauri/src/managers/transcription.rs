@@ -1362,7 +1362,13 @@ impl TranscriptionManager {
         self.active_injection_run_id
             .store(run_id, Ordering::Release);
         let settings = get_settings(&self.app_handle);
-        let refinement_enabled = settings.stream_injection_active() && settings.refine_enabled;
+        // Also fenced off for measurement runs: refinement would otherwise
+        // start an Ollama client and a replacement worker from the user's
+        // persisted settings, putting a network dependency inside a run whose
+        // whole purpose is to be deterministic.
+        let refinement_enabled = !crate::selftest::is_headless_run()
+            && settings.stream_injection_active()
+            && settings.refine_enabled;
         self.injection.begin(run_id, refinement_enabled);
 
         let active = if refinement_enabled {

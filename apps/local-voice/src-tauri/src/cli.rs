@@ -69,6 +69,15 @@ pub struct CliArgs {
     #[arg(long, value_name = "TEXT")]
     pub reference: Option<String>,
 
+    /// Write the result as JSON to this file.
+    ///
+    /// Needed because the release binary is built for the Windows GUI
+    /// subsystem: its stdout is visible in a terminal but cannot be captured
+    /// by a calling script, so a file is the only reliable channel back to an
+    /// automated caller.
+    #[arg(long, value_name = "FILE")]
+    pub out: Option<PathBuf>,
+
     /// Run --transcribe-file through the LIVE STREAMING path instead of batch,
     /// feeding the audio in real time as if it were being spoken, and report
     /// when text actually appeared. This is how streaming latency is measured

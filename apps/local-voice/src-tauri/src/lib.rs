@@ -406,6 +406,21 @@ mod headless_guard_tests {
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
 /// failure, 2 bad input/usage).
+/// Emit a result payload to stdout and, when asked, to a file.
+///
+/// The file is what an automated caller actually reads: this binary targets
+/// the Windows GUI subsystem, so its stdout reaches a terminal but not a
+/// calling script's pipe.
+fn emit_headless_payload(payload: &serde_json::Value, out: Option<&std::path::Path>) {
+    println!("{}", payload);
+    if let Some(path) = out {
+        match std::fs::write(path, serde_json::to_string_pretty(payload).unwrap_or_default()) {
+            Ok(()) => eprintln!("wrote {}", path.display()),
+            Err(e) => eprintln!("error: could not write {}: {}", path.display(), e),
+        }
+    }
+}
+
 /// Drive the live streaming path headlessly and report when text appeared.
 ///
 /// Audio is pushed straight into the stream router in 100 ms frames, paced in
@@ -501,8 +516,13 @@ fn run_headless_stream(
             "audio_secs": audio_secs,
         });
         payload["score"] = serde_json::to_value(&scored).unwrap_or_default();
-        println!("{}", payload);
+        emit_headless_payload(&payload, args.out.as_deref());
     } else {
+        if let Some(path) = args.out.as_deref() {
+            let mut payload = serde_json::json!({ "model": model_id, "mode": "stream" });
+            payload["score"] = serde_json::to_value(&scored).unwrap_or_default();
+            emit_headless_payload(&payload, Some(path));
+        }
         println!(
             "model={} mode=stream audio={:.2}s load={}ms total={}ms",
             model_id, audio_secs, load_ms, total_ms
@@ -721,7 +741,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
             );
             payload["score"] = serde_json::to_value(&scored).unwrap_or_default();
         }
-        println!("{}", payload);
+        emit_headless_payload(&payload, args.out.as_deref());
     } else if let Some(reference) = args.reference.as_deref() {
         let scored =
             crate::selftest::SelfTestResult::build(reference, &text, Vec::new(), best_ms, audio_secs);
