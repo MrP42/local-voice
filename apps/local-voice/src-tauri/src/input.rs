@@ -2,6 +2,21 @@ use enigo::{Enigo, Key, Keyboard, Mouse, Settings};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReplacementContext {
+    pub(crate) foreground: isize,
+    pub(crate) focus: isize,
+    pub(crate) physical_generation: u64,
+}
+
+#[cfg(test)]
+pub(crate) fn replacement_context_matches(
+    captured: ReplacementContext,
+    current: ReplacementContext,
+) -> bool {
+    captured == current
+}
+
 /// Wrapper for Enigo to store in Tauri's managed state.
 /// Enigo is wrapped in a Mutex since it requires mutable access.
 pub struct EnigoState(pub Mutex<Enigo>);
@@ -120,4 +135,190 @@ pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to send text directly: {}", e))?;
 
     Ok(())
+}
+
+pub(crate) fn send_select_left(enigo: &mut Enigo, count: usize) -> Result<(), String> {
+    if count == 0 {
+        return Err("Cannot select an empty replacement range".to_string());
+    }
+
+    enigo
+        .key(Key::Shift, enigo::Direction::Press)
+        .map_err(|error| format!("Failed to press Shift: {error}"))?;
+
+    let mut selection_error = None;
+    for _ in 0..count {
+        if let Err(error) = enigo.key(Key::LeftArrow, enigo::Direction::Click) {
+            selection_error = Some(format!("Failed to extend replacement selection: {error}"));
+            break;
+        }
+    }
+    let release_result = enigo
+        .key(Key::Shift, enigo::Direction::Release)
+        .map_err(|error| format!("Failed to release Shift: {error}"));
+
+    if let Some(error) = selection_error {
+        return Err(error);
+    }
+    release_result
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn capture_replacement_context() -> Option<ReplacementContext> {
+    windows_input_monitor::capture()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn capture_replacement_context() -> Option<ReplacementContext> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+mod windows_input_monitor {
+    use super::ReplacementContext;
+    use std::mem::size_of;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{mpsc, OnceLock};
+    use std::time::Duration;
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetForegroundWindow, GetGUIThreadInfo, GetMessageW,
+        SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, GUITHREADINFO, HC_ACTION,
+        KBDLLHOOKSTRUCT, LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL,
+        WH_MOUSE_LL,
+    };
+
+    static PHYSICAL_INPUT_GENERATION: AtomicU64 = AtomicU64::new(0);
+    static MONITOR_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+    pub(super) fn capture() -> Option<ReplacementContext> {
+        if !monitor_available() {
+            return None;
+        }
+
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground.0.is_null() {
+            return None;
+        }
+
+        let mut gui = GUITHREADINFO {
+            cbSize: size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        if unsafe { GetGUIThreadInfo(0, &mut gui) }.is_err() || gui.hwndFocus.0.is_null() {
+            return None;
+        }
+
+        Some(ReplacementContext {
+            foreground: foreground.0 as isize,
+            focus: gui.hwndFocus.0 as isize,
+            physical_generation: PHYSICAL_INPUT_GENERATION.load(Ordering::Acquire),
+        })
+    }
+
+    fn monitor_available() -> bool {
+        *MONITOR_AVAILABLE.get_or_init(|| {
+            let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+            std::thread::spawn(move || run_monitor(ready_tx));
+            ready_rx
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap_or(false)
+        })
+    }
+
+    fn run_monitor(ready: mpsc::SyncSender<bool>) {
+        let module = match unsafe { GetModuleHandleW(PCWSTR::null()) } {
+            Ok(module) => HINSTANCE(module.0),
+            Err(_) => {
+                let _ = ready.send(false);
+                return;
+            }
+        };
+        let keyboard = match unsafe {
+            SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), Some(module), 0)
+        } {
+            Ok(hook) => hook,
+            Err(_) => {
+                let _ = ready.send(false);
+                return;
+            }
+        };
+        let mouse =
+            match unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), Some(module), 0) } {
+                Ok(hook) => hook,
+                Err(_) => {
+                    let _ = unsafe { UnhookWindowsHookEx(keyboard) };
+                    let _ = ready.send(false);
+                    return;
+                }
+            };
+
+        let _ = ready.send(true);
+        let mut message = MSG::default();
+        while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
+            let _ = unsafe { TranslateMessage(&message) };
+            unsafe { DispatchMessageW(&message) };
+        }
+        let _ = unsafe { UnhookWindowsHookEx(mouse) };
+        let _ = unsafe { UnhookWindowsHookEx(keyboard) };
+    }
+
+    unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            let event = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+            if !event.flags.contains(LLKHF_INJECTED) {
+                PHYSICAL_INPUT_GENERATION.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+
+    unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 {
+            let event = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+            if event.flags & LLMHF_INJECTED == 0 {
+                PHYSICAL_INPUT_GENERATION.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+        unsafe { CallNextHookEx(None, code, wparam, lparam) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{replacement_context_matches, ReplacementContext};
+
+    #[test]
+    fn replacement_context_requires_same_window_focus_and_input_generation() {
+        let captured = ReplacementContext {
+            foreground: 11,
+            focus: 22,
+            physical_generation: 7,
+        };
+
+        assert!(replacement_context_matches(captured, captured));
+        assert!(!replacement_context_matches(
+            captured,
+            ReplacementContext {
+                foreground: 12,
+                ..captured
+            }
+        ));
+        assert!(!replacement_context_matches(
+            captured,
+            ReplacementContext {
+                focus: 23,
+                ..captured
+            }
+        ));
+        assert!(!replacement_context_matches(
+            captured,
+            ReplacementContext {
+                physical_generation: 8,
+                ..captured
+            }
+        ));
+    }
 }

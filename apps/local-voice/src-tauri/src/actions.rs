@@ -799,6 +799,22 @@ impl ShortcutAction for TranscribeAction {
                                 transcription
                             );
 
+                            if suppress_final_paste {
+                                let Some(()) = complete_unless_cancelled(
+                                    tm.refine_final_injected_text(),
+                                    || rm.was_cancelled_since(cancel_generation),
+                                )
+                                .await
+                                else {
+                                    debug!(
+                                        "Transcription operation cancelled during final refinement"
+                                    );
+                                    utils::hide_recording_overlay(&ah);
+                                    change_tray_icon(&ah, TrayIconState::Idle);
+                                    return;
+                                };
+                            }
+
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);

@@ -465,6 +465,18 @@ pub struct AppSettings {
     /// the user is still speaking instead of pasting once at the end.
     #[serde(default = "default_stream_injection")]
     pub stream_injection: bool,
+    /// Run local Ollama-based refinement for text that continuous streaming has
+    /// already inserted into the target application.
+    #[serde(default = "default_refine_enabled")]
+    pub refine_enabled: bool,
+    /// Exact Ollama model name. When absent, the refiner chooses from the live
+    /// local model list using its allowlisted preference order.
+    #[serde(default)]
+    pub refine_model: Option<String>,
+    #[serde(default = "default_refine_sentence_timeout_ms")]
+    pub refine_sentence_timeout_ms: u64,
+    #[serde(default = "default_refine_final_timeout_ms")]
+    pub refine_final_timeout_ms: u64,
     #[serde(default = "default_segment_injection")]
     pub segment_injection: bool,
     /// Silence after speech, in ms, that counts as a sentence boundary.
@@ -542,6 +554,18 @@ fn default_overlay_style() -> OverlayStyle {
 /// docs/KNOWN-LIMITATIONS.md). Enable only when experimenting with it.
 fn default_stream_injection() -> bool {
     false
+}
+
+fn default_refine_enabled() -> bool {
+    false
+}
+
+fn default_refine_sentence_timeout_ms() -> u64 {
+    4_000
+}
+
+fn default_refine_final_timeout_ms() -> u64 {
+    12_000
 }
 
 /// Off by default until it has been verified end to end against a real target
@@ -924,6 +948,10 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         stream_injection: default_stream_injection(),
+        refine_enabled: default_refine_enabled(),
+        refine_model: None,
+        refine_sentence_timeout_ms: default_refine_sentence_timeout_ms(),
+        refine_final_timeout_ms: default_refine_final_timeout_ms(),
         segment_injection: default_segment_injection(),
         segment_pause_ms: default_segment_pause_ms(),
         overlay_style: default_overlay_style(),
@@ -1154,6 +1182,16 @@ mod tests {
 
     fn default_settings_json() -> serde_json::Value {
         serde_json::to_value(get_default_settings()).unwrap()
+    }
+
+    #[test]
+    fn default_refinement_is_disabled_without_a_model_override() {
+        let settings = get_default_settings();
+
+        assert!(!settings.refine_enabled);
+        assert_eq!(settings.refine_model, None);
+        assert_eq!(settings.refine_sentence_timeout_ms, 4_000);
+        assert_eq!(settings.refine_final_timeout_ms, 12_000);
     }
 
     /// Every field must survive a partial store: a missing key must never fail

@@ -1,6 +1,10 @@
 use crate::audio_toolkit::{apply_custom_words, filter_transcription_output};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
+use crate::refinement::injection::InjectionHandle;
+use crate::refinement::ollama::{OllamaRefiner, RefinementStage};
+use crate::refinement::sentences::complete_sentence_ranges;
+use crate::refinement::validator::validate as validate_refinement;
 use crate::settings::{
     get_settings, AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting,
     TranscribeAcceleratorSetting,
@@ -293,6 +297,14 @@ pub struct TranscriptionManager {
     /// only its growth is safe: nothing already in the user's document is ever
     /// revised or has to be retracted.
     stream_injected_len: Arc<AtomicUsize>,
+    /// Raw committed byte offset through which sentence boundaries have already
+    /// been scheduled for refinement.
+    stream_refinement_scanned_len: Arc<AtomicUsize>,
+    /// Monotonic identity for commands/results belonging to one dictation.
+    next_injection_run_id: Arc<AtomicU64>,
+    active_injection_run_id: Arc<AtomicU64>,
+    injection: InjectionHandle,
+    active_refinement: Arc<Mutex<Option<ActiveRefinementRun>>>,
 
     engine: Arc<Mutex<Option<LoadedEngine>>>,
     model_manager: Arc<ModelManager>,
@@ -327,65 +339,32 @@ pub struct TranscriptionManager {
     active_engine_lease: Arc<AtomicU64>,
 }
 
-/// Single consumer that types streamed fragments in the order they were produced.
-///
-/// Ordering is the whole point: the stream worker emits fragments sequentially, so
-/// they must reach the target application in that same order. A thread per fragment
-/// would race on the Enigo mutex and scramble the sentence.
-fn injection_queue(app: &tauri::AppHandle) -> &'static std::sync::mpsc::Sender<String> {
-    static QUEUE: std::sync::OnceLock<std::sync::mpsc::Sender<String>> = std::sync::OnceLock::new();
-    QUEUE.get_or_init(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let app = app.clone();
-        std::thread::spawn(move || {
-            while let Ok(fragment) = rx.recv() {
-                // Ctrl+V, not synthetic per-character typing.
-                //
-                // Measured: enigo.text() garbles rapid successive fragments. The
-                // deltas handed to it were verifiably correct
-                // (" Name ist Patrick Wolf"), yet the document received
-                // "ttttttt" - single characters repeating. That is Windows key
-                // auto-repeat: under rapid fire some KEYEVENTF_UNICODE key-up
-                // events are dropped, and the key keeps repeating until the next
-                // event arrives.
-                //
-                // Ctrl+V is two key events regardless of text length, so it cannot
-                // exhibit that failure. The earlier clipboard attempt failed for a
-                // different reason: it restored the previous clipboard after every
-                // fragment, and the asynchronous paste then read stale content.
-                // Here we deliberately do NOT restore per fragment - the run
-                // restores once when it ends.
-                use tauri_plugin_clipboard_manager::ClipboardExt;
-                if let Err(e) = app.clipboard().write_text(fragment.clone()) {
-                    warn!("stream injection: clipboard write failed: {e}");
-                    continue;
-                }
-                let Some(state) = app.try_state::<crate::input::EnigoState>() else {
-                    warn!("stream injection: Enigo not initialised");
-                    continue;
-                };
-                let mut enigo = match state.0.lock() {
-                    Ok(g) => g,
-                    Err(poisoned) => {
-                        warn!("stream injection: Enigo mutex poisoned, recovering");
-                        poisoned.into_inner()
-                    }
-                };
-                if let Err(e) = crate::input::send_paste_ctrl_v(&mut enigo) {
-                    warn!("stream injection failed: {e}");
-                }
-                drop(enigo);
-                // Give the target application time to service the paste before the
-                // next fragment overwrites the clipboard.
-                std::thread::sleep(std::time::Duration::from_millis(120));
-            }
-        });
-        tx
-    })
+#[derive(Clone)]
+struct ActiveRefinementRun {
+    id: u64,
+    refiner: OllamaRefiner,
+    debug_mode: bool,
+}
+
+fn log_refinement_rejection(
+    stage: &str,
+    failure: crate::refinement::validator::ValidationFailure,
+    debug_mode: bool,
+    original: &str,
+    candidate: &str,
+) {
+    if debug_mode {
+        debug!(
+            "Text refinement rejected: stage={stage} gate={failure:?} original={original:?} candidate={candidate:?}"
+        );
+    } else {
+        debug!("Text refinement rejected: stage={stage} gate={failure:?}");
+    }
 }
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
+        let injection = InjectionHandle::new(app_handle);
         let manager = Self {
             engine: Arc::new(Mutex::new(None)),
             model_manager,
@@ -403,6 +382,11 @@ impl TranscriptionManager {
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
             stream_injected_len: Arc::new(AtomicUsize::new(0)),
+            stream_refinement_scanned_len: Arc::new(AtomicUsize::new(0)),
+            next_injection_run_id: Arc::new(AtomicU64::new(1)),
+            active_injection_run_id: Arc::new(AtomicU64::new(0)),
+            injection,
+            active_refinement: Arc::new(Mutex::new(None)),
         };
 
         // Start the idle watcher
@@ -1223,6 +1207,14 @@ impl TranscriptionManager {
         if let Some(tx) = self.router.take() {
             let _ = tx.send(StreamCmd::Cancel);
         }
+        let run_id = self.active_injection_run_id.load(Ordering::Acquire);
+        if run_id != 0 {
+            self.injection.cancel(run_id);
+        }
+        *self
+            .active_refinement
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         self.stream_active.store(false, Ordering::Release);
     }
 
@@ -1302,10 +1294,12 @@ impl TranscriptionManager {
         self.stream_injected_len
             .store(committed.len(), Ordering::Release);
 
-        // Hand the fragment to a single ordered worker. Spawning a thread per
-        // chunk would let two fragments race for the Enigo mutex and type out of
-        // order, which silently scrambles the sentence.
-        injection_queue(&self.app_handle).send(delta).ok();
+        // Append and replacement commands share one FIFO worker. This preserves
+        // the existing fragment order and makes a Shift+Left replacement atomic
+        // with respect to later Ctrl+V appends.
+        let run_id = self.active_injection_run_id.load(Ordering::Acquire);
+        self.injection.append(run_id, delta);
+        self.schedule_sentence_refinements(run_id, committed);
     }
 
     /// Whether this run already inserted streamed text into the target app.
@@ -1316,6 +1310,132 @@ impl TranscriptionManager {
     /// Reset the injection cursor at the start of a run.
     pub fn reset_stream_injection(&self) {
         self.stream_injected_len.store(0, Ordering::Release);
+        self.stream_refinement_scanned_len
+            .store(0, Ordering::Release);
+
+        let run_id = self.next_injection_run_id.fetch_add(1, Ordering::AcqRel);
+        self.active_injection_run_id
+            .store(run_id, Ordering::Release);
+        let settings = get_settings(&self.app_handle);
+        let refinement_enabled = settings.stream_injection && settings.refine_enabled;
+        self.injection.begin(run_id, refinement_enabled);
+
+        let active = if refinement_enabled {
+            let refiner = OllamaRefiner::new(&settings);
+            refiner.start_model_resolution();
+            Some(ActiveRefinementRun {
+                id: run_id,
+                refiner,
+                debug_mode: settings.debug_mode,
+            })
+        } else {
+            None
+        };
+        *self
+            .active_refinement
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = active;
+    }
+
+    fn schedule_sentence_refinements(&self, run_id: u64, committed: &str) {
+        let scanned = self.stream_refinement_scanned_len.load(Ordering::Acquire);
+        let ranges = complete_sentence_ranges(committed, scanned);
+        let Some(last_end) = ranges.last().map(|range| range.end) else {
+            return;
+        };
+        self.stream_refinement_scanned_len
+            .store(last_end, Ordering::Release);
+
+        let active = self
+            .active_refinement
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let Some(active) = active.filter(|active| active.id == run_id) else {
+            return;
+        };
+
+        for range in ranges {
+            let sentence_id = range.end as u64;
+            let original = committed[range].to_string();
+            self.injection
+                .register_sentence(run_id, sentence_id, original.clone());
+            let active = active.clone();
+            let injection = self.injection.clone();
+            tauri::async_runtime::spawn(async move {
+                let Some(candidate) = active
+                    .refiner
+                    .refine(&original, RefinementStage::Sentence)
+                    .await
+                else {
+                    return;
+                };
+                match validate_refinement(&original, &candidate) {
+                    Ok(()) => {
+                        injection.replace_sentence(active.id, sentence_id, original, candidate)
+                    }
+                    Err(failure) => log_refinement_rejection(
+                        "sentence",
+                        failure,
+                        active.debug_mode,
+                        &original,
+                        &candidate,
+                    ),
+                }
+            });
+        }
+    }
+
+    pub async fn refine_final_injected_text(&self) {
+        let active = self
+            .active_refinement
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let Some(active) = active else {
+            return;
+        };
+
+        let injection = self.injection.clone();
+        let run_id = active.id;
+        let _ = async {
+            let snapshot = tauri::async_runtime::spawn_blocking({
+                let injection = injection.clone();
+                move || injection.prepare_final(run_id)
+            })
+            .await
+            .ok()
+            .flatten()?;
+            let original = snapshot.text.clone();
+            let candidate = active
+                .refiner
+                .refine(&original, RefinementStage::Final)
+                .await?;
+            if let Err(failure) = validate_refinement(&original, &candidate) {
+                log_refinement_rejection(
+                    "final",
+                    failure,
+                    active.debug_mode,
+                    &original,
+                    &candidate,
+                );
+                return None;
+            }
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                injection.replace_final(run_id, snapshot, candidate)
+            })
+            .await;
+            Some(())
+        }
+        .await;
+
+        let mut current = self
+            .active_refinement
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if current.as_ref().is_some_and(|run| run.id == run_id) {
+            *current = None;
+        }
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {

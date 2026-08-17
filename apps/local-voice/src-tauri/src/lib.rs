@@ -14,6 +14,7 @@ mod managers;
 mod overlay;
 pub mod segmenter;
 pub mod portable;
+mod refinement;
 mod settings;
 mod shortcut;
 mod signal_handle;
