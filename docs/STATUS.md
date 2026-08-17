@@ -148,17 +148,22 @@ Der Binary-Nachweis bleibt als zusätzliche Prüfung bestehen:
 
 ### Dauerlauf: 100 Diktate
 
+Zweimal gefahren. Der erste Lauf lief noch gegen das Binary mit dem Log-Leck; der hier
+berichtete zweite gegen das **ausgelieferte** Artefakt.
+
 | Kennzahl | Wert |
 |---|---|
 | Läufe | 100 |
 | Fehlschläge | **0** |
 | Leere Ergebnisse | **0** |
-| Fallbacks ausgelöst | 0 |
-| Fehler im Log | 0 |
 | Median Diktatdauer | 1,9 s |
 | Maximum | 1,9 s |
+| Klartext-Diktate im Log danach | **0** (geprüft auf „Termin", „Februar", „dritten") |
+| Speicher der App danach | 759 MB — das geladene Parakeet-Modell, wird nach 5 min Leerlauf entladen |
 
 Fixture `de_short_01.wav` (2,8 s deutsch), Ziel Notepad, Rücklesung per UI Automation.
+Der einzige `ERROR` im Log über beide Läufe ist der erwartete `TargetElevated`-Fallback
+aus dem Szenario mit dem erhöhten Task-Manager.
 
 ### Drei Toolchain-Fallen, die erst der native Lauf sichtbar gemacht hat
 
