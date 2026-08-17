@@ -12,7 +12,17 @@ import type {
 import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
-type OverlayState = "recording" | "streaming" | "transcribing" | "processing";
+type OverlayState =
+  | "recording"
+  | "streaming"
+  | "transcribing"
+  | "processing"
+  | "notice";
+
+type PasteFallbackNotice = {
+  reason: string;
+  transcriptInClipboard: boolean;
+};
 
 // Number of reactive bars in the waveform (the simple, smoothed style shared by
 // every overlay form). Mic levels arrive as 16 FFT buckets; we take the first N.
@@ -36,6 +46,9 @@ const RecordingOverlay: React.FC = () => {
   // Overlay placement (top vs bottom of the screen). The Live panel grows downward
   // from a top overlay (oldest line under the pill) and upward from a bottom one.
   const [position, setPosition] = useState<"top" | "bottom">("bottom");
+  // Set just before the overlay switches to the "notice" state: why a finished
+  // dictation was not inserted, and whether the text is in the clipboard.
+  const [notice, setNotice] = useState<PasteFallbackNotice | null>(null);
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
@@ -82,6 +95,13 @@ const RecordingOverlay: React.FC = () => {
         setIsVisible(false);
       });
 
+      const unlistenNotice = await listen<PasteFallbackNotice>(
+        "paste-fallback-notice",
+        (event) => {
+          setNotice(event.payload);
+        },
+      );
+
       const unlistenLevel = await listen<number[]>("mic-level", (event) => {
         const newLevels = event.payload as number[];
         // Exponential smoothing across the 16 buckets, then take the first N
@@ -107,6 +127,7 @@ const RecordingOverlay: React.FC = () => {
       return () => {
         unlistenShow();
         unlistenHide();
+        unlistenNotice();
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
@@ -206,6 +227,33 @@ const RecordingOverlay: React.FC = () => {
       <div className="sbase-r">{showCancel && cancelBtn}</div>
     </div>
   );
+
+  // ---- Paste-fallback notice: the dictation finished but was not inserted ----
+  // This is the only overlay form that reports a failure, so it says both what
+  // happened and what the user can do about it right now.
+  if (state === "notice") {
+    const reason = notice?.reason ?? "injection_failed";
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard snotice">
+          <div className="snotice-title">{t("overlay.notice.title")}</div>
+          <div className="snotice-body">
+            {t(`overlay.notice.reason.${reason}`, {
+              defaultValue: t("overlay.notice.reason.injection_failed"),
+            })}
+          </div>
+          <div className="snotice-action">
+            {notice?.transcriptInClipboard
+              ? t("overlay.notice.inClipboard")
+              : t("overlay.notice.inHistory")}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Live overlay: a pill that sculpts open into a panel ----
   if (state === "streaming") {

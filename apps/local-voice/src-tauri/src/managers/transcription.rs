@@ -14,7 +14,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -353,13 +353,18 @@ fn log_refinement_rejection(
     original: &str,
     candidate: &str,
 ) {
+    // Transcript content only ever reaches logs in debug builds; a production
+    // build logs the gate name alone, regardless of debug_mode.
+    #[cfg(debug_assertions)]
     if debug_mode {
         debug!(
             "Text refinement rejected: stage={stage} gate={failure:?} original={original:?} candidate={candidate:?}"
         );
-    } else {
-        debug!("Text refinement rejected: stage={stage} gate={failure:?}");
+        return;
     }
+    #[cfg(not(debug_assertions))]
+    let _ = (debug_mode, original, candidate);
+    debug!("Text refinement rejected: stage={stage} gate={failure:?}");
 }
 
 impl TranscriptionManager {
@@ -1246,15 +1251,17 @@ impl TranscriptionManager {
     /// process, so injecting it would corrupt the user's document.
     fn inject_committed_growth(&self, committed: &str) {
         let settings = get_settings(&self.app_handle);
-        if !settings.stream_injection {
+        if !settings.stream_injection_active() {
             return;
         }
         let already = self.stream_injected_len.load(Ordering::Acquire);
 
-        // Boundary evidence for diagnosing the injection path. Lengths and offsets
-        // are always safe to record; the transcript itself is the user's spoken
-        // content and must never land in a log file by default. Content is only
-        // included when the user has explicitly turned on debug mode.
+        // Boundary evidence for diagnosing the injection path. Lengths and
+        // offsets are always safe to record; the transcript itself is the
+        // user's spoken content and must never reach a log file in a
+        // production build — not even with debug_mode switched on. Content
+        // logging therefore exists only in debug builds.
+        #[cfg(debug_assertions)]
         if settings.debug_mode {
             log::info!(
                 "STREAMDIAG committed(len={})={:?} | already={} | append_only={}",
@@ -1263,14 +1270,13 @@ impl TranscriptionManager {
                 already,
                 already <= committed.len(),
             );
-        } else {
-            log::debug!(
-                "STREAMDIAG committed_len={} already={} append_only={}",
-                committed.len(),
-                already,
-                already <= committed.len(),
-            );
         }
+        log::debug!(
+            "STREAMDIAG committed_len={} already={} append_only={}",
+            committed.len(),
+            already,
+            already <= committed.len(),
+        );
         if committed.len() <= already {
             // Nothing new. A shrink would mean the worker restarted its commit
             // buffer; ignore it rather than re-inserting text.
@@ -1282,13 +1288,14 @@ impl TranscriptionManager {
             return;
         }
         let delta = committed[already..].to_string();
+        #[cfg(debug_assertions)]
         if settings.debug_mode {
             log::info!("STREAMDIAG delta(len={})={:?}", delta.len(), delta);
-        } else {
-            log::debug!("STREAMDIAG delta_len={}", delta.len());
         }
+        log::debug!("STREAMDIAG delta_len={}", delta.len());
         if delta.trim().is_empty() {
-            self.stream_injected_len.store(committed.len(), Ordering::Release);
+            self.stream_injected_len
+                .store(committed.len(), Ordering::Release);
             return;
         }
         self.stream_injected_len
@@ -1317,7 +1324,7 @@ impl TranscriptionManager {
         self.active_injection_run_id
             .store(run_id, Ordering::Release);
         let settings = get_settings(&self.app_handle);
-        let refinement_enabled = settings.stream_injection && settings.refine_enabled;
+        let refinement_enabled = settings.stream_injection_active() && settings.refine_enabled;
         self.injection.begin(run_id, refinement_enabled);
 
         let active = if refinement_enabled {

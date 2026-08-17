@@ -43,7 +43,10 @@ fn load_wav_16k_mono(path: &PathBuf) -> Vec<f32> {
             downmix(raw, spec.channels as usize)
         }
         hound::SampleFormat::Float => {
-            let raw: Vec<f32> = reader.samples::<f32>().map(|s| s.expect("sample")).collect();
+            let raw: Vec<f32> = reader
+                .samples::<f32>()
+                .map(|s| s.expect("sample"))
+                .collect();
             downmix(raw, spec.channels as usize)
         }
     };
@@ -85,7 +88,13 @@ fn resample_linear(input: &[f32], from_hz: f32, to_hz: f32) -> Vec<f32> {
 fn norm(s: &str) -> String {
     s.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() || c.is_whitespace() {
+                c
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -99,8 +108,7 @@ fn transcribes_german_speech_locally() {
         return;
     };
 
-    let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/de_test_01.wav");
+    let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/de_test_01.wav");
     if !wav.is_file() {
         eprintln!("SKIP: fixture {} missing", wav.display());
         return;
@@ -114,8 +122,7 @@ fn transcribes_german_speech_locally() {
     );
 
     let started = std::time::Instant::now();
-    let mut model =
-        ParakeetModel::load(&dir, &Quantization::Int8).expect("load Parakeet V3 int8");
+    let mut model = ParakeetModel::load(&dir, &Quantization::Int8).expect("load Parakeet V3 int8");
     let load_ms = started.elapsed().as_millis();
 
     let started = std::time::Instant::now();

@@ -171,9 +171,17 @@ impl SentenceSegmenter {
             return;
         }
 
+        // Segment text is spoken content; production builds log only its length.
+        #[cfg(debug_assertions)]
         debug!(
             "segmenter: {kind} {seconds:.2}s -> {:?} in {:?}",
             text,
+            started.elapsed()
+        );
+        #[cfg(not(debug_assertions))]
+        debug!(
+            "segmenter: {kind} {seconds:.2}s -> {} chars in {:?}",
+            text.chars().count(),
             started.elapsed()
         );
 
@@ -205,7 +213,10 @@ impl SentenceSegmenter {
         if tail.len() >= MIN_SEGMENT_MS * SAMPLE_RATE / 1000 {
             self.transcribe_and_emit(tail, app, tm, "tail");
         } else if !tail.is_empty() {
-            debug!("segmenter: dropping {} trailing samples below minimum", tail.len());
+            debug!(
+                "segmenter: dropping {} trailing samples below minimum",
+                tail.len()
+            );
         }
         self.shared.emitted_text.lock().unwrap().join(" ")
     }
@@ -252,7 +263,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(140));
         let seg = s.take_if_paused().expect("segment should be available");
         assert_eq!(seg.len(), SAMPLE_RATE); // one second of audio
-        // Buffer is drained, so the same audio cannot be emitted twice.
+                                            // Buffer is drained, so the same audio cannot be emitted twice.
         assert!(s.shared.buffer.lock().unwrap().is_empty());
         assert!(s.take_if_paused().is_none());
     }
@@ -263,7 +274,10 @@ mod tests {
         s.shared.running.store(true, Ordering::Release);
         s.feed(&frame(200)); // well under MIN_SEGMENT_MS
         std::thread::sleep(Duration::from_millis(140));
-        assert!(s.take_if_paused().is_none(), "a cough must not become a sentence");
+        assert!(
+            s.take_if_paused().is_none(),
+            "a cough must not become a sentence"
+        );
     }
 
     #[test]

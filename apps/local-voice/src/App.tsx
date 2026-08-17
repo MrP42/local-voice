@@ -138,6 +138,30 @@ function App() {
     };
   }, [t]);
 
+  // A finished dictation that was not inserted. The overlay carries the
+  // primary, always-visible notice (the main window is usually hidden while
+  // dictating); this toast is the second channel for when it is open.
+  useEffect(() => {
+    const unlisten = listen<{
+      reason: string;
+      transcript_in_clipboard: boolean;
+    }>("paste-fallback", (event) => {
+      const { reason, transcript_in_clipboard } = event.payload;
+      toast.error(t("errors.pasteFallbackTitle"), {
+        description: `${t(`overlay.notice.reason.${reason}`, {
+          defaultValue: t("overlay.notice.reason.injection_failed"),
+        })} ${
+          transcript_in_clipboard
+            ? t("overlay.notice.inClipboard")
+            : t("overlay.notice.inHistory")
+        }`,
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   // Listen for transcription failures and show a toast.
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {

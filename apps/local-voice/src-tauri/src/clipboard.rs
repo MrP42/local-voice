@@ -1,9 +1,10 @@
 use crate::input::{self, EnigoState};
+use crate::paste_guard::{self, PasteFallback, PasteTarget};
 #[cfg(target_os = "linux")]
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::info;
+use log::{info, warn};
 use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -606,6 +607,211 @@ fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), Str
 
 fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool {
     auto_submit && paste_method != PasteMethod::None
+}
+
+/// Outcome of the guarded dictation paste.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuardedPasteOutcome {
+    /// Every observable check passed and exactly one paste was delivered.
+    Pasted,
+    /// The user configured `PasteMethod::None`; nothing was attempted.
+    NothingToDo,
+    /// The paste was not (or not verifiably) delivered. Unless the reason says
+    /// otherwise, the full transcript was left in the clipboard on purpose and
+    /// the caller must show a visible notice.
+    Fallback(PasteFallback),
+}
+
+/// Write `text` to the clipboard and verify it landed there by reading it
+/// back. One silent retry, because another process can hold the clipboard
+/// open for a moment.
+fn write_clipboard_verified(app_handle: &AppHandle, text: &str) -> bool {
+    let clipboard = app_handle.clipboard();
+    for attempt in 0..2 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(60));
+        }
+        if clipboard.write_text(text).is_err() {
+            continue;
+        }
+        if clipboard.read_text().is_ok_and(|readback| readback == text) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Paste a finished dictation with fail-closed guards (Windows).
+///
+/// The contract behind it: a successfully finished dictation either lands in
+/// the window the user stopped in, or the full transcript stays in the
+/// clipboard and the caller shows a visible notice. Silent loss is the one
+/// outcome this function must never produce; the invisible failure modes that
+/// remain (a target that ignores Ctrl+V) are documented, and the transcript
+/// additionally survives in the history window.
+///
+/// On non-Windows targets the guards cannot observe anything, so this
+/// delegates to the legacy [`paste`] unchanged.
+pub fn paste_transcript_guarded(
+    text: String,
+    app_handle: AppHandle,
+    target: Option<PasteTarget>,
+) -> GuardedPasteOutcome {
+    if !cfg!(target_os = "windows") {
+        return match paste(text, app_handle) {
+            Ok(()) => GuardedPasteOutcome::Pasted,
+            Err(_) => GuardedPasteOutcome::Fallback(PasteFallback::InjectionFailed),
+        };
+    }
+
+    let settings = get_settings(&app_handle);
+    let paste_method = settings.paste_method;
+    if paste_method == PasteMethod::None {
+        // The user opted out of auto-paste entirely; keep the legacy
+        // copy-to-clipboard side effect and do nothing else.
+        if settings.clipboard_handling == ClipboardHandling::CopyToClipboard {
+            let _ = app_handle.clipboard().write_text(&text);
+        }
+        return GuardedPasteOutcome::NothingToDo;
+    }
+
+    let text = if settings.append_trailing_space {
+        format!("{} ", text)
+    } else {
+        text
+    };
+
+    let target = match paste_guard::preflight(
+        target,
+        paste_guard::current_foreground(),
+        paste_guard::process_elevated,
+        paste_guard::self_elevated(),
+    ) {
+        Ok(target) => target,
+        Err(reason) => {
+            // No paste attempt. Park the transcript in the clipboard so the
+            // user can insert it manually — and only claim that in the notice
+            // if the clipboard verifiably holds it.
+            if write_clipboard_verified(&app_handle, &text) {
+                return GuardedPasteOutcome::Fallback(reason);
+            }
+            return GuardedPasteOutcome::Fallback(PasteFallback::ClipboardUnverified);
+        }
+    };
+
+    // Save the previous clipboard for the success path. Text has priority;
+    // an image is only probed when there is no text (same policy as the
+    // legacy paste path).
+    let clipboard = app_handle.clipboard();
+    let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
+    let saved_image = if saved_text.is_none() {
+        clipboard.read_image().ok().map(|image| image.to_owned())
+    } else {
+        None
+    };
+
+    let uses_clipboard = matches!(
+        paste_method,
+        PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert
+    );
+    if uses_clipboard && !write_clipboard_verified(&app_handle, &text) {
+        return GuardedPasteOutcome::Fallback(PasteFallback::ClipboardUnverified);
+    }
+
+    let enigo_state = match app_handle.try_state::<EnigoState>() {
+        Some(state) => state,
+        None => {
+            warn!("guarded paste: Enigo state not initialized");
+            return GuardedPasteOutcome::Fallback(PasteFallback::InjectionFailed);
+        }
+    };
+    let mut enigo = match enigo_state.0.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("guarded paste: Enigo mutex poisoned, recovering");
+            poisoned.into_inner()
+        }
+    };
+
+    std::thread::sleep(Duration::from_millis(settings.paste_delay_ms));
+
+    // Exactly one attempt, no matter what.
+    let injection = match paste_method {
+        PasteMethod::CtrlV => input::send_paste_ctrl_v(&mut enigo),
+        PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(&mut enigo),
+        PasteMethod::ShiftInsert => input::send_paste_shift_insert(&mut enigo),
+        PasteMethod::Direct => paste_direct(
+            &mut enigo,
+            &text,
+            #[cfg(target_os = "linux")]
+            settings.typing_tool,
+        ),
+        PasteMethod::ExternalScript => {
+            let script = settings
+                .external_script_path
+                .as_deref()
+                .filter(|path| !path.is_empty());
+            match script {
+                Some(path) => paste_via_external_script(&text, path),
+                None => Err("External script path is not configured".to_string()),
+            }
+        }
+        PasteMethod::None => unreachable!("handled above"),
+    };
+    if let Err(error) = injection {
+        warn!("guarded paste: injection failed: {error}");
+        drop(enigo);
+        // For non-clipboard methods the transcript is not in the clipboard
+        // yet; park it there so the notice can point somewhere real.
+        if uses_clipboard || write_clipboard_verified(&app_handle, &text) {
+            return GuardedPasteOutcome::Fallback(PasteFallback::InjectionFailed);
+        }
+        return GuardedPasteOutcome::Fallback(PasteFallback::ClipboardUnverified);
+    }
+
+    // Give the target time to service the paste before the clipboard changes
+    // again. The floor matters: pasting is asynchronous, and restoring the old
+    // clipboard too early makes the target read the OLD content.
+    std::thread::sleep(Duration::from_millis(
+        settings.paste_delay_after_ms.max(150),
+    ));
+
+    if paste_guard::current_foreground() != Some(target.hwnd) {
+        // Focus moved while the paste was in flight; whether the right window
+        // received it is unknowable. Keep the transcript in the clipboard and
+        // say so instead of restoring.
+        return GuardedPasteOutcome::Fallback(PasteFallback::FocusChangedDuringPaste);
+    }
+
+    if should_send_auto_submit(settings.auto_submit, paste_method) {
+        std::thread::sleep(Duration::from_millis(50));
+        if let Err(error) = send_return_key(&mut enigo, settings.auto_submit_key) {
+            warn!("guarded paste: auto-submit failed: {error}");
+        }
+    }
+    drop(enigo);
+
+    // Success path: restore the previous clipboard only now, per setting.
+    if uses_clipboard {
+        match settings.clipboard_handling {
+            ClipboardHandling::CopyToClipboard => {
+                // Transcript intentionally stays in the clipboard.
+            }
+            _ => {
+                if let Some(previous) = saved_text {
+                    let _ = clipboard.write_text(&previous);
+                } else if let Some(image) = saved_image {
+                    let _ = clipboard.write_image(&image);
+                } else {
+                    let _ = clipboard.clear();
+                }
+            }
+        }
+    } else if settings.clipboard_handling == ClipboardHandling::CopyToClipboard {
+        let _ = clipboard.write_text(&text);
+    }
+
+    GuardedPasteOutcome::Pasted
 }
 
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {

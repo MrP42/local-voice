@@ -50,12 +50,21 @@ const OVERLAY_HEIGHT: f64 = 46.0;
 const OVERLAY_STREAM_WIDTH: f64 = 400.0;
 const OVERLAY_STREAM_HEIGHT: f64 = 120.0;
 
+// The paste-fallback notice carries two lines of prose plus a title, so it
+// needs more room than the pill.
+const OVERLAY_NOTICE_WIDTH: f64 = 440.0;
+const OVERLAY_NOTICE_HEIGHT: f64 = 132.0;
+
+/// How long the paste-fallback notice stays on screen. Long enough to read and
+/// act on ("your text is in the clipboard"), short enough not to linger.
+const NOTICE_VISIBLE: std::time::Duration = std::time::Duration::from_secs(9);
+
 /// Overlay window size (logical) for a given UI state.
 fn overlay_dimensions(state: &str) -> (f64, f64) {
-    if state == "streaming" {
-        (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT)
-    } else {
-        (OVERLAY_WIDTH, OVERLAY_HEIGHT)
+    match state {
+        "streaming" => (OVERLAY_STREAM_WIDTH, OVERLAY_STREAM_HEIGHT),
+        "notice" => (OVERLAY_NOTICE_WIDTH, OVERLAY_NOTICE_HEIGHT),
+        _ => (OVERLAY_WIDTH, OVERLAY_HEIGHT),
     }
 }
 
@@ -458,11 +467,20 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Bumped on every overlay state change. The notice's auto-hide timer compares
+/// against it so it never closes an overlay that a later recording has since
+/// taken over.
+static OVERLAY_STATE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 fn show_overlay_state(app_handle: &AppHandle, state: &str) {
+    OVERLAY_STATE_GENERATION.fetch_add(1, Ordering::AcqRel);
+
     // Whether the overlay shows at all is governed by overlay_style; position
-    // only chooses Top vs Bottom placement.
+    // only chooses Top vs Bottom placement. The "notice" state is exempt: it
+    // reports that a finished dictation could NOT be inserted, and suppressing
+    // it would turn a visible failure into silent text loss.
     let settings = settings::get_settings(app_handle);
-    if settings.overlay_style == OverlayStyle::None {
+    if settings.overlay_style == OverlayStyle::None && state != "notice" {
         return;
     }
 
@@ -545,6 +563,40 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
 /// Shows the processing overlay window
 pub fn show_processing_overlay(app_handle: &AppHandle) {
     show_overlay_state(app_handle, "processing");
+}
+
+/// Show the paste-fallback notice: a finished dictation that was not inserted.
+///
+/// The overlay carries this rather than a toast in the main window, because
+/// the main window is normally hidden while dictating — a notice nobody can
+/// see is the same as no notice at all. It hides itself after [`NOTICE_VISIBLE`].
+pub fn show_paste_fallback_notice(
+    app_handle: &AppHandle,
+    reason: &str,
+    transcript_in_clipboard: bool,
+) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Payload first, so the webview already has it when the state flips.
+        let _ = overlay_window.emit(
+            "paste-fallback-notice",
+            serde_json::json!({
+                "reason": reason,
+                "transcriptInClipboard": transcript_in_clipboard,
+            }),
+        );
+    }
+    show_overlay_state(app_handle, "notice");
+
+    // Only this notice may be auto-hidden. If a new recording started in the
+    // meantime, its overlay owns the window and must stay up.
+    let generation = OVERLAY_STATE_GENERATION.load(Ordering::Acquire);
+    let app_handle = app_handle.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(NOTICE_VISIBLE);
+        if OVERLAY_STATE_GENERATION.load(Ordering::Acquire) == generation {
+            hide_recording_overlay(&app_handle);
+        }
+    });
 }
 
 /// Updates the overlay window position based on current settings

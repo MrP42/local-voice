@@ -612,7 +612,8 @@
     "modelLoadFailedUnknown": "unbekanntes Modell",
     "pasteFailedTitle": "Text konnte nicht eingefügt werden",
     "pasteFailed": "Der Text konnte nicht in die aktive Anwendung eingefügt werden.",
-    "transcriptionFailedTitle": "Transkription fehlgeschlagen"
+    "transcriptionFailedTitle": "Transkription fehlgeschlagen",
+    "pasteFallbackTitle": "Text wurde nicht eingefügt"
   },
   "appLanguage": {
     "title": "Anwendungssprache",
@@ -629,7 +630,20 @@
   },
   "overlay": {
     "transcribing": "Transkribiere...",
-    "processing": "Verarbeite..."
+    "processing": "Verarbeite...",
+    "notice": {
+      "title": "Text wurde nicht eingefügt",
+      "inClipboard": "Der vollständige Text liegt in der Zwischenablage — mit Strg+V einfügen.",
+      "inHistory": "Die Zwischenablage ließ sich nicht beschreiben. Der Text steht im Verlauf.",
+      "reason": {
+        "no_target": "Beim Beenden der Aufnahme war kein Zielfenster bestimmbar.",
+        "focus_changed": "Der Fokus wechselte während der Transkription in ein anderes Fenster.",
+        "focus_changed_during_paste": "Der Fokus wechselte während des Einfügens in ein anderes Fenster.",
+        "target_elevated": "Die Zielanwendung läuft mit Administratorrechten; Windows blockiert Eingaben von Sprechstift.",
+        "injection_failed": "Der Tastendruck zum Einfügen ließ sich nicht zustellen.",
+        "clipboard_unverified": "Der Text ließ sich nicht nachweisbar in die Zwischenablage legen."
+      }
+    }
   },
   "whatsNew": {
     "title": "Neu in Handy v{{version}}"

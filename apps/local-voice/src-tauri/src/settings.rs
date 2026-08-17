@@ -985,6 +985,15 @@ impl AppSettings {
             .iter_mut()
             .find(|provider| provider.id == provider_id)
     }
+
+    /// Whether live stream injection may run. The mechanism types into the
+    /// user's document while they speak and is known to garble text in real
+    /// applications (docs/KNOWN-LIMITATIONS.md), so a stale `stream_injection`
+    /// flag in a persisted store must never activate it on its own: the user
+    /// has to opt into experimental features as well.
+    pub fn stream_injection_active(&self) -> bool {
+        self.stream_injection && self.experimental_enabled
+    }
 }
 
 /// Startup entry point. Same load-or-create/salvage/migrate behavior as
@@ -1192,6 +1201,22 @@ mod tests {
         assert_eq!(settings.refine_model, None);
         assert_eq!(settings.refine_sentence_timeout_ms, 4_000);
         assert_eq!(settings.refine_final_timeout_ms, 12_000);
+    }
+
+    /// A persisted `stream_injection: true` from an older session must not
+    /// re-enable the defective live injection on its own; the experimental
+    /// opt-in is a second, independent switch.
+    #[test]
+    fn stream_injection_requires_the_experimental_opt_in() {
+        let mut settings = get_default_settings();
+        assert!(!settings.stream_injection_active());
+
+        settings.stream_injection = true;
+        settings.experimental_enabled = false;
+        assert!(!settings.stream_injection_active());
+
+        settings.experimental_enabled = true;
+        assert!(settings.stream_injection_active());
     }
 
     /// Every field must survive a partial store: a missing key must never fail

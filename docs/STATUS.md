@@ -1,4 +1,4 @@
-# Status — Stand 2026-07-28
+# Status — Stand 2026-08-17
 
 Nur real ausgeführte und verifizierte Dinge stehen unter „verifiziert".
 
@@ -56,8 +56,9 @@ lassen.
 | M0.6 Modell-Integrität | **verifiziert** — Parakeet V3 SHA-256 stimmt mit dem Katalogwert überein |
 | M1 Fork + Rebranding | **verifiziert** — Subtree-Import mit voller Historie, Updater und SignCommand entfernt, App startet unter eigenem Namen |
 | **Lokale deutsche Transkription** | **verifiziert** — siehe Messung unten |
-| M2 vollständiger vertikaler Pfad (Hotkey bis Einfügen) | **offen** — Transkription verifiziert, Hotkey und Injektion noch nicht real durchlaufen |
-| M3 bis M10 | **offen** |
+| M2 vertikaler Pfad (Hotkey bis Einfügen) | **verifiziert 2026-07-29** — Harness-Lauf 6/8, siehe `docs/m2-evidence/` |
+| **M3 Stabilisierung des Basispfads** | **teilweise verifiziert 2026-08-17** — siehe unten |
+| M4 bis M10 | **offen** |
 
 ### Verifizierte Messung (2026-07-28, i9-13900K, CPU-Backend)
 
@@ -73,10 +74,39 @@ Ausgabe    : "Guten Tag, dies ist ein Test der lokalen Spracherkennung.
 Korrekte deutsche Groß- und Kleinschreibung sowie Interpunktion; gesprochene Zahlen normalisiert
 (dritten Februar wird zu 3. Februar, vierzehn Uhr dreißig wird zu 14.30 Uhr).
 
+## M3 — Stabilisierung (2026-08-17)
+
+Ziel: der Basispfad Hotkey → Aufnahme → Parakeet V3 → **genau ein** kontrollierter
+Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
+
+### Was geändert wurde
+
+| Bereich | Änderung |
+|---|---|
+| Defekte Live-Injektion | Braucht jetzt **zwei** Schalter: `stream_injection` **und** `experimental_enabled`. Ein alter Store mit `stream_injection: true` aktiviert sie nicht mehr allein. |
+| Transkripte in Logs | Klartext nur noch in **Debug-Builds**. Im Release-Build loggen STREAMDIAG, der Segmenter, der Abschlusslog und die Refinement-Ablehnung ausschließlich Längen und Gate-Namen — unabhängig von `debug_mode`. |
+| Einfügepfad | Neu `paste_guard.rs` + `paste_transcript_guarded()`: Zielfenster beim Stop erfassen, Fokus und Rechtelage vor dem Einfügen prüfen, **genau ein** Versuch, Verifikation der Zwischenablage durch Rücklesen, danach erneute Fokusprüfung. |
+| Sichtbare Meldung | Neuer Overlay-Zustand `notice` — erscheint **auch bei `overlay_style: none`** und blendet nach 9 s aus. Zusätzlich ein Toast im Hauptfenster, falls es offen ist. |
+| Einstellungen | Store auf sichere Baseline gesetzt: Parakeet V3, `stream_injection: false`, `debug_mode: false`, `log_level: info`. Sicherung unter `settings_store.json.vor-stabilisierung-2026-08-17.bak`. |
+
+### Aktueller Verifikationsstand
+
+| Prüfung | Ergebnis |
+|---|---|
+| `cargo test --lib` frisch ausgeführt | **verifiziert** — 198 passed, 0 failed (vorher 190; 8 neue) |
+| `cargo build --release` frisch | **verifiziert** — Exit 0 |
+| Frontend `npm run build` | **verifiziert** — Exit 0 |
+| Native Windows-Abnahme (`scripts/m3-verify.ps1`) | **offen** — Skript existiert, ist aber noch nicht gelaufen |
+| 100 aufeinanderfolgende Diktate | **offen** |
+
+Die Toolchain war zu Beginn nicht lauffähig: `cargo` fehlte in beiden Shell-PATHs (liegt unter
+`~\.cargo\bin`), und der CMake-Cache von `transcribe-cpp-sys` war auf den Ninja-Generator
+festgeschrieben, während der Build den Visual-Studio-Generator anforderte. Beides ist behoben,
+der Weg dorthin steht in `docs/BUILD-WINDOWS.md`.
+
 ## Nächste Schritte
 
-1. M2 abschließen: Hotkey, Aufnahme, Transkription, Einfügen real in Notepad durchlaufen
-2. Eval-Läufe für die zwei Recherche-Testfälle abschließen, danach Benchmark und Description-Optimierung
-3. Regelbasierte Nachbearbeitung und Texttreue-Validator (Gates 0 bis 5)
-4. Injektions-Fallback-Kette und App-Matrix
-5. Installer, SBOM, Third-Party-Notices
+1. `scripts/m3-verify.ps1` real ausführen (Notepad, Browser, VS Code, Word) und Evidenz ablegen
+2. Dauerlauf `-Scenario endurance -Runs 100`
+3. Refinement-Stufe erst nach bestandener Abnahme optional aktivieren
+4. Installer, SBOM, Third-Party-Notices

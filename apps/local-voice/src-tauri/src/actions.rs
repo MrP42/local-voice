@@ -2,11 +2,13 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::clipboard::GuardedPasteOutcome;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
+use crate::paste_guard::PasteFallback;
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
@@ -30,6 +32,28 @@ const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 struct RecordingErrorEvent {
     error_type: String,
     detail: Option<String>,
+}
+
+/// Payload of the `paste-fallback` event: a finished dictation that was not
+/// (or not verifiably) inserted. The frontend turns this into a visible,
+/// actionable notice.
+#[derive(Clone, serde::Serialize)]
+struct PasteFallbackEvent {
+    reason: String,
+    transcript_in_clipboard: bool,
+}
+
+/// Stable event key per fallback reason; the frontend maps it to a localized
+/// message.
+fn paste_fallback_reason(reason: PasteFallback) -> &'static str {
+    match reason {
+        PasteFallback::NoTarget => "no_target",
+        PasteFallback::FocusChanged => "focus_changed",
+        PasteFallback::FocusChangedDuringPaste => "focus_changed_during_paste",
+        PasteFallback::TargetElevated => "target_elevated",
+        PasteFallback::InjectionFailed => "injection_failed",
+        PasteFallback::ClipboardUnverified => "clipboard_unverified",
+    }
 }
 
 /// Drop guard that notifies the [`TranscriptionCoordinator`] when the
@@ -678,6 +702,12 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // The window the user was in when they stopped speaking. Captured here,
+        // synchronously on the stop path, because transcription runs afterwards
+        // and the foreground window can change meanwhile — pasting into
+        // whatever happens to be focused later is exactly the silent data loss
+        // this path must avoid.
+        let paste_target = crate::paste_guard::capture_paste_target();
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone());
@@ -697,8 +727,7 @@ impl ShortcutAction for TranscribeAction {
                 if rm.was_cancelled_since(cancel_generation) {
                     debug!("Transcription operation cancelled after recording stop");
                     tm.cancel_stream();
-            rm.segmenter.cancel();
-                rm.segmenter.cancel();
+                    rm.segmenter.cancel();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
                     return;
@@ -709,8 +738,7 @@ impl ShortcutAction for TranscribeAction {
                     // Tear down any streaming worker so its channel doesn't leak
                     // and block the next start_stream.
                     tm.cancel_stream();
-            rm.segmenter.cancel();
-                rm.segmenter.cancel();
+                    rm.segmenter.cancel();
                     utils::hide_recording_overlay(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
                 } else {
@@ -793,10 +821,20 @@ impl ShortcutAction for TranscribeAction {
 
                     match transcription_result {
                         Ok(transcription) => {
+                            // The transcript is the user's spoken content; a
+                            // production build logs only its length. Content
+                            // appears in debug builds alone.
+                            #[cfg(debug_assertions)]
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
                                 transcription_time.elapsed(),
                                 transcription
+                            );
+                            #[cfg(not(debug_assertions))]
+                            debug!(
+                                "Transcription completed in {:?} ({} chars)",
+                                transcription_time.elapsed(),
+                                transcription.chars().count()
                             );
 
                             if suppress_final_paste {
@@ -879,14 +917,44 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
+                                    match crate::clipboard::paste_transcript_guarded(
+                                        final_text,
+                                        ah_clone.clone(),
+                                        paste_target,
+                                    ) {
+                                        GuardedPasteOutcome::Pasted => debug!(
                                             "Text pasted successfully in {:?}",
                                             paste_time.elapsed()
                                         ),
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
+                                        GuardedPasteOutcome::NothingToDo => {
+                                            debug!("Paste method is None; nothing inserted")
+                                        }
+                                        GuardedPasteOutcome::Fallback(reason) => {
+                                            // Not a crash and not silent: the
+                                            // transcript is parked and the user
+                                            // is told what happened.
+                                            error!("Automatic paste not performed: {:?}", reason);
+                                            let key = paste_fallback_reason(reason);
+                                            let in_clipboard = reason.transcript_in_clipboard();
+                                            let _ = ah_clone.emit(
+                                                "paste-fallback",
+                                                PasteFallbackEvent {
+                                                    reason: key.to_string(),
+                                                    transcript_in_clipboard: in_clipboard,
+                                                },
+                                            );
+                                            // The overlay owns the visible
+                                            // notice and hides itself again;
+                                            // the toast above only reaches the
+                                            // main window when it happens to
+                                            // be open.
+                                            utils::show_paste_fallback_notice(
+                                                &ah_clone,
+                                                key,
+                                                in_clipboard,
+                                            );
+                                            change_tray_icon(&ah_clone, TrayIconState::Idle);
+                                            return;
                                         }
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
@@ -934,7 +1002,7 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
-            rm.segmenter.cancel();
+                rm.segmenter.cancel();
                 rm.segmenter.cancel();
                 utils::hide_recording_overlay(&ah);
                 change_tray_icon(&ah, TrayIconState::Idle);
@@ -1011,9 +1079,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_start_segmenter,
-        should_suppress_final_paste, should_use_streaming_overlay, TranscriptionSource,
+        complete_unless_cancelled, is_blank_transcription, paste_fallback_reason,
+        should_start_segmenter, should_suppress_final_paste, should_use_streaming_overlay,
+        TranscriptionSource,
     };
+    use crate::paste_guard::PasteFallback;
     use crate::settings::OverlayStyle;
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -1088,5 +1158,26 @@ mod tests {
         assert!(should_start_segmenter(true, false));
         assert!(!should_start_segmenter(true, true));
         assert!(!should_start_segmenter(false, false));
+    }
+
+    /// Each fallback reason must reach the UI as its own key, otherwise two
+    /// different failures would produce the same (then wrong) advice.
+    #[test]
+    fn every_paste_fallback_reason_has_a_distinct_event_key() {
+        let reasons = [
+            PasteFallback::NoTarget,
+            PasteFallback::FocusChanged,
+            PasteFallback::FocusChangedDuringPaste,
+            PasteFallback::TargetElevated,
+            PasteFallback::InjectionFailed,
+            PasteFallback::ClipboardUnverified,
+        ];
+        let keys: Vec<&str> = reasons.iter().copied().map(paste_fallback_reason).collect();
+
+        let mut unique = keys.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), keys.len(), "duplicate keys in {keys:?}");
+        assert!(keys.iter().all(|key| !key.is_empty()));
     }
 }

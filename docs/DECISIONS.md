@@ -83,3 +83,61 @@ gepatchte 0.41 ist ohne Upstream-Release nicht wählbar. In `deny.toml` dokument
 **Lizenzen OBSERVED:** Auf dem Windows-Zielgraphen kein GPL/LGPL/AGPL und keine Crate ohne
 Lizenzfeld. MPL-2.0 (17 Crates, u. a. symphonia) ist dateibasiertes schwaches Copyleft und
 verträglich. `cargo deny check licenses` → **ok**.
+
+## D7 — Einfügen ist fail-closed, nicht best-effort
+**Datum:** 2026-08-17 · **Status:** entschieden und implementiert
+
+Eine Einfügung, deren Erfolg nicht belegbar ist, wird **nicht versucht**. Statt einer
+Fallback-Kette aus mehreren Einfügestrategien (Strg+V, dann Umschalt+Einfg, dann Tippen)
+gibt es genau **einen** Versuch mit vorgelagerter Prüfung.
+
+Begründung: Jede weitere Strategie nach einem als fehlgeschlagen vermuteten Versuch
+riskiert eine **doppelte** Einfügung, denn der erste Versuch kann trotzdem angekommen sein —
+`SendInput` sagt es uns nicht. Doppelter Text ist für den Nutzer schlimmer als gar kein Text
+plus ein Hinweis, weil er ihn manuell finden und entfernen muss.
+
+Konsequenz: Die App fügt in manchen Fällen nicht ein, obwohl sie es gekonnt hätte
+(z. B. bei nicht abfragbarer Rechtelage des Ziels). Dieser Preis ist bewusst gewählt.
+Details in `KNOWN-LIMITATIONS.md`.
+
+## D8 — Die defekte Live-Injektion braucht zwei Schalter
+**Datum:** 2026-08-17 · **Status:** entschieden und implementiert
+
+**OBSERVED:** Am 2026-08-17 stand im Einstellungs-Store `stream_injection: true` bei
+gleichzeitig `experimental_enabled: false`, dazu ein experimentelles Nemotron-Streaming-Modell
+als `selected_model`. Der Code-Default ist `false`; der Wert stammte aus einer früheren
+Sitzung und hätte die als defekt dokumentierte Funktion im Alltag aktiviert.
+
+Ein Default allein schützt also nicht — er greift nur beim ersten Start. `stream_injection`
+wird deshalb über `AppSettings::stream_injection_active()` ausgewertet und verlangt zusätzlich
+`experimental_enabled`. Damit ist ein einzelner veralteter Store-Wert nicht mehr ausreichend,
+um eine bekannt fehlerhafte Funktion scharf zu schalten.
+
+## D9 — Transkript-Klartext nur in Debug-Builds
+**Datum:** 2026-08-17 · **Status:** entschieden und implementiert
+
+**OBSERVED:** `handy.log` enthielt 264 STREAMDIAG-Zeilen mit vollständigen Diktaten des
+Nutzers im Klartext, ausgelöst durch `debug_mode: true`.
+
+Eine Laufzeit-Einstellung ist der falsche Ort für diese Entscheidung: Sie ist in der
+Oberfläche mit einem Klick erreichbar, und ihr Zweck („mehr Logs") lässt nicht erkennen,
+dass damit Diktatinhalte auf die Platte geschrieben werden. Die Inhaltsprotokollierung
+hängt daher an `#[cfg(debug_assertions)]` und existiert im ausgelieferten Binary
+schlicht nicht. `debug_mode` steuert weiterhin die Ausführlichkeit, aber nicht mehr die
+Preisgabe von Inhalten.
+
+Nicht betroffen: `history.db` und die WAV-Aufnahmen. Das ist die vom Nutzer gewollte
+Verlaufsfunktion und unterliegt der Aufbewahrungseinstellung.
+
+## D10 — Die Fehlermeldung trägt das Overlay, nicht das Hauptfenster
+**Datum:** 2026-08-17 · **Status:** entschieden und implementiert
+
+Der bestehende Weg für Einfügefehler war ein Toast im Hauptfenster (`paste-error` →
+`App.tsx`). Beim Diktieren ist das Hauptfenster aber typischerweise verborgen (Tray-Betrieb,
+`start_hidden`) — der Nutzer sieht also gar nichts und hält den Text für verloren.
+
+Die Meldung erscheint deshalb im Overlay-Fenster, das ohnehin „immer oben" liegt. Sie ist
+außerdem die **einzige** Overlay-Form, die auch bei `overlay_style: none` gezeigt wird:
+Wer die Aufnahmeanzeige abschaltet, will keine Statusanzeige — nicht aber den Hinweis
+verlieren, dass sein Text nicht angekommen ist. Der Toast bleibt als Zweitkanal für den
+Fall, dass das Hauptfenster offen ist.
