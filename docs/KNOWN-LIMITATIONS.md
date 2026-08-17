@@ -127,8 +127,20 @@ im Klartext nach `handy.log` — im vorgefundenen Log standen 264 solcher Zeilen
 Diktatinhalten des Nutzers.
 
 Seither gilt: **Klartext nur in Debug-Builds.** Im Release-Build loggen STREAMDIAG,
-der Segmenter, der Abschlusslog der Transkription und die Refinement-Ablehnung
-ausschließlich Längen und Gate-Namen, unabhängig von `debug_mode`.
+der Segmenter, der Abschlusslog der Transkription, das Transkriptionsergebnis und
+die Refinement-Ablehnung ausschließlich Längen und Gate-Namen, unabhängig von
+`debug_mode`.
+
+**Der erste Anlauf war unvollständig, und das ist der lehrreiche Teil.** Nach der
+ersten Runde galt die Sache als erledigt — der Beleg war eine Suche nach den
+bekannten Formatzeichenketten im Binary, und die war grün. Der Dauerlauf über 100
+Diktate stellte dann 47 vollständige Diktate im Log sicher: `info!("Transcription
+result: {}", …)` war beim Quelltext-Audit schlicht nicht aufgefallen, weil das
+Suchmuster sie nicht traf.
+
+Konsequenz: Es gibt jetzt ein Testszenario `log-privacy`, das **nach einem echten
+Diktat im echten Log** nach den gesprochenen Wörtern sucht. Ein Quelltext-Audit
+findet nur, woran man denkt; eine Messung findet auch das Übersehene.
 
 Nicht davon erfasst und weiterhin im Klartext gespeichert — bewusst, weil es die
 Kernfunktion ist:

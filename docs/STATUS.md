@@ -122,9 +122,14 @@ Einfügedauer rund 317 ms.
 
 #### Beleg für die Log-Bereinigung
 
-Nicht der Quelltext wurde geprüft, sondern das ausgelieferte Binary: die
-Formatzeichenketten der Klartext-Zweige kommen darin nicht mehr vor, die
-Längen-Varianten schon.
+**Der erste Beleg war unzureichend.** Geprüft wurde, ob die *bekannten*
+Formatzeichenketten im Binary fehlen — das war grün, und die Sache galt als
+erledigt. Der Dauerlauf legte danach 47 vollständige Diktate im Log offen:
+`info!("Transcription result: {}", …)` hatte das Suchmuster des Quelltext-Audits
+nicht getroffen. Behoben, und seither prüft das Szenario `log-privacy` **das
+echte Log nach einem echten Diktat** auf die gesprochenen Wörter.
+
+Der Binary-Nachweis bleibt als zusätzliche Prüfung bestehen:
 
 | Formatzeichenkette | in `sprechstift.exe` |
 |---|---|
@@ -132,9 +137,25 @@ Längen-Varianten schon.
 | `STREAMDIAG delta(len={})={:?}` | **nein** |
 | `Transcription completed in {:?}: '{}'` | **nein** |
 | `gate={:?} original={:?} candidate={:?}` | **nein** |
+| `Transcription result: {}` (Klartext) | **nein** — erst nach der zweiten Runde |
 | `STREAMDIAG committed_len=` | ja |
 | `Transcription completed in {:?} ({} chars)` | ja |
+| `Transcription result: {} chars` | ja |
 | `Text refinement rejected: stage=` | ja |
+
+### Dauerlauf: 100 Diktate
+
+| Kennzahl | Wert |
+|---|---|
+| Läufe | 100 |
+| Fehlschläge | **0** |
+| Leere Ergebnisse | **0** |
+| Fallbacks ausgelöst | 0 |
+| Fehler im Log | 0 |
+| Median Diktatdauer | 1,9 s |
+| Maximum | 1,9 s |
+
+Fixture `de_short_01.wav` (2,8 s deutsch), Ziel Notepad, Rücklesung per UI Automation.
 
 ### Drei Toolchain-Fallen, die erst der native Lauf sichtbar gemacht hat
 

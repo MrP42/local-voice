@@ -1,20 +1,21 @@
-# M3 harness run 2026-08-17 19:44:23
+# M3 harness run 2026-08-17 20:11:02
 
 Scenario set: `all`
 
 | Scenario | Result | Detail |
 |---|---|---|
 | normal | PASS | 100 chars in 1,9s |
-| umlauts | PASS | 103 chars in 1,9s |
+| umlauts | PASS | 101 chars in 1,9s |
 | punctuation | PASS | 77 chars in 1,9s |
 | multiline | PASS | 101 chars in 1,9s |
 | numbers | PASS | 56 chars in 1,9s |
 | cancel | PASS | notepad must stay empty; got '' |
 | silence | PASS | no speech -> '' |
 | rapid | PASS | app alive after 4 rapid toggles: True; text '' |
-| focus-change | PASS | first='' second=29 chars, clipboard=34 chars |
+| focus-change | PASS | first='' second=29 chars, clipboard=29 chars |
 | no-edit-field | PASS | app alive: True; clipboard '' |
 | elevated | PASS | elevated target: transcript in clipboard: True |
+| log-privacy | PASS | no dictated word appears in the log |
 
 ### normal
 ```
@@ -23,12 +24,12 @@ Guten Tag. Dies ist ein Test der lokalen Spracherkennung. Der Termin ist am 3. F
 
 ### umlauts
 ```
-Der ältere Herr aus der Straße hatte großen Ärger mit seinen Fußballschuhen und trank Blühwein in Köln.
+Der ältere Herr aus der Straße hatte großen Ärger mit seinen Fußballschuhen und trank Ölwein in Köln.
 ```
 
 ### punctuation
 ```
-Kommst du morgen mit? Das wäre wirklich großartig. Ich warte, bis du da bist.
+Kommst du morgen mit. Das wäre wirklich großartig. Ich warte, bis du da bist.
 ```
 
 ### multiline

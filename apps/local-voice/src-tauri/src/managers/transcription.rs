@@ -1758,7 +1758,15 @@ impl TranscriptionManager {
         if final_result.is_empty() {
             info!("Transcription result is empty");
         } else {
+            // The result IS the user's spoken content. Release builds record
+            // its size only; the text itself appears in debug builds alone.
+            #[cfg(debug_assertions)]
             info!("Transcription result: {}", final_result);
+            #[cfg(not(debug_assertions))]
+            info!(
+                "Transcription result: {} chars",
+                final_result.chars().count()
+            );
         }
 
         self.maybe_unload_immediately("transcription");

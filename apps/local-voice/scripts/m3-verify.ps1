@@ -33,7 +33,7 @@
 param(
     [ValidateSet('all', 'normal', 'umlauts', 'punctuation', 'multiline', 'numbers',
                  'cancel', 'silence', 'rapid', 'focus-change', 'no-edit-field',
-                 'elevated', 'endurance')]
+                 'elevated', 'log-privacy', 'endurance')]
     [string]$Scenario = 'all',
 
     [int]$Runs = 100,
@@ -441,6 +441,37 @@ if ($Scenario -in @('all','elevated')) {
             Start-Sleep -Milliseconds 800
         }
     }
+}
+
+if ($Scenario -in @('all','log-privacy')) {
+    # Reads the actual log after a real dictation instead of trusting the
+    # source. Found a real leak on 2026-08-17: an audit of the source missed
+    # `info!("Transcription result: {}", ...)` entirely, and 47 verbatim
+    # dictations sat in the log of the endurance run. Only measurement catches
+    # a log statement nobody thought to look for.
+    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.sprechstift\logs\handy.log'
+    $np = Start-Notepad
+    $run = Invoke-Dictation -Fixture "$FixtureDir\de_short_01.wav" -Target $np
+    $spoken = ($run.Text) ?? ''
+    Start-Sleep -Seconds 2
+
+    # Every word of the dictation that is distinctive enough to prove a leak.
+    $words = @('Termin', 'Februar', 'dritten')
+    $leaks = @()
+    foreach ($w in $words) {
+        $hits = @(Select-String -Path $log -Pattern $w -ErrorAction SilentlyContinue)
+        if ($hits.Count -gt 0) { $leaks += "$w x$($hits.Count)" }
+    }
+    $ok = $spoken.Trim().Length -gt 0 -and $leaks.Count -eq 0
+    $detail = if ($spoken.Trim().Length -eq 0) {
+        'INCONCLUSIVE - nothing was dictated, so nothing could leak'
+    } elseif ($leaks.Count -eq 0) {
+        'no dictated word appears in the log'
+    } else {
+        "LEAK: $($leaks -join ', ')"
+    }
+    New-Result 'log-privacy' $ok $detail
+    Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 if ($Scenario -eq 'endurance') {
