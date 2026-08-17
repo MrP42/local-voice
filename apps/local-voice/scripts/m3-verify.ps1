@@ -235,6 +235,41 @@ $app = Get-Process sprechstift -ErrorAction SilentlyContinue
 if (-not $app) { throw "sprechstift is not running - start it before running this harness" }
 Write-Host "App PID $($app.Id); harness starting" -ForegroundColor Cyan
 
+# Preflight: does the app react to the hotkey at all?
+#
+# Without this, a dead hotkey looks exactly like a broken dictation path -
+# every scenario reports "0 chars" and the real cause (e.g. a build whose
+# frontend never loaded, so nothing registered the shortcut) stays hidden.
+# Measured against the log, because that is the only channel that proves the
+# app itself saw the key.
+function Assert-HotkeyReaches-App {
+    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.sprechstift\logs\handy.log'
+    if (-not (Test-Path $log)) {
+        Write-Host "preflight: no log file yet, skipping hotkey check" -ForegroundColor DarkGray
+        return
+    }
+    $before = (Get-Item $log).Length
+    Send-Hotkey
+    Start-Sleep -Seconds 2
+    Send-Cancel
+    Start-Sleep -Seconds 2
+    if ((Get-Item $log).Length -eq $before) {
+        throw @"
+The app did not react to the hotkey - aborting before every scenario reports a
+misleading "0 chars".
+
+Checklist:
+  * Was the binary built with 'npx tauri build'? A plain 'cargo build --release'
+    can embed the dev server URL instead of the frontend; the shortcut is then
+    never registered. See docs/BUILD-WINDOWS.md, stumbling block 3.
+  * Is the main window showing actual UI rather than a network error page?
+  * Does the configured binding match a key combination this script can send?
+"@
+    }
+    Write-Host "preflight: hotkey reaches the app" -ForegroundColor DarkGray
+}
+Assert-HotkeyReaches-App
+
 $cases = @(
     @{ n='normal';      f='de_test_01.wav';   expect=@('Spracherkennung','Februar') }
     @{ n='umlauts';     f='de_umlaute.wav';   expect=@('Straße','großen','Köln')    }
@@ -247,10 +282,19 @@ foreach ($c in $cases) {
     if ($Scenario -notin @('all', $c.n)) { continue }
     $np = Start-Notepad
     $run = Invoke-Dictation -Fixture "$FixtureDir\$($c.f)" -Target $np
-    $txt = $run.Text
-    $ok = $txt -and $txt.Trim().Length -gt 0
+    # A failed run yields $null here, and the report must still be written -
+    # a harness that dies on its own failure path reports nothing at all.
+    $txt = ($run.Text) ?? ''
+    $ok = $txt.Trim().Length -gt 0
     if ($ok) { foreach ($e in $c.expect) { if ($txt -notmatch [regex]::Escape($e)) { $ok = $false } } }
-    New-Result $c.n $ok ("{0} chars in {1:N1}s" -f $txt.Trim().Length, $run.Seconds) $txt
+    $clip = if ($ok) { $null } else { Get-ClipboardTextSafe }
+    $detail = "{0} chars in {1:N1}s" -f $txt.Trim().Length, $run.Seconds
+    if (-not $ok) {
+        # Distinguish "nothing happened" from "fallback fired": with the
+        # transcript in the clipboard the contract still held.
+        $detail += "; clipboard={0} chars" -f $(if ($clip) { $clip.Trim().Length } else { 0 })
+    }
+    New-Result $c.n $ok $detail $txt
     $txt | Out-File "$ArtifactDir\notepad-$($c.n).txt" -Encoding UTF8
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
@@ -259,8 +303,8 @@ if ($Scenario -in @('all','cancel')) {
     $np = Start-Notepad
     Invoke-Dictation -Fixture "$FixtureDir\de_test_01.wav" -Target $np -CancelMidway | Out-Null
     Start-Sleep -Seconds 6
-    $txt = Get-NotepadText -Proc $np
-    $ok = -not $txt -or $txt.Trim().Length -eq 0
+    $txt = (Get-NotepadText -Proc $np) ?? ''
+    $ok = $txt.Trim().Length -eq 0
     New-Result 'cancel' $ok "notepad must stay empty; got '$($txt.Trim())'" $txt
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
@@ -268,8 +312,8 @@ if ($Scenario -in @('all','cancel')) {
 if ($Scenario -in @('all','silence')) {
     $np = Start-Notepad
     Invoke-Dictation -NoAudio -Target $np -TimeoutSeconds 18 | Out-Null
-    $txt = Get-NotepadText -Proc $np
-    $ok = (-not $txt) -or ($txt.Trim().Length -lt 25)
+    $txt = (Get-NotepadText -Proc $np) ?? ''
+    $ok = $txt.Trim().Length -lt 25
     New-Result 'silence' $ok "no speech -> '$($txt.Trim())'" $txt
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
@@ -279,7 +323,7 @@ if ($Scenario -in @('all','rapid')) {
     1..4 | ForEach-Object { Send-Hotkey; Start-Sleep -Milliseconds 220 }
     Start-Sleep -Seconds 20
     $alive = $null -ne (Get-Process sprechstift -ErrorAction SilentlyContinue)
-    $txt = Get-NotepadText -Proc $np
+    $txt = (Get-NotepadText -Proc $np) ?? ''
     New-Result 'rapid' $alive "app alive after 4 rapid toggles: $alive; text '$($txt.Trim())'" $txt
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }

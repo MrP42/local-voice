@@ -52,25 +52,65 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\tcs"
 
 Danach konfiguriert der Build neu (dauert einmalig ~7 Minuten).
 
+## Stolperstein 3 — `cargo build --release` erzeugt kein lauffähiges Produkt
+
+**Das ist der teuerste Fallstrick des Projekts.** Er sieht wie ein Erfolg aus:
+`cargo build --release` endet mit Exit 0, die EXE entsteht, sie startet, das
+Tray-Symbol erscheint — und die Anwendung ist trotzdem funktionsunfähig.
+
+Beobachtet 2026-08-17: Das Fenster zeigte nur
+`localhost – Netzwerkfehler`. Die Webview lud `http://localhost:1420`,
+also den **Entwicklungsserver**, statt des eingebetteten Frontends. Ohne
+Frontend ruft niemand `initialize_shortcuts` auf (siehe `lib.rs`: Shortcuts
+werden bewusst vom Frontend registriert, nicht beim Backend-Start) — der
+globale Hotkey ist damit tot, und die gesamte Diktatstrecke reagiert auf
+nichts.
+
+Nachweis am Artefakt:
+
+```powershell
+$t = [System.Text.Encoding]::ASCII.GetString(
+       [System.IO.File]::ReadAllBytes("src-tauri\target\release\sprechstift.exe"))
+$t.Contains("localhost:1420")     # darf NICHT True sein
+$t.Contains("index-<hash>.js")    # ein Asset aus dist\assets\ - muss True sein
+```
+
+Ursache: Das `dev`-Flag setzt `tauri-build` in `build.rs` — und dessen
+Ergebnis wird von cargo gecacht. Ein Cache aus einer früheren
+`tauri dev`-Sitzung überlebt beliebig viele `cargo build --release`-Läufe,
+weil `build.rs` nicht neu ausgeführt wird. Hier stammte er vom 28./29.07.
+
+**Deshalb ist die Tauri-CLI der einzige gültige Build-Weg**; sie setzt die
+Umgebungsvariablen korrekt und baut das Frontend vorher mit. Bei Verdacht
+zusätzlich den Cache löschen:
+
+```powershell
+Get-ChildItem "src-tauri\target\release\build" -Directory -Filter "sprechstift-*" |
+  Remove-Item -Recurse -Force
+```
+
+`cargo build --release` bleibt für einen reinen **Kompilierbarkeitstest**
+brauchbar. Als Beleg dafür, dass die Anwendung funktioniert, ist er wertlos.
+
 ## Ablauf
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
-
-# 1) Frontend
 cd apps\local-voice
-npm run build
 
-# 2) Rust-Tests
+# 1) Rust-Tests (Frontend nicht nötig)
 cd src-tauri
 cargo test --lib          # erwartet: 198 passed, 0 failed
-
-# 3) Release-Binary
-cargo build --release     # -> target\release\sprechstift.exe
-
-# 4) Formatprüfung
 cargo fmt --check
+cd ..
+
+# 2) Lauffähiges Release-Binary - NICHT cargo build, siehe Stolperstein 3.
+#    Baut das Frontend selbst (beforeBuildCommand) und bettet es ein.
+npx tauri build --no-bundle   # -> src-tauri\target\release\sprechstift.exe
 ```
+
+`--no-bundle` überspringt den Installer; für ein Auslieferungspaket entfällt
+der Schalter (siehe Issue #7).
 
 ## Native Abnahme
 
