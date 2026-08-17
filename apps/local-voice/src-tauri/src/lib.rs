@@ -880,6 +880,17 @@ pub fn run(cli_args: CliArgs) {
                     .maximizable(true)
                     .visible(false);
 
+            // Set the taskbar icon explicitly. Windows does not fall back to
+            // the executable's icon for a window whose icon was never set, so
+            // without this the frame kept showing the icon of whatever was
+            // baked in previously — and no amount of rebuilding changes that.
+            // Embedded at compile time so it cannot go missing next to an
+            // unbundled binary.
+            match Image::from_bytes(include_bytes!("../icons/128x128.png")) {
+                Ok(icon) => win_builder = win_builder.icon(icon).expect("window icon"),
+                Err(error) => log::warn!("Could not load the window icon: {error}"),
+            }
+
             if let Some(data_dir) = portable::data_dir() {
                 win_builder = win_builder.data_directory(data_dir.join("webview"));
             }

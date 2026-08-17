@@ -479,13 +479,15 @@ pub struct AppSettings {
     pub mic_sensitivity: f32,
     /// Right-hand attention context for Parakeet-family cache-aware streaming,
     /// in encoder frames. This is what actually governs how long the model
-    /// waits before it will commit a word: less look-ahead, less delay, less
+    /// waits before committing a word: less look-ahead, less delay, less
     /// accuracy. 0 keeps the model's own default.
     ///
-    /// Cache-aware models are trained for a fixed set of context sizes, so an
-    /// arbitrary number is not necessarily honoured — treat it as a dial to
-    /// try, not a guarantee.
-    #[serde(default)]
+    /// **Only values the model was trained for are accepted.** Nemotron
+    /// Streaming 3.5 lists `13, 6, 3, 0` — at roughly 80 ms per frame that is
+    /// about 1.0 s, 480 ms, 240 ms and none. Anything else is rejected by the
+    /// engine; the app then falls back to the default and logs the accepted
+    /// values, so read the log rather than guessing.
+    #[serde(default = "default_stream_lookahead_frames")]
     pub stream_lookahead_frames: i32,
     /// Run local Ollama-based refinement for text that continuous streaming has
     /// already inserted into the target application.
@@ -582,6 +584,49 @@ fn default_stream_injection() -> bool {
 /// requiring a prefix to be confirmed twice before it is typed out.
 fn default_stream_commit_agreement() -> u32 {
     2
+}
+
+/// 6 frames of look-ahead, roughly 480 ms.
+///
+/// Measured on 2026-08-17 against Nemotron Streaming 3.5, timing how often the
+/// text in the target window actually changed:
+///
+/// | look-ahead | median update | text |
+/// |---|---|---|
+/// | 13 (model default) | 1090 ms | complete |
+/// | 6 | 550 ms | complete |
+/// | 3 | 312 ms | **damaged** - "Spracherken Termin" |
+/// | 2 | - | rejected, stream never starts |
+///
+/// 3 is where it breaks: with that little context the model revises text it
+/// has already committed, and an append-only injector cannot take back what it
+/// typed into someone's document. 6 halves the delay and still survives.
+fn default_stream_lookahead_frames() -> i32 {
+    6
+}
+
+/// Look-ahead sizes the Parakeet-family streaming models accept. Anything else
+/// makes the engine refuse to start the stream, so an unknown value is treated
+/// as "use the model default" rather than as a dictation lost to a typo.
+pub const SUPPORTED_LOOKAHEAD_FRAMES: [i32; 4] = [0, 3, 6, 13];
+
+/// `None` means "let the model decide". 0 is a legitimate look-ahead value but
+/// is also the "unset" default, so it deliberately maps to the model default —
+/// zero look-ahead damages the text badly enough that nobody should land on it
+/// by leaving a field empty.
+pub fn validated_lookahead(frames: i32) -> Option<i32> {
+    if frames <= 0 {
+        return None;
+    }
+    if SUPPORTED_LOOKAHEAD_FRAMES.contains(&frames) {
+        Some(frames)
+    } else {
+        warn!(
+            "Ignoring stream_lookahead_frames={frames}: the model accepts only \
+             {SUPPORTED_LOOKAHEAD_FRAMES:?}. Using the model default instead."
+        );
+        None
+    }
 }
 
 /// Mid-scale, which maps to the VAD threshold this app used as a constant.
@@ -996,7 +1041,7 @@ pub fn get_default_settings() -> AppSettings {
         stream_injection: default_stream_injection(),
         stream_commit_agreement: default_stream_commit_agreement(),
         mic_sensitivity: default_mic_sensitivity(),
-        stream_lookahead_frames: 0,
+        stream_lookahead_frames: default_stream_lookahead_frames(),
         refine_enabled: default_refine_enabled(),
         refine_model: None,
         refine_sentence_timeout_ms: default_refine_sentence_timeout_ms(),
@@ -1257,6 +1302,20 @@ mod tests {
         assert_eq!(settings.refine_model, None);
         assert_eq!(settings.refine_sentence_timeout_ms, 4_000);
         assert_eq!(settings.refine_final_timeout_ms, 12_000);
+    }
+
+    /// An unsupported look-ahead cost a whole dictation once (the engine
+    /// refuses to open the stream), so only trained values may reach it.
+    #[test]
+    fn only_look_ahead_values_the_model_accepts_are_passed_through() {
+        use super::validated_lookahead as v;
+
+        assert_eq!(v(6), Some(6), "a trained value is used");
+        assert_eq!(v(13), Some(13));
+        assert_eq!(v(2), None, "2 is what broke the stream");
+        assert_eq!(v(7), None);
+        assert_eq!(v(0), None, "unset means: let the model decide");
+        assert_eq!(v(-1), None);
     }
 
     /// The scale must stay monotonic — a "more sensitive" setting that raises

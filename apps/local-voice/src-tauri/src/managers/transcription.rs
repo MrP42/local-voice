@@ -1051,11 +1051,18 @@ impl TranscriptionManager {
             // matter what the agreement count was. Only applied when the user
             // set it, and only for the Parakeet family (which is what the
             // Nemotron streaming models are).
-            let family_ext = (stream_lookahead_frames > 0).then(|| {
-                StreamExtension::ParakeetStream(ParakeetStreamOptions {
-                    att_context_right: Some(stream_lookahead_frames),
-                })
-            });
+            // Validated up front rather than sent blind. A value the model was
+            // not trained for is rejected by the engine and the stream never
+            // begins at all — measured: `att_context_right=2 not in model's
+            // training menu; available: 13 6 3 0` cost the whole dictation.
+            // A dial nobody can see is not worth a silent failure, so an
+            // unknown value is dropped and the model's own default used.
+            let family_ext = crate::settings::validated_lookahead(stream_lookahead_frames)
+                .map(|frames| {
+                    StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                        att_context_right: Some(frames),
+                    })
+                });
             let stream_options = StreamOptions {
                 stable_prefix_agreement_n: stream_commit_agreement,
                 family: family_ext,
