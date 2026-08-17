@@ -17,12 +17,45 @@ Verhalten gegenüber `SendInput`), und die Anwendung behauptet es auch nicht.
 
 | Grenze | Ursache | Umgang |
 |---|---|---|
-| **Einfügen in Fenster mit Administratorrechten schlägt fehl** | Windows UIPI verwirft Eingaben aus Prozessen niedrigerer Integritätsstufe **ohne Fehlermeldung** | Wird **vorab erkannt**: `paste_guard` fragt das Token des Zielprozesses ab und versucht gar nicht erst einzufügen. Text bleibt in der Zwischenablage, Overlay-Meldung erscheint. Behebbar nur über ein UIAccess-Manifest (erzwingt Code-Signatur **und** Installation in Program Files) oder Start als Administrator. Beides ist für v1 bewusst nicht gewählt. |
+| **Der Hotkey funktioniert nicht, solange ein erhöhtes Fenster den Fokus hat** | Ein Low-Level-Keyboard-Hook in einem nicht erhöhten Prozess erhält keine Tastenereignisse, während ein Fenster höherer Integritätsstufe den Fokus besitzt (UIPI) | **Nicht behebbar ohne Erhöhung.** Es gibt keinen stillen Textverlust — es passiert schlicht nichts, und das Ausbleiben der Aufnahmeanzeige ist sichtbar. Wer dort diktieren will, muss Sprechstift als Administrator starten. Siehe Messung unten. |
+| **Einfügen in Fenster mit Administratorrechten schlägt fehl** | Windows UIPI verwirft Eingaben aus Prozessen niedrigerer Integritätsstufe **ohne Fehlermeldung** | Wird **vorab erkannt**: `paste_guard` fragt das Token des Zielprozesses ab und versucht gar nicht erst einzufügen. Text bleibt in der Zwischenablage, Overlay-Meldung erscheint — nativ verifiziert, siehe unten. Behebbar nur über ein UIAccess-Manifest (erzwingt Code-Signatur **und** Installation in Program Files) oder Start als Administrator. Beides ist für v1 bewusst nicht gewählt. |
 | **Der Erfolg einer Einfügung ist nicht messbar** | `SendInput` bestätigt nur das Einreihen von Eingaben, nicht die Übernahme durch die Zielanwendung | Alles Beobachtbare *um* den Versuch herum wird geprüft (Zielfenster, Fokus vorher und nachher, Rechtelage, Rücklesen der Zwischenablage). Die Übernahme selbst bleibt unbeobachtbar: **eine Anwendung, die Strg+V ignoriert, sieht für uns aus wie Erfolg.** Der Text steht dann noch im Verlaufsfenster. |
 | **Die Zwischenablage lässt sich nicht vollständig wiederherstellen** | Delayed Rendering und OLE-Datenobjekte sind nicht rundreisefähig | Zugesagt werden ausschließlich `CF_UNICODETEXT`, `CF_HTML` und `CF_HDROP`. Exotische Formate gehen verloren. |
 | **`RegisterHotKey` liefert kein Key-Up-Ereignis** | Von Windows so vorgesehen. `MOD_KEYUP` existiert nur in der archivierten Windows-CE-Dokumentation und gilt nicht für Desktop-Windows | Push-to-talk läuft über Low-Level-Keyboard-Hooks (`handy-keys`), abgesichert durch mehrere voneinander unabhängige Stopp-Auslöser. |
 | **Ein Low-Level-Hook kann still entfernt werden** | Überschreitet er `LowLevelHooksTimeout`, entfernt Windows ihn **ohne jede Benachrichtigung** | Periodisches Neusetzen sowie Neusetzen nach Session-Unlock. |
 | **Mikrofon kann still stumm bleiben** | Windows 11 hat einen separaten Schalter für Desktop-App-Mikrofonzugriff. Ist er aus, wird das Gerät weiterhin aufgelistet, liefert aber nur Stille | Erkennung über dauerhaft nahezu null Pegel, dann Verweis auf die Systemeinstellung. |
+
+## Gemessen: Der Hotkey ist gegenüber erhöhten Fenstern blind
+
+**OBSERVED 2026-08-17.** Log-Zuwachs der Anwendung nach genau einem simulierten
+Hotkey (`keybd_event`, Strg-links + Windows-links):
+
+| Vordergrundfenster | Log wuchs um |
+|---|---|
+| Task-Manager (erhöht, verifiziert über `TokenElevation`) | **0 Bytes** — zweimal reproduziert |
+| kein erhöhtes Fenster | **8223 Bytes** |
+
+Das ist keine Eigenheit der Simulation, sondern UIPI: Ein Low-Level-Hook in
+einem Prozess niedrigerer Integritätsstufe bekommt die Ereignisse nicht.
+
+**Folge für den Vertrag:** In dieser Lage entsteht kein stiller Textverlust,
+weil gar keine Aufnahme beginnt oder endet. Der Zweig `TargetElevated` des
+Guards ist über den Hotkey deshalb praktisch unerreichbar — erreichbar ist er
+über `--toggle-transcription`, und genau so wird er auch getestet.
+
+## Verifiziert: erhöhtes Ziel führt zu Zwischenablage plus Meldung
+
+**OBSERVED 2026-08-17**, Aufnahme per CLI gestartet und gestoppt, Task-Manager
+beim Stopp im Vordergrund:
+
+```
+paste guard: target=Some(PasteTarget { hwnd: 97263922, pid: 160960 })
+             foreground=Some(97263922) self_elevated=false target_elevated=Some(true)
+Automatic paste not performed: TargetElevated
+Zwischenablage danach: "Der Termin ist am dritten Februar."
+```
+
+Kein Einfügeversuch, vollständiges Transkript in der Zwischenablage.
 
 ## Der abgesicherte Einfügepfad — was er prüft und was nicht
 
@@ -112,9 +145,9 @@ will, löscht sie von Hand:
 
 ## Noch nicht implementiert (Stand 2026-08-17)
 
-- Native Windows-Abnahme des stabilisierten Pfads (`scripts/m3-verify.ps1` ist geschrieben,
-  aber noch **nicht gelaufen**)
-- Dauerlauf über 100 Diktate
+- Abnahme gegen Browser-Textfeld, Microsoft Word und VS Code. Verifiziert ist bisher
+  **Notepad** (UI-Automation-Rücklesung), der Explorer als Fenster ohne Eingabefeld und
+  ein erhöhter Task-Manager.
 - Der Segment-Modus (`segment_injection`, standardmäßig aus) nutzt weiterhin den **alten,
   ungeschützten** Einfügepfad `clipboard::paste`. Nur der Abschluss-Einfügevorgang der
   Standard-Diktatstrecke ist abgesichert.

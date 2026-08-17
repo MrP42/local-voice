@@ -268,7 +268,10 @@ function Assert-HotkeyReaches-App {
 The app did not react to the hotkey - aborting before every scenario reports a
 misleading "0 chars".
 
-Checklist:
+Checklist, most likely cause first:
+  * Is an ELEVATED window in the foreground (Task Manager, an admin console)?
+    A low-level keyboard hook in a non-elevated process receives nothing while
+    such a window has focus. Close it and run again.
   * Was the binary built with 'npx tauri build'? A plain 'cargo build --release'
     can embed the dev server URL instead of the frontend; the shortcut is then
     never registered. See docs/BUILD-WINDOWS.md, stumbling block 3.
@@ -278,7 +281,9 @@ Checklist:
     }
     Write-Host "preflight: hotkey reaches the app" -ForegroundColor DarkGray
 }
-Assert-HotkeyReaches-App
+# The elevated scenario is driven through the CLI precisely because the hotkey
+# cannot work there, so its preflight would always fail.
+if ($Scenario -ne 'elevated') { Assert-HotkeyReaches-App }
 
 $cases = @(
     @{ n='normal';      f='de_test_01.wav';   expect=@('Spracherkennung','Februar') }
@@ -390,20 +395,51 @@ if ($Scenario -in @('all','no-edit-field')) {
 }
 
 if ($Scenario -in @('all','elevated')) {
-    $elevated = Get-Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.MainWindowHandle -ne 0 -and -not $_.Path
-    } | Select-Object -First 1
-    if (-not $elevated) {
-        New-Result 'elevated' $true 'SKIPPED - no elevated window with a visible frame found'
+    # Driven through the CLI, NOT the hotkey - and that is the whole point.
+    #
+    # A low-level keyboard hook in a non-elevated process receives nothing
+    # while an elevated window holds focus (UIPI). Measured 2026-08-17: with
+    # Task Manager focused the app's log did not grow by a single byte on a
+    # hotkey; with it closed, the same keystroke produced 8223 bytes. So the
+    # stop hotkey can never arrive in this situation, no recording is ever
+    # stopped there, and driving this case by hotkey tests nothing.
+    #
+    # --toggle-transcription reaches the running instance through
+    # tauri_plugin_single_instance instead, which is how the guard's
+    # TargetElevated branch becomes reachable at all.
+    $tm = Get-Process Taskmgr -ErrorAction SilentlyContinue |
+          Where-Object MainWindowHandle -ne 0 | Select-Object -First 1
+    $startedTaskmgr = $false
+    if (-not $tm) {
+        Start-Process taskmgr
+        Start-Sleep -Seconds 4
+        $tm = Get-Process Taskmgr -ErrorAction SilentlyContinue |
+              Where-Object MainWindowHandle -ne 0 | Select-Object -First 1
+        $startedTaskmgr = $null -ne $tm
+    }
+    if (-not $tm) {
+        New-Result 'elevated' $true 'SKIPPED - no elevated window available'
     } else {
-        Set-Clipboard -Value ''
-        [M3.Native]::SetForegroundWindow($elevated.MainWindowHandle) | Out-Null
-        Start-Sleep -Milliseconds 800
-        Invoke-Dictation -Fixture "$FixtureDir\de_short_01.wav" -NoWait | Out-Null
-        Start-Sleep -Seconds 12
-        $clip = Get-ClipboardTextSafe
-        $ok = $clip -and $clip.Trim().Length -gt 0
-        New-Result 'elevated' $ok ("target '{0}': transcript in clipboard: {1}" -f $elevated.ProcessName, $ok) $clip
+        Set-Clipboard -Value 'MARKER-BEFORE'
+        & $AppExe --toggle-transcription | Out-Null
+        Start-Sleep -Milliseconds 1200
+        Play-Fixture "$FixtureDir\de_short_01.wav"
+        Start-Sleep -Milliseconds 600
+        [M3.Native]::SetForegroundWindow($tm.MainWindowHandle) | Out-Null
+        Start-Sleep -Milliseconds 1500
+        & $AppExe --toggle-transcription | Out-Null
+        Start-Sleep -Seconds 14
+        $clip = (Get-ClipboardTextSafe) ?? ''
+        # The contract: no paste attempt, but the full transcript is parked in
+        # the clipboard. The marker still sitting there means nothing happened.
+        $ok = $clip.Trim().Length -gt 0 -and $clip -notmatch 'MARKER-BEFORE'
+        New-Result 'elevated' $ok ("elevated target: transcript in clipboard: {0}" -f $ok) $clip
+        # Leaving an elevated window in the foreground would blind the hotkey
+        # for every later run, so close what this scenario opened.
+        if ($startedTaskmgr) {
+            Stop-Process -Id $tm.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 800
+        }
     }
 }
 

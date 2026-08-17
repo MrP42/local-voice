@@ -98,8 +98,27 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 | `npx tauri build --no-bundle` | siehe unten |
 | Frontend `npm run build` | **verifiziert** — Exit 0 |
 | Kein Transkript-Klartext im Release-Binary | **verifiziert am Artefakt** — siehe unten |
-| Native Windows-Abnahme (`scripts/m3-verify.ps1`) | **offen** — Skript existiert, ist aber noch nicht gelaufen |
-| 100 aufeinanderfolgende Diktate | **offen** |
+| Native Windows-Abnahme (`scripts/m3-verify.ps1`) | **verifiziert** — 11/11 Szenarien, siehe Matrix unten |
+| 100 aufeinanderfolgende Diktate | siehe Matrix unten |
+
+### Windows-Testmatrix (2026-08-17, echtes Mikrofon, echter Hotkey, echtes Notepad)
+
+| Fall | Ergebnis | Beleg |
+|---|---|---|
+| Normaltext | PASS | 100 Zeichen in 1,9 s |
+| Umlaute und ß | PASS | 103 Zeichen — „Der ältere Herr aus der Straße … Fußballschuhen … Köln." (im M2-Lauf noch FAIL) |
+| Satzzeichen | PASS | 77 Zeichen |
+| Mehrzeilig | PASS | 101 Zeichen |
+| Zahlen | PASS | 56 Zeichen |
+| Abbruch | PASS | Notepad bleibt leer |
+| Stille | PASS | kein Text, kein Hänger |
+| Schnelles mehrfaches Umschalten | PASS | App lebt nach 4 Zyklen, kein Text |
+| Fokuswechsel während der Aufnahme | PASS | Ausgangsfenster bleibt **leer**, Text landet im Zielfenster |
+| Fenster ohne Eingabefeld (Explorer) | PASS | App lebt; Text im Verlauf (siehe Einschränkung) |
+| Erhöhtes Ziel (Task-Manager) | PASS | kein Einfügeversuch, vollständiges Transkript in der Zwischenablage |
+
+Transkription war in **allen** Fällen erfolgreich; keine Duplikate, kein stiller Verlust,
+Einfügedauer rund 317 ms.
 
 #### Beleg für die Log-Bereinigung
 
@@ -131,6 +150,26 @@ Längen-Varianten schon.
    nicht das Backend), der globale Hotkey ist tot.
 
 Alle drei sind in `docs/BUILD-WINDOWS.md` mit Nachweis und Abhilfe beschrieben.
+
+### Der Testfall „erhöhtes Ziel" war zuerst falsch konstruiert
+
+Er scheiterte im ersten vollständigen Lauf — nicht am Einfügepfad, sondern am Testaufbau:
+Er löste die Aufnahme per Hotkey aus, und **der Hotkey ist gegenüber erhöhten Fenstern
+blind** (gemessen: 0 Bytes Log-Zuwachs mit erhöhtem Task-Manager im Vordergrund gegenüber
+8223 Bytes ohne). Eine Aufnahme, die dort nie startet, kann auch keinen Fallback auslösen.
+
+Umgebaut auf `--toggle-transcription`, das die laufende Instanz über
+`tauri_plugin_single_instance` erreicht statt über den Tastatur-Hook. Damit ist der Zweig
+erreichbar — und er greift:
+
+```
+paste guard: target=…pid: 160960 foreground=… self_elevated=false target_elevated=Some(true)
+Automatic paste not performed: TargetElevated
+Zwischenablage danach: "Der Termin ist am dritten Februar."
+```
+
+Zusätzlich fehlte dem Guard jede Protokollierung seiner eigenen Entscheidung — ohne die
+war der Fehlschlag im Log unsichtbar. Die Zeile oben ist die Nachrüstung.
 
 ### Erster nativer Abnahmelauf: fehlgeschlagen, Ursache geklärt
 
