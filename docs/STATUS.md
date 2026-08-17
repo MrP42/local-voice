@@ -116,9 +116,12 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 | Fokuswechsel während der Aufnahme | PASS | Ausgangsfenster bleibt **leer**, Text landet im Zielfenster |
 | Fenster ohne Eingabefeld (Explorer) | PASS | App lebt; Text im Verlauf (siehe Einschränkung) |
 | Erhöhtes Ziel (Task-Manager) | PASS | kein Einfügeversuch, vollständiges Transkript in der Zwischenablage |
+| Datenschutz des Logs | PASS | keines der diktierten Wörter steht im Log |
 
 Transkription war in **allen** Fällen erfolgreich; keine Duplikate, kein stiller Verlust,
 Einfügedauer rund 317 ms.
+
+**Nicht abgenommen** und daher nicht behauptet: Browser-Textfeld, Microsoft Word, VS Code.
 
 #### Beleg für die Log-Bereinigung
 
@@ -213,10 +216,11 @@ sondern schreibt den Bericht auch bei Fehlschlägen.
 
 Als Issues erfasst unter https://github.com/MrP42/sprechstift/issues
 
-1. **#1** `scripts/m3-verify.ps1` real ausführen (Notepad, Browser, VS Code, Word) und Evidenz ablegen
-2. **#2** Dauerlauf `-Scenario endurance -Runs 100`
+1. **#1** Abnahme gegen Browser, Word und VS Code nachziehen — Notepad, Explorer und
+   erhöhter Task-Manager sind erledigt
+2. **#6** Alte Logdatei mit den 47 Klartext-Diktaten löschen
 3. **#4** Ursache der defekten Live-Injektion messen, statt weiter zu raten
-4. **#5** Refinement-Stufe erst nach bestandener Abnahme optional aktivieren
+4. **#5** Refinement-Stufe erst danach optional aktivieren
 5. **#7** Installer, SBOM, Third-Party-Notices
 
 ## Repository
