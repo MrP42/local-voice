@@ -94,10 +94,27 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 | Prüfung | Ergebnis |
 |---|---|
 | `cargo test --lib` frisch ausgeführt | **verifiziert** — 198 passed, 0 failed (vorher 190; 8 neue) |
-| `cargo build --release` frisch | **verifiziert** — Exit 0 |
+| `cargo build --release` frisch | **verifiziert** — Exit 0, 5 min 53 s, `sprechstift.exe` 43,7 MB vom 17.08.2026 19:01 |
 | Frontend `npm run build` | **verifiziert** — Exit 0 |
+| Kein Transkript-Klartext im Release-Binary | **verifiziert am Artefakt** — siehe unten |
 | Native Windows-Abnahme (`scripts/m3-verify.ps1`) | **offen** — Skript existiert, ist aber noch nicht gelaufen |
 | 100 aufeinanderfolgende Diktate | **offen** |
+
+#### Beleg für die Log-Bereinigung
+
+Nicht der Quelltext wurde geprüft, sondern das ausgelieferte Binary: die
+Formatzeichenketten der Klartext-Zweige kommen darin nicht mehr vor, die
+Längen-Varianten schon.
+
+| Formatzeichenkette | in `sprechstift.exe` |
+|---|---|
+| `STREAMDIAG committed(len={})={:?}` | **nein** |
+| `STREAMDIAG delta(len={})={:?}` | **nein** |
+| `Transcription completed in {:?}: '{}'` | **nein** |
+| `gate={:?} original={:?} candidate={:?}` | **nein** |
+| `STREAMDIAG committed_len=` | ja |
+| `Transcription completed in {:?} ({} chars)` | ja |
+| `Text refinement rejected: stage=` | ja |
 
 Die Toolchain war zu Beginn nicht lauffähig: `cargo` fehlte in beiden Shell-PATHs (liegt unter
 `~\.cargo\bin`), und der CMake-Cache von `transcribe-cpp-sys` war auf den Ninja-Generator
@@ -106,7 +123,18 @@ der Weg dorthin steht in `docs/BUILD-WINDOWS.md`.
 
 ## Nächste Schritte
 
-1. `scripts/m3-verify.ps1` real ausführen (Notepad, Browser, VS Code, Word) und Evidenz ablegen
-2. Dauerlauf `-Scenario endurance -Runs 100`
-3. Refinement-Stufe erst nach bestandener Abnahme optional aktivieren
-4. Installer, SBOM, Third-Party-Notices
+Als Issues erfasst unter https://github.com/MrP42/sprechstift/issues
+
+1. **#1** `scripts/m3-verify.ps1` real ausführen (Notepad, Browser, VS Code, Word) und Evidenz ablegen
+2. **#2** Dauerlauf `-Scenario endurance -Runs 100`
+3. **#4** Ursache der defekten Live-Injektion messen, statt weiter zu raten
+4. **#5** Refinement-Stufe erst nach bestandener Abnahme optional aktivieren
+5. **#7** Installer, SBOM, Third-Party-Notices
+
+## Repository
+
+| | |
+|---|---|
+| `origin` | `git@github.com:MrP42/sprechstift.git` — **privat** |
+| `upstream` | `https://github.com/cjpais/Handy.git` — fremdes Fork-Original, **niemals dorthin pushen** |
+| Arbeitsbranch | `feat/m3-stabilize-paste-path` |
