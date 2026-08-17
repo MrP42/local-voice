@@ -97,8 +97,41 @@ fn build_console_filter() -> env_filter::Filter {
     builder.build()
 }
 
+/// Whether the main window has been placed on screen yet. The builder's
+/// `.center()` does not survive to first paint — measured: the window came up
+/// 1499 px off centre — so it is re-applied here, where the final size is
+/// known. Only once: after that the position is the user's business.
+static MAIN_WINDOW_PLACED: AtomicBool = AtomicBool::new(false);
+
+/// Put the window in the middle of the primary monitor.
+///
+/// Computed rather than delegated: both `WebviewWindowBuilder::center()` and
+/// `WebviewWindow::center()` left the window 1489 px off centre on this
+/// two-monitor setup (primary 3840x2160 at 0,0 plus a portrait screen to its
+/// right). Physical pixels throughout, so DPI scaling cannot skew it.
+fn centre_on_primary_monitor(window: &tauri::WebviewWindow) {
+    let Ok(Some(monitor)) = window.primary_monitor() else {
+        log::warn!("No primary monitor reported; leaving the window where it is");
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        log::warn!("Could not read the window size; leaving it where it is");
+        return;
+    };
+    let screen = monitor.size();
+    let origin = monitor.position();
+    let x = origin.x + (screen.width as i32 - size.width as i32) / 2;
+    let y = origin.y + (screen.height as i32 - size.height as i32) / 2;
+    if let Err(e) = window.set_position(tauri::PhysicalPosition::new(x, y)) {
+        log::warn!("Could not centre the main window: {}", e);
+    }
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
+        if !MAIN_WINDOW_PLACED.swap(true, Ordering::AcqRel) {
+            centre_on_primary_monitor(&main_window);
+        }
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
         }
