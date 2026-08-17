@@ -20,6 +20,18 @@ pub fn is_portable() -> bool {
     crate::portable::is_portable()
 }
 
+/// Subscribe the main window to microphone level events.
+///
+/// Off by default: the levels fire at audio-callback rate, and delivering them
+/// to a webview that draws nothing is pure overhead (see the note on issue
+/// #1279 in overlay.rs). The dictation test turns this on while it is visible
+/// and off again when it is not.
+#[tauri::command]
+#[specta::specta]
+pub fn set_level_monitoring(enabled: bool) {
+    crate::overlay::set_main_window_level_monitoring(enabled);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_app_dir_path(app: AppHandle) -> Result<String, String> {

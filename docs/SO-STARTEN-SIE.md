@@ -53,17 +53,38 @@ greift der oben beschriebene Weg über die Zwischenablage.
 Die Anwendung hält den Einfügeversuch dann für erfolgreich, der Text landet aber
 nirgends. Er steht weiterhin im Verlauf.
 
+## Live-Einfügung während des Sprechens (Streaming)
+
+Der Text erscheint dabei schon **während** Sie sprechen, nicht erst nach dem
+Beenden. Verifiziert am 17.08.2026 — vollständige Sätze, Sprechpausen und Umlaute
+kamen korrekt an, ohne Zeichenwiederholung und ohne Duplikate.
+
+Dafür sind zwei Dinge nötig:
+
+1. **Ein streaming-fähiges Modell.** Für Deutsch ist das **Nemotron Streaming
+   3.5**; es ist heruntergeladen und geprüft. Parakeet V3 kann kein Streaming und
+   ignoriert den Schalter.
+2. **Die Einstellung „Live-Einfügung"** (`stream_injection`) einschalten.
+
+**Zwei Dinge, die Sie dabei wissen sollten:**
+
+- **Der Fokus wird während des Streamings nicht überwacht.** Wechseln Sie
+  mitten im Sprechen das Fenster, schreiben die folgenden Bruchstücke in das
+  neue Fenster. Der Schutzmechanismus des Standardpfads greift hier nicht.
+- **Nemotron normalisiert Zahlen nicht.** Sie erhalten „dritten Februar um
+  vierzehn Uhr dreißig" statt „3. Februar um 14.30 Uhr". Wer die normalisierte
+  Form braucht, bleibt bei Parakeet V3 ohne Streaming.
+
+Umschalten der Modelle im Hauptfenster unter „Modelle".
+
 ## Einstellungen, die bewusst so stehen
 
 | Einstellung | Wert | Grund |
 |---|---|---|
-| Modell | Parakeet V3 | verifiziert, rund 23-fache Echtzeit auf der CPU |
-| Live-Einfügung während des Sprechens | aus | liefert nachweislich falschen Text, siehe `KNOWN-LIMITATIONS.md` |
+| Modell | Parakeet V3 | verifiziert, rund 23-fache Echtzeit, normalisiert Zahlen |
+| Live-Einfügung während des Sprechens | aus | funktioniert, aber ohne Fokusüberwachung — siehe oben |
 | KI-Nachbearbeitung (Ollama) | aus | gehört nicht in den stabilen Pfad |
 | Debug-Modus | aus | — |
-
-Die Live-Einfügung lässt sich nicht mehr versehentlich aktivieren: Sie verlangt
-zusätzlich den Schalter für experimentelle Funktionen.
 
 ## Falls etwas klemmt
 

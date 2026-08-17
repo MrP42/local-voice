@@ -465,6 +465,28 @@ pub struct AppSettings {
     /// the user is still speaking instead of pasting once at the end.
     #[serde(default = "default_stream_injection")]
     pub stream_injection: bool,
+    /// Agreeing hypotheses a prefix needs before streaming freezes it and it
+    /// may be typed into the document. Lower reacts faster, higher is safer;
+    /// 0 keeps the library default (3). Committed text cannot be retracted
+    /// from a foreign window, so this trades latency against correctness.
+    #[serde(default = "default_stream_commit_agreement")]
+    pub stream_commit_agreement: u32,
+    /// Microphone sensitivity, 0.0 (only loud, close speech counts) to 1.0
+    /// (picks up quiet speech, and more background noise with it). Mapped onto
+    /// the Silero VAD threshold, inverted: more sensitive means a lower
+    /// threshold. 0.5 reproduces the previous fixed threshold of 0.3.
+    #[serde(default = "default_mic_sensitivity")]
+    pub mic_sensitivity: f32,
+    /// Right-hand attention context for Parakeet-family cache-aware streaming,
+    /// in encoder frames. This is what actually governs how long the model
+    /// waits before it will commit a word: less look-ahead, less delay, less
+    /// accuracy. 0 keeps the model's own default.
+    ///
+    /// Cache-aware models are trained for a fixed set of context sizes, so an
+    /// arbitrary number is not necessarily honoured — treat it as a dial to
+    /// try, not a guarantee.
+    #[serde(default)]
+    pub stream_lookahead_frames: i32,
     /// Run local Ollama-based refinement for text that continuous streaming has
     /// already inserted into the target application.
     #[serde(default = "default_refine_enabled")]
@@ -554,6 +576,30 @@ fn default_overlay_style() -> OverlayStyle {
 /// docs/KNOWN-LIMITATIONS.md). Enable only when experimenting with it.
 fn default_stream_injection() -> bool {
     false
+}
+
+/// 2 rather than the library's 3: measurably quicker text while still
+/// requiring a prefix to be confirmed twice before it is typed out.
+fn default_stream_commit_agreement() -> u32 {
+    2
+}
+
+/// Mid-scale, which maps to the VAD threshold this app used as a constant.
+fn default_mic_sensitivity() -> f32 {
+    0.5
+}
+
+/// Map the 0..1 sensitivity onto a Silero VAD threshold.
+///
+/// Inverted and deliberately narrow: 0.55 rejects all but clear, close speech,
+/// 0.10 reacts to almost anything including keyboard noise. 0.5 sensitivity
+/// yields 0.3, the value that was hard-coded before this became a setting.
+pub fn vad_threshold_for_sensitivity(sensitivity: f32) -> f32 {
+    // The two ends must average to 0.3 so mid-scale reproduces the old constant.
+    const QUIETEST: f32 = 0.50;
+    const MOST_SENSITIVE: f32 = 0.10;
+    let s = sensitivity.clamp(0.0, 1.0);
+    QUIETEST - (QUIETEST - MOST_SENSITIVE) * s
 }
 
 fn default_refine_enabled() -> bool {
@@ -948,6 +994,9 @@ pub fn get_default_settings() -> AppSettings {
         extra_recording_buffer_ms: 0,
         vad_enabled: default_vad_enabled(),
         stream_injection: default_stream_injection(),
+        stream_commit_agreement: default_stream_commit_agreement(),
+        mic_sensitivity: default_mic_sensitivity(),
+        stream_lookahead_frames: 0,
         refine_enabled: default_refine_enabled(),
         refine_model: None,
         refine_sentence_timeout_ms: default_refine_sentence_timeout_ms(),
@@ -986,13 +1035,20 @@ impl AppSettings {
             .find(|provider| provider.id == provider_id)
     }
 
-    /// Whether live stream injection may run. The mechanism types into the
-    /// user's document while they speak and is known to garble text in real
-    /// applications (docs/KNOWN-LIMITATIONS.md), so a stale `stream_injection`
-    /// flag in a persisted store must never activate it on its own: the user
-    /// has to opt into experimental features as well.
+    /// Whether live stream injection may run.
+    ///
+    /// Plain opt-in, deliberately not gated behind `experimental_enabled`
+    /// anymore. It was, on the strength of a garbling report that turned out to
+    /// predate its own fix: the text was mangled by `enigo.text()` dropping
+    /// key-up events, which commit 6b9143e replaced with Ctrl+V. Verified
+    /// natively on 2026-08-17 — full sentences, pauses and umlauts all arrive
+    /// correctly while speaking.
+    ///
+    /// The setting still only does something with a streaming-capable model;
+    /// Parakeet V3, the stable default, reports `supports_streaming: false` and
+    /// never opens a stream in the first place.
     pub fn stream_injection_active(&self) -> bool {
-        self.stream_injection && self.experimental_enabled
+        self.stream_injection
     }
 }
 
@@ -1203,17 +1259,30 @@ mod tests {
         assert_eq!(settings.refine_final_timeout_ms, 12_000);
     }
 
-    /// A persisted `stream_injection: true` from an older session must not
-    /// re-enable the defective live injection on its own; the experimental
-    /// opt-in is a second, independent switch.
+    /// The scale must stay monotonic — a "more sensitive" setting that raises
+    /// the threshold would react backwards — and mid-scale has to reproduce
+    /// the 0.3 that shipped as a constant, so existing users notice nothing.
     #[test]
-    fn stream_injection_requires_the_experimental_opt_in() {
+    fn sensitivity_maps_inversely_onto_the_vad_threshold() {
+        use super::vad_threshold_for_sensitivity as t;
+
+        assert!((t(0.5) - 0.3).abs() < 0.001);
+        assert!(t(0.0) > t(0.5), "low sensitivity must demand a louder voice");
+        assert!(t(1.0) < t(0.5), "high sensitivity must accept a quieter one");
+        // Out-of-range input clamps rather than producing a nonsense threshold.
+        assert_eq!(t(-1.0), t(0.0));
+        assert_eq!(t(2.0), t(1.0));
+    }
+
+    /// Live injection is off unless asked for, and asking for it is one
+    /// switch — the experimental flag is deliberately not part of it.
+    #[test]
+    fn stream_injection_is_a_plain_opt_in() {
         let mut settings = get_default_settings();
         assert!(!settings.stream_injection_active());
 
         settings.stream_injection = true;
-        settings.experimental_enabled = false;
-        assert!(!settings.stream_injection_active());
+        assert!(settings.stream_injection_active());
 
         settings.experimental_enabled = true;
         assert!(settings.stream_injection_active());

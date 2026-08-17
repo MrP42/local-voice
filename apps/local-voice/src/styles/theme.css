@@ -1,21 +1,29 @@
-/* Handy Colors */
+/* Sprechstift — Wolff Applied AI design system.
+   Values mirror the WAI token set (Signalgelb #FFDD00 on ink); see the
+   design-system_wolffappliedai skill. The upstream Handy pink is gone on
+   purpose: its code is MIT, its brand is not (docs/DECISIONS.md D2). */
 
 :root {
   /* Palette source of truth. Each themed color is defined once as a
      light/dark pair; the active tokens below and the `data-theme` overrides
      in App.css reference these, so a hex value lives in exactly one place. */
-  --light-color-text: #0f0f0f;
-  --light-color-background: #fbfbfb;
-  --light-color-logo-primary: #faa2ca;
-  --light-color-logo-stroke: #382731;
+  --light-color-text: #1f2937;
+  --light-color-background: #f8f9fb;
+  /* Yellow is the brand accent in both themes. On light it needs the ink
+     outline (see .logo-primary in App.css) — yellow on light alone is too
+     low in contrast to read as type. */
+  --light-color-logo-primary: #ffdd00;
+  --light-color-logo-stroke: #111418;
 
-  --dark-color-text: #fbfbfb;
-  --dark-color-background: #2c2b29;
-  --dark-color-logo-primary: #f28cbb;
-  --dark-color-logo-stroke: #fad1ed;
+  --dark-color-text: #edede7;
+  --dark-color-background: #0b0b0c;
+  --dark-color-logo-primary: #ffdd00;
+  --dark-color-logo-stroke: #15161a;
 
   /* Tokens that do not change between light and dark */
-  --color-background-ui: #da5893;
+  --color-background-ui: #ffdd00;
+  /* Anything sitting on a yellow fill: ink, never white. */
+  --color-on-accent: #111418;
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
 

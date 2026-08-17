@@ -663,6 +663,15 @@ pub fn update_overlay_enabled_cache(enabled: bool) {
     OVERLAY_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// Set by the main window while a view that draws the microphone level is on
+/// screen (the dictation test). Without it the level only ever reaches the
+/// overlay, and with `overlay_style: none` it is not emitted at all.
+static MAIN_WINDOW_WANTS_LEVELS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_main_window_level_monitoring(enabled: bool) {
+    MAIN_WINDOW_WANTS_LEVELS.store(enabled, Ordering::Relaxed);
+}
+
 pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // Skip emission when the overlay is disabled. The recording_overlay
     // window is created at boot regardless of overlay_style, so without this
@@ -672,7 +681,8 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // directly characterized; see issue #1279 for the investigation).
     // For users with `overlay_style: none` (the Linux default) this skip
     // eliminates the upstream driver of that accumulation.
-    if !OVERLAY_ENABLED.load(Ordering::Relaxed) {
+    let main_wants_levels = MAIN_WINDOW_WANTS_LEVELS.load(Ordering::Relaxed);
+    if !OVERLAY_ENABLED.load(Ordering::Relaxed) && !main_wants_levels {
         return;
     }
 
@@ -699,7 +709,12 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // `emit_to` with the overlay's window label produces a single
     // eval_script call per callback, cutting the per-callback WebKit
     // dispatch work in half.
-    let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+    if OVERLAY_ENABLED.load(Ordering::Relaxed) {
+        let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+    }
+    if main_wants_levels {
+        let _ = app_handle.emit_to("main", "mic-level", levels);
+    }
 }
 
 #[cfg(test)]

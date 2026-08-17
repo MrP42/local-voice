@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-const VAD_THRESHOLD: f32 = 0.3;
 
 fn set_mute(mute: bool) {
     // Expected behavior:
@@ -268,7 +267,15 @@ fn create_audio_recorder(
     // A single Silero engine covers both the offline and streaming policies (never
     // active at once within a recording), so the recorder reconfigures its
     // hangover tail per session rather than keeping two ONNX sessions resident.
-    let silero = SileroVad::new(vad_path, VAD_THRESHOLD)
+    //
+    // The threshold comes from the user's microphone sensitivity. It is read
+    // once here, when the recorder is built, so changing the setting takes
+    // effect on the next recorder construction rather than mid-recording.
+    let threshold = crate::settings::vad_threshold_for_sensitivity(
+        crate::settings::get_settings(app_handle).mic_sensitivity,
+    );
+    debug!("VAD threshold from microphone sensitivity: {threshold:.2}");
+    let silero = SileroVad::new(vad_path, threshold)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
     let smoothed_vad = SmoothedVad::new(
         Box::new(silero),

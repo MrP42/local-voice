@@ -6,9 +6,12 @@ export { HistorySettings } from "./history/HistorySettings";
 export { AboutSettings } from "./about/AboutSettings";
 export { PostProcessingSettings } from "./post-processing/PostProcessingSettings";
 export { ModelsSettings } from "./models/ModelsSettings";
+export { DictationTest } from "./dictation-test/DictationTest";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";
+export { MicLevelMeter } from "./MicLevelMeter";
+export { MicSensitivity } from "./MicSensitivity";
 export { ClamshellMicrophoneSelector } from "./ClamshellMicrophoneSelector";
 export { OutputDeviceSelector } from "./OutputDeviceSelector";
 export { AlwaysOnMicrophone } from "./AlwaysOnMicrophone";

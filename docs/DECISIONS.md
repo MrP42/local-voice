@@ -100,18 +100,32 @@ Konsequenz: Die App fügt in manchen Fällen nicht ein, obwohl sie es gekonnt h�
 (z. B. bei nicht abfragbarer Rechtelage des Ziels). Dieser Preis ist bewusst gewählt.
 Details in `KNOWN-LIMITATIONS.md`.
 
-## D8 — Die defekte Live-Injektion braucht zwei Schalter
-**Datum:** 2026-08-17 · **Status:** entschieden und implementiert
+## D8 — Live-Injektion: erst gesperrt, dann durch Messung freigegeben
+**Datum:** 2026-08-17 · **Status:** revidiert am selben Tag
 
-**OBSERVED:** Am 2026-08-17 stand im Einstellungs-Store `stream_injection: true` bei
-gleichzeitig `experimental_enabled: false`, dazu ein experimentelles Nemotron-Streaming-Modell
-als `selected_model`. Der Code-Default ist `false`; der Wert stammte aus einer früheren
-Sitzung und hätte die als defekt dokumentierte Funktion im Alltag aktiviert.
+**Erste Entscheidung (verworfen).** Im Store stand `stream_injection: true` bei
+`experimental_enabled: false`, dazu ein Nemotron-Streaming-Modell. Weil
+`KNOWN-LIMITATIONS.md` die Funktion als defekt führte, verlangte
+`stream_injection_active()` zusätzlich `experimental_enabled`.
 
-Ein Default allein schützt also nicht — er greift nur beim ersten Start. `stream_injection`
-wird deshalb über `AppSettings::stream_injection_active()` ausgewertet und verlangt zusätzlich
-`experimental_enabled`. Damit ist ein einzelner veralteter Store-Wert nicht mehr ausreichend,
-um eine bekannt fehlerhafte Funktion scharf zu schalten.
+**Revision.** Die Dokumentation war überholt. Sie beschrieb den Stand von `32ee6d3`;
+die beiden Ursachen wurden **danach** behoben — `6b9143e` ersetzte das fehlerhafte
+`enigo.text()` durch Ctrl+V, `d223fa8` reparierte die Präfixberechnung über
+Sprechpausen. Nachgemessen hatte das niemand, und der Schalter blieb aus.
+
+**OBSERVED 2026-08-17**, Text jeweils **vor** dem Stopp aus Notepad zurückgelesen:
+vollständige Sätze, drei Absätze mit Pausen, Umlaute — alles korrekt, keine
+Zeichenwiederholung, keine Duplikate.
+
+Die Zusatzsperre ist damit sachlich unbegründet und entfernt; `stream_injection`
+ist wieder ein einfacher Opt-in-Schalter. Die Lehre ist nicht „die Sperre war
+falsch", sondern: **eine Einschränkung, die als Text weiterlebt, nachdem ihre
+Ursache behoben wurde, kostet die Funktion.** Ein „defekt"-Eintrag braucht ein
+Ablaufdatum oder einen Test, der ihn widerlegen kann.
+
+Was bleibt: Beim Streaming greift der `paste_guard` nicht (der finale Einfügevorgang
+ist unterdrückt), es gibt also keine Fokusprüfung pro Fragment. Das ist in
+`KNOWN-LIMITATIONS.md` als offene Lücke festgehalten.
 
 ## D9 — Transkript-Klartext nur in Debug-Builds
 **Datum:** 2026-08-17 · **Status:** entschieden und implementiert

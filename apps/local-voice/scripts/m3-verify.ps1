@@ -33,7 +33,7 @@
 param(
     [ValidateSet('all', 'normal', 'umlauts', 'punctuation', 'multiline', 'numbers',
                  'cancel', 'silence', 'rapid', 'focus-change', 'no-edit-field',
-                 'elevated', 'log-privacy', 'endurance')]
+                 'elevated', 'log-privacy', 'streaming', 'endurance')]
     [string]$Scenario = 'all',
 
     [int]$Runs = 100,
@@ -472,6 +472,44 @@ if ($Scenario -in @('all','log-privacy')) {
     }
     New-Result 'log-privacy' $ok $detail
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+if ($Scenario -eq 'streaming') {
+    # Live injection: the point is that text is in the document BEFORE the
+    # recording is stopped. Needs stream_injection plus a streaming-capable
+    # model (Nemotron Streaming 3.5); Parakeet V3 never opens a stream.
+    $store = Join-Path $env:APPDATA 'de.wolffappliedai.sprechstift\settings_store.json'
+    $cfg = (Get-Content $store -Raw | ConvertFrom-Json).settings
+    if (-not $cfg.stream_injection) {
+        New-Result 'streaming' $true 'SKIPPED - stream_injection is off'
+    } else {
+        foreach ($case in @(
+            @{ n = 'streaming-normal';  f = 'de_test_01.wav';   expect = 'Spracherkennung' }
+            @{ n = 'streaming-pauses';  f = 'de_multiline.wav'; expect = 'Zeile' }
+            @{ n = 'streaming-umlauts'; f = 'de_umlaute.wav';   expect = 'Straße' }
+        )) {
+            $np = Start-Notepad
+            Send-Hotkey
+            Start-Sleep -Milliseconds 1500
+            Play-Fixture "$FixtureDir\$($case.f)"
+            Start-Sleep -Milliseconds 2500
+            # Read BEFORE stopping - that is the whole claim.
+            $during = (Get-NotepadText -Proc $np) ?? ''
+            Send-Hotkey
+            Start-Sleep -Seconds 8
+            $after = (Get-NotepadText -Proc $np) ?? ''
+
+            $arrivedEarly = $during.Trim().Length -gt 0
+            $matches = $after -match [regex]::Escape($case.expect)
+            # The final text must extend what was already there, never repeat
+            # it: a duplicate would mean the run pasted its own output twice.
+            $noDuplicate = $after.Trim().StartsWith($during.Trim())
+            $ok = $arrivedEarly -and $matches -and $noDuplicate
+            New-Result $case.n $ok ("during={0} chars, after={1} chars, early={2}, no-duplicate={3}" -f `
+                $during.Trim().Length, $after.Trim().Length, $arrivedEarly, $noDuplicate) $after
+            Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 if ($Scenario -eq 'endurance') {

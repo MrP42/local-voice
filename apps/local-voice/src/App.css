@@ -11,6 +11,9 @@
   --color-logo-stroke: var(--color-logo-stroke);
   --color-text-stroke: var(--color-text-stroke);
   --color-mid-gray: var(--color-mid-gray);
+  /* Text and icons sitting on a yellow fill. Always ink, in both themes —
+     white on Signalgelb is unreadable (design system, references/logo.md). */
+  --color-on-accent: var(--color-on-accent);
 }
 
 :root {
@@ -123,4 +126,77 @@
   fill: var(--color-logo-stroke);
   stroke: var(--color-logo-stroke);
   stroke-width: 1;
+}
+
+/* ============================================================
+   Sprechstift word mark — WAI lockup grammar.
+
+   Horizontal, always: mark left, name beside it, endorsement as a small line
+   underneath. The accent half carries Signalgelb; on light it gets the 0.5px
+   ink outline, because yellow type on a light ground is otherwise too faint
+   to read. Mirrors references/logo.md of the design system.
+   ============================================================ */
+.sprechstift-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.05;
+}
+
+.sprechstift-logo__text {
+  display: flex;
+  flex-direction: column; /* only the text block stacks, never the lockup */
+  min-width: 0;
+}
+
+.sprechstift-logo__name {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: var(--color-text);
+}
+
+.sprechstift-logo__accent {
+  color: var(--color-logo-primary);
+}
+
+/* Light theme: yellow needs the ink contour to stay legible. */
+:root[data-theme="light"] .sprechstift-logo__accent,
+.sprechstift-logo__accent {
+  -webkit-text-stroke: 0.5px var(--color-logo-stroke);
+  paint-order: stroke fill;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sprechstift-logo__accent {
+    -webkit-text-stroke: 0; /* on ink the yellow stands on its own */
+  }
+}
+:root[data-theme="dark"] .sprechstift-logo__accent {
+  -webkit-text-stroke: 0;
+}
+
+.sprechstift-logo__endorsement {
+  font-family: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-mid-gray);
+  margin-top: 2px;
+}
+
+/* The solo mark always sits on a carrier tile: a yellow glyph on a light
+   ground would be invisible, so the tile flips instead of the glyph. */
+.sprechstift-mark {
+  flex: none;
+}
+.sprechstift-mark__tile {
+  fill: var(--color-logo-stroke);
+}
+.sprechstift-mark__nib {
+  fill: none;
+  stroke: var(--color-logo-primary);
+}
+.sprechstift-mark__wave {
+  stroke: var(--color-logo-primary);
 }

@@ -83,7 +83,7 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 
 | Bereich | Änderung |
 |---|---|
-| Defekte Live-Injektion | Braucht jetzt **zwei** Schalter: `stream_injection` **und** `experimental_enabled`. Ein alter Store mit `stream_injection: true` aktiviert sie nicht mehr allein. |
+| Live-Injektion (Streaming) | Zunächst hinter `experimental_enabled` gesperrt, **noch am selben Tag durch Messung freigegeben**: Die Defektmeldung war älter als ihre eigenen Fixes (`6b9143e`, `d223fa8`). Verifiziert, wieder einfacher Opt-in-Schalter. Siehe D8. |
 | Transkripte in Logs | Klartext nur noch in **Debug-Builds**. Im Release-Build loggen STREAMDIAG, der Segmenter, der Abschlusslog und die Refinement-Ablehnung ausschließlich Längen und Gate-Namen — unabhängig von `debug_mode`. |
 | Einfügepfad | Neu `paste_guard.rs` + `paste_transcript_guarded()`: Zielfenster beim Stop erfassen, Fokus und Rechtelage vor dem Einfügen prüfen, **genau ein** Versuch, Verifikation der Zwischenablage durch Rücklesen, danach erneute Fokusprüfung. |
 | Sichtbare Meldung | Neuer Overlay-Zustand `notice` — erscheint **auch bei `overlay_style: none`** und blendet nach 9 s aus. Zusätzlich ein Toast im Hauptfenster, falls es offen ist. |
@@ -117,6 +117,7 @@ Einfügeversuch → bei Unsicherheit Zwischenablage plus sichtbare Meldung.
 | Fenster ohne Eingabefeld (Explorer) | PASS | App lebt; Text im Verlauf (siehe Einschränkung) |
 | Erhöhtes Ziel (Task-Manager) | PASS | kein Einfügeversuch, vollständiges Transkript in der Zwischenablage |
 | Datenschutz des Logs | PASS | keines der diktierten Wörter steht im Log |
+| **Live-Einfügung während des Sprechens** | PASS | Text steht **vor** dem Stopp im Dokument; Pausen und Umlaute korrekt, keine Duplikate |
 
 Transkription war in **allen** Fällen erfolgreich; keine Duplikate, kein stiller Verlust,
 Einfügedauer rund 317 ms.

@@ -82,43 +82,56 @@ Transkripttext bewusst liegen.
 - Fenster ohne Eingabefeld (z. B. der Explorer): Der Versuch läuft durch, meldet Erfolg, und
   der Text landet nirgends. Er bleibt aber im Verlauf erhalten.
 
-## Defekt: Live-Injektion des Streams (stream_injection)
+## Live-Injektion des Streams (stream_injection) — funktioniert, mit einer Lücke
 
-**Standardmäßig abgeschaltet, und seit 2026-08-17 doppelt gesperrt:** Sie läuft nur, wenn
-`stream_injection` **und** `experimental_enabled` gesetzt sind. Ein alter Einstellungs-Store
-mit `stream_injection: true` reicht nicht mehr aus — genau dieser Zustand lag am 2026-08-17
-vor und hätte die defekte Funktion im Alltag aktiviert.
+**Der frühere Eintrag „defekt" war überholt und ist am 2026-08-17 durch Messung
+widerlegt worden.** Er beschrieb den Stand von Commit `32ee6d3`; beide Ursachen
+wurden **danach** behoben, ohne dass jemand nachgemessen hat:
 
-Die Funktion ist implementiert, kompiliert und unit-getestet — liefert aber im realen Einsatz
-falschen Text.
+| Symptom | Ursache | behoben in |
+|---|---|---|
+| `Hi, mein ttttttt ffffffffffff` | `enigo.text()` verliert bei schneller Folge Key-Up-Ereignisse, Windows wiederholt die Taste | `6b9143e` — Fragmente gehen per Ctrl+V raus: zwei Tastenereignisse unabhängig von der Textlänge |
+| Kein Text mehr nach der ersten Sprechpause | In transcribe-cpp normalisiert `rebuild_streaming_result_text` Leerzeichen, `token_prefix_raw_bytes` vergleicht dagegen ungetrimmte Token — die Präfixberechnung fror an der ersten Satzgrenze ein | `d223fa8` |
 
-Beobachtet 2026-07-29: Gesprochen wurde „Hi, mein Name ist Patrick Wolff.",
-eingefügt wurde `Hi, mein ttttttt ffffffffffff`. Der Anfang stimmt, danach werden
-einzelne Zeichen vielfach wiederholt. Zusätzlich kommt gar nichts an, wenn nicht
-sofort nach dem Hotkey gesprochen wird.
+**Verifiziert 2026-08-17** mit Nemotron Streaming 3.5 (Q8_0, SHA-256 gegen den
+Katalog geprüft). Der Text wurde jeweils **vor** dem Stopp aus Notepad
+zurückgelesen:
 
-Was bereits ausgeschlossen ist:
-- Die Injektion feuert (Log zeigt Aufrufe, keine Fehler, kein Panic).
-- Die Clipboard-Race war eine **erste, andere** Ursache und ist behoben — der
-  Wechsel auf direktes Tippen hat das ursprüngliche Symptom („nur erster Satz")
-  beseitigt und dieses neue erzeugt.
+| Fixture | Bereits während der Aufnahme im Dokument |
+|---|---|
+| Normalsatz | „Guten Tag. Dies ist ein Test der lokalen Spracherkennung. Der Termin ist am dritten Februar um vierzehn Uhr dreißig" |
+| Drei Absätze mit Pausen | vollständig, alle drei Zeilen |
+| Umlaute | „Der ältere Herr aus der Straße hatte großen Ärger mit seinen Fußballschuhen und trank Glühwein in Köln" |
 
-Noch nicht geklärt, in Reihenfolge der Wahrscheinlichkeit:
-1. **Delta-Berechnung gegen `committed`.** Wird das bestätigte Präfix nicht rein
-   angehängt, sondern zwischendurch neu formatiert oder gekürzt, ist der per
-   Byte-Offset geschnittene Zuwachs falsch. Der Byte-Offset ist die verdächtigste
-   Stelle im ganzen Mechanismus.
-2. **`enigo.text()` bei schneller Folge.** Zeichenwiederholung ist ein typisches
-   Artefakt fehlender bzw. verschluckter Key-Up-Ereignisse bei synthetischer
-   Unicode-Eingabe.
-3. **Startverhalten.** Dass ohne sofortiges Sprechen nichts ankommt, deutet auf
-   einen Zustand, der zurückgesetzt wird, bevor der erste Zuwachs vorliegt.
+Keine Zeichenwiederholung, keine Duplikate; nach dem Stopp wächst der Text
+höchstens um den Rest (etwa den Schlusspunkt) und wird nicht erneut eingefügt.
 
-Nächster Schritt wäre, den Rohwert von `committed` je Emission zu protokollieren
-und mit dem tatsächlich getippten Fragment zu vergleichen — ohne diese Messung
-ist jede weitere Änderung geraten. Die dafür nötigen STREAMDIAG-Zeilen mit Klartext
-existieren nur noch in **Debug-Builds** (siehe unten), das ist für diese Messung
-der richtige Ort.
+Die Funktion ist deshalb ein normaler Opt-in-Schalter und nicht mehr zusätzlich
+hinter `experimental_enabled` gesperrt.
+
+### Offene Lücke: beim Streaming prüft niemand den Fokus
+
+Der abgesicherte Einfügepfad (`paste_guard`) gilt für den **finalen**
+Einfügevorgang. Beim Streaming ist dieser unterdrückt, und die einzelnen
+Fragmente gehen über den Injection-Worker ohne Fokus- oder Rechteprüfung per
+Ctrl+V hinaus — `RunState::wants_context()` hängt an der Refinement-Stufe, nicht
+am Streaming.
+
+Praktische Folge: **Wechselt der Fokus während des Sprechens, landen die
+folgenden Fragmente im neuen Fenster.** Kein stiller Verlust — der Text ist
+sichtbar, nur am falschen Ort — aber unkontrolliert, und der Grund, warum der
+Batch-Pfad die empfohlene Betriebsart bleibt.
+
+### Modellabhängigkeit
+
+Streaming braucht ein Modell mit `capabilities.streaming`. Für Deutsch bietet der
+Katalog nur **Nemotron Streaming 3.5** (0,6 B) und **Voxtral Mini 4B Realtime**.
+Der stabile Standard Parakeet V3 meldet `supports_streaming: false` und öffnet gar
+keinen Stream — dort bleibt der Schalter wirkungslos.
+
+Nemotron normalisiert gesprochene Zahlen **nicht**: „dritten Februar" statt
+„3. Februar", „vierzehn Uhr dreißig" statt „14.30 Uhr". Parakeet tut das. Wer
+normalisierte Zahlen braucht, verliert sie mit Streaming.
 
 ## Datenschutz: Transkripte in Logdateien
 

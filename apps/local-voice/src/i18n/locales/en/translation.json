@@ -15,7 +15,8 @@
     "postProcessing": "Post Process",
     "history": "History",
     "debug": "Debug",
-    "about": "About"
+    "about": "About",
+    "dictationTest": "Dictation test"
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -100,7 +101,7 @@
     },
     "permissions": {
       "title": "Permissions Required",
-      "description": "Handy needs a couple of permissions to work properly.",
+      "description": "Sprechstift needs a couple of permissions to work properly.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -160,7 +161,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Handy Shortcuts",
+        "title": "Sprechstift Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -212,7 +213,7 @@
       },
       "rescan": {
         "label": "Rescan",
-        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Handy"
+        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Sprechstift"
       },
       "noModelsMatch": "No models match this filter."
     },
@@ -274,11 +275,11 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy when you log in to your computer."
+        "description": "Automatically start Sprechstift when you log in to your computer."
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Handy icon in the system tray."
+        "description": "Display the Sprechstift icon in the system tray."
       },
       "overlay": {
         "style": {
@@ -461,7 +462,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Handy"
+        "description": "Automatically check for new versions of Sprechstift"
       },
       "whatsNewPreview": {
         "title": "Preview What's New",
@@ -540,15 +541,15 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Handy"
+        "description": "Current version of Sprechstift"
       },
       "whatsNewUpdates": {
         "label": "Show What's New",
-        "description": "Show release notes after Handy updates"
+        "description": "Show release notes after Sprechstift updates"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Handy stores its data"
+        "description": "Location where Sprechstift stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -557,7 +558,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Handy",
+        "description": "Help us continue building Sprechstift",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -565,7 +566,7 @@
         "ggml": {
           "title": "ggml",
           "description": "High-performance tensor library for on-device machine learning inference",
-          "details": "Handy's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "Sprechstift's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -584,7 +585,7 @@
     "portableUpdateButton": "Open GitHub Releases"
   },
   "whatsNew": {
-    "title": "New in Handy v{{version}}"
+    "title": "New in Sprechstift v{{version}}"
   },
   "common": {
     "loading": "Loading...",
@@ -596,7 +597,7 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "permissionsDescription": "Handy needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "Sprechstift needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings"
   },
   "errors": {
@@ -620,11 +621,11 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Handy interface"
+    "description": "Change the language of the Sprechstift interface"
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Handy follows your system theme or stays light or dark",
+    "description": "Choose whether Sprechstift follows your system theme or stays light or dark",
     "options": {
       "system": "System",
       "light": "Light",
@@ -647,5 +648,27 @@
         "clipboard_unverified": "The text could not be verifiably placed in the clipboard."
       }
     }
+  },
+  "dictationTest": {
+    "title": "Dictation test",
+    "intro": "Dictate in here rather than into a foreign editor, and compare what arrived against what was meant to arrive. The target is an ordinary text field — text is inserted the same way it is anywhere else.",
+    "microphone": "Microphone",
+    "levelHint": "The meter shows what the microphone is picking up right now. If it stays near zero while you speak, the microphone is muted or set too quiet.",
+    "sensitivity": "Microphone sensitivity",
+    "sensitivityHint": "Higher picks up quiet speech, and more background noise with it. Takes effect on the next recording.",
+    "step1": "1. What should be said",
+    "step2": "2. What arrived",
+    "phrase": "Phrase",
+    "readAloud": "Have the computer read it",
+    "reading": "Reading aloud …",
+    "targetPlaceholder": "Click the field, then press the hotkey and speak — the text appears here.",
+    "focusField": "Focus field",
+    "clear": "Clear",
+    "result": "Result",
+    "noResult": "Nothing dictated yet.",
+    "wordStats": "{{correct}} of {{total}} words correct · {{wrong}} different · {{missing}} missing · {{extra}} extra"
+  },
+  "micMeter": {
+    "unavailable": "Microphone level unavailable — access denied or no device."
   }
 }

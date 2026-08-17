@@ -21,8 +21,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    Backend, Feature, Model, ModelOptions, RunExtension, RunOptions, Session, StreamOptions, Task,
-    WhisperRunOptions,
+    Backend, Feature, Model, ModelOptions, ParakeetStreamOptions, RunExtension, RunOptions, Session,
+    StreamExtension, StreamOptions, Task, WhisperRunOptions,
 };
 use transcribe_rs::{
     onnx::{
@@ -1017,6 +1017,8 @@ impl TranscriptionManager {
             target_language: run_plan.target_language,
             ..Default::default()
         };
+        let stream_commit_agreement = settings.stream_commit_agreement;
+        let stream_lookahead_frames = settings.stream_lookahead_frames;
 
         // Run the stream on the held session. The Stream borrows the session
         // (and thus the engine) for its lifetime, so the feed/finalize loop
@@ -1035,9 +1037,31 @@ impl TranscriptionManager {
             // call `session.model()` once it exists.
             let backend = session.model().backend();
 
-            // StreamOptions::default() uses CommitPolicy::Auto and lets the
-            // family pick its own streaming strategy (no family-specific ext).
-            let mut stream = match session.stream(&run_options, &StreamOptions::default()) {
+            // How quickly committed text appears is governed by how many
+            // agreeing hypotheses a prefix needs before it is frozen. The
+            // library default is 3, which is why text arrived roughly once per
+            // second. Lowering it shortens that wait proportionally.
+            //
+            // It is a genuine trade-off, not a free win: committed text has
+            // already been typed into the user's document and cannot be taken
+            // back, so a prefix that commits too eagerly turns into a wrong
+            // word nobody can retract. Hence a setting rather than a constant.
+            // The bigger lever is the model's own look-ahead: with the default
+            // right context, committed text arrived roughly once per second no
+            // matter what the agreement count was. Only applied when the user
+            // set it, and only for the Parakeet family (which is what the
+            // Nemotron streaming models are).
+            let family_ext = (stream_lookahead_frames > 0).then(|| {
+                StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                    att_context_right: Some(stream_lookahead_frames),
+                })
+            });
+            let stream_options = StreamOptions {
+                stable_prefix_agreement_n: stream_commit_agreement,
+                family: family_ext,
+                ..StreamOptions::default()
+            };
+            let mut stream = match session.stream(&run_options, &stream_options) {
                 Ok(s) => s,
                 Err(e) => {
                     error!("Failed to begin stream: {}", e);

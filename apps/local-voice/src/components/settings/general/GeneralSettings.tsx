@@ -2,6 +2,8 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { type } from "@tauri-apps/plugin-os";
 import { MicrophoneSelector } from "../MicrophoneSelector";
+import { MicLevelMeter } from "../MicLevelMeter";
+import { MicSensitivity } from "../MicSensitivity";
 import { ShortcutInput } from "../ShortcutInput";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
@@ -30,6 +32,12 @@ export const GeneralSettings: React.FC = () => {
       <ModelSettingsCard />
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        {/* Right below the picker: whether the device you just chose actually
+            hears you is the first thing you want to know about it. */}
+        <div className="px-3 pb-3">
+          <MicLevelMeter compact />
+        </div>
+        <MicSensitivity />
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector
