@@ -681,11 +681,22 @@ pub fn paste_transcript_guarded(
         text
     };
 
+    // Log the inputs of the decision, never the transcript. Without this a
+    // guard that silently decides "fine, paste it" is indistinguishable from
+    // one that never ran.
+    let foreground = paste_guard::current_foreground();
+    let self_is_elevated = paste_guard::self_elevated();
+    let target_is_elevated = target.and_then(|t| paste_guard::process_elevated(t.pid));
+    info!(
+        "paste guard: target={:?} foreground={:?} self_elevated={} target_elevated={:?}",
+        target, foreground, self_is_elevated, target_is_elevated
+    );
+
     let target = match paste_guard::preflight(
         target,
-        paste_guard::current_foreground(),
-        paste_guard::process_elevated,
-        paste_guard::self_elevated(),
+        foreground,
+        |_| target_is_elevated,
+        self_is_elevated,
     ) {
         Ok(target) => target,
         Err(reason) => {

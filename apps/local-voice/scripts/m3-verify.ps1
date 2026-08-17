@@ -248,6 +248,16 @@ function Assert-HotkeyReaches-App {
         Write-Host "preflight: no log file yet, skipping hotkey check" -ForegroundColor DarkGray
         return
     }
+    # The evidence is a growing log, so the app has to be logging at debug
+    # level for this check to mean anything. At info level a reaction may
+    # legitimately produce no line, and aborting then would be a false alarm.
+    $store = Join-Path $env:APPDATA 'de.wolffappliedai.sprechstift\settings_store.json'
+    $level = (Get-Content $store -Raw | ConvertFrom-Json).settings.log_level
+    if ($level -notin @('debug', 'trace')) {
+        Write-Host "preflight: log_level is '$level', hotkey check not conclusive - skipping" -ForegroundColor DarkGray
+        return
+    }
+
     $before = (Get-Item $log).Length
     Send-Hotkey
     Start-Sleep -Seconds 2
