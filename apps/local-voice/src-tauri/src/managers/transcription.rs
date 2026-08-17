@@ -1281,6 +1281,13 @@ impl TranscriptionManager {
     /// chunk, and there is no way to un-type something already delivered to another
     /// process, so injecting it would corrupt the user's document.
     fn inject_committed_growth(&self, committed: &str) {
+        // A headless measurement run must never reach into a window. It
+        // inherits the user's real settings, which may well say "paste while
+        // I speak" — for a test that would mean typing into whatever they
+        // happen to have open.
+        if crate::selftest::is_headless_run() {
+            return;
+        }
         let settings = get_settings(&self.app_handle);
         if !settings.stream_injection_active() {
             return;

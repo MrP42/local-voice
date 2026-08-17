@@ -13,6 +13,7 @@ mod llm_client;
 mod managers;
 mod overlay;
 mod paste_guard;
+pub mod selftest;
 pub mod portable;
 mod refinement;
 pub mod segmenter;
@@ -405,7 +406,139 @@ mod headless_guard_tests {
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
 /// failure, 2 bad input/usage).
+/// Drive the live streaming path headlessly and report when text appeared.
+///
+/// Audio is pushed straight into the stream router in 100 ms frames, paced in
+/// real time, so the model sees the same arrival pattern it would from a
+/// microphone — a stream fed as fast as the disk allows would report latencies
+/// that nobody can ever experience.
+///
+/// Nothing is injected anywhere: `stream_injection` governs typing into the
+/// focused window, and this path deliberately never touches it. The only
+/// output is the measurement.
+fn run_headless_stream(
+    app: &AppHandle,
+    samples: &[f32],
+    audio_secs: f64,
+    model_id: &str,
+    load_ms: u64,
+    args: &CliArgs,
+) -> i32 {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+    use tauri::Listener;
+
+    let tm = app.state::<Arc<TranscriptionManager>>();
+
+    // Timestamp every committed growth. The event carries the whole committed
+    // prefix, so a growth is "longer than last time"; the model also rewrites
+    // the tentative tail constantly, which is not what we are timing.
+    let observed: Arc<Mutex<(Vec<u64>, String)>> = Arc::new(Mutex::new((Vec::new(), String::new())));
+    let start = Instant::now();
+    let sink = Arc::clone(&observed);
+    let listener = app.listen("stream-text-event", move |event| {
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
+            return;
+        };
+        let committed = payload
+            .get("committed")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default();
+        let mut guard = sink.lock().unwrap_or_else(|e| e.into_inner());
+        if committed.len() > guard.1.len() {
+            guard.0.push(start.elapsed().as_millis() as u64);
+            guard.1 = committed.to_string();
+        }
+    });
+
+    tm.start_stream();
+
+    // 100 ms of 16 kHz mono audio per frame, paced to wall clock.
+    const FRAME: usize = 1_600;
+    let mut next_due = start;
+    for chunk in samples.chunks(FRAME) {
+        tm.stream_router().feed(chunk);
+        next_due += Duration::from_millis(100);
+        let now = Instant::now();
+        if next_due > now {
+            std::thread::sleep(next_due - now);
+        }
+    }
+
+    let text = match tm.finalize_stream() {
+        Ok(Some(text)) => text,
+        Ok(None) => {
+            eprintln!(
+                "error: the stream produced nothing — is '{}' a streaming-capable model?",
+                model_id
+            );
+            app.unlisten(listener);
+            return 1;
+        }
+        Err(e) => {
+            eprintln!("error: finalize failed: {}", e);
+            app.unlisten(listener);
+            return 1;
+        }
+    };
+    let total_ms = start.elapsed().as_millis() as u64;
+    app.unlisten(listener);
+
+    let commit_times = observed.lock().unwrap_or_else(|e| e.into_inner()).0.clone();
+    let scored = crate::selftest::SelfTestResult::build(
+        args.reference.as_deref().unwrap_or_default(),
+        &text,
+        commit_times,
+        total_ms,
+        audio_secs,
+    );
+
+    if args.json {
+        let mut payload = serde_json::json!({
+            "model": model_id,
+            "mode": "stream",
+            "load_ms": load_ms,
+            "audio_secs": audio_secs,
+        });
+        payload["score"] = serde_json::to_value(&scored).unwrap_or_default();
+        println!("{}", payload);
+    } else {
+        println!(
+            "model={} mode=stream audio={:.2}s load={}ms total={}ms",
+            model_id, audio_secs, load_ms, total_ms
+        );
+        println!(
+            "updates={} first_text={} median_gap={}",
+            scored.commit_times_ms.len(),
+            scored
+                .first_text_ms
+                .map(|v| format!("{v}ms"))
+                .unwrap_or_else(|| "never".into()),
+            scored
+                .median_gap_ms
+                .map(|v| format!("{v}ms"))
+                .unwrap_or_else(|| "-".into()),
+        );
+        if args.reference.is_some() {
+            println!(
+                "accuracy={:.1}% ({} of {} words; {} wrong, {} missing, {} extra)",
+                scored.accuracy * 100.0,
+                scored.correct,
+                scored.reference_words,
+                scored.substitutions,
+                scored.deletions,
+                scored.insertions,
+            );
+        }
+        println!("text: {}", text);
+    }
+    0
+}
+
 fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
+    // Before anything else: this process must not paste into any window.
+    crate::selftest::begin_headless_run();
+
     use std::time::Instant;
 
     // --list-devices: print registered compute devices (with indices) and exit.
@@ -532,6 +665,10 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     let load_ms = load_start.elapsed().as_millis() as u64;
     let bound_backend = tm.current_backend();
 
+    if args.stream {
+        return run_headless_stream(app, &samples, audio_secs, &model_id, load_ms, &args);
+    }
+
     let runs = args.repeat.unwrap_or(1).max(1);
     let mut times_ms: Vec<u64> = Vec::new();
     let mut text = String::new();
@@ -563,20 +700,49 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     };
 
     if args.json {
+        let mut payload = serde_json::json!({
+            "model": model_id,
+            "requested_device": requested_device,
+            "bound_backend": bound_backend,
+            "audio_secs": audio_secs,
+            "load_ms": load_ms,
+            "transcribe_ms": times_ms,
+            "best_ms": best_ms,
+            "rtf": rtf,
+            "text": text,
+        });
+        if let Some(reference) = args.reference.as_deref() {
+            let scored = crate::selftest::SelfTestResult::build(
+                reference,
+                &text,
+                Vec::new(),
+                best_ms,
+                audio_secs,
+            );
+            payload["score"] = serde_json::to_value(&scored).unwrap_or_default();
+        }
+        println!("{}", payload);
+    } else if let Some(reference) = args.reference.as_deref() {
+        let scored =
+            crate::selftest::SelfTestResult::build(reference, &text, Vec::new(), best_ms, audio_secs);
         println!(
-            "{}",
-            serde_json::json!({
-                "model": model_id,
-                "requested_device": requested_device,
-                "bound_backend": bound_backend,
-                "audio_secs": audio_secs,
-                "load_ms": load_ms,
-                "transcribe_ms": times_ms,
-                "best_ms": best_ms,
-                "rtf": rtf,
-                "text": text,
-            })
+            "model={} backend={} audio={:.2}s best={}ms rtf={:.2}x",
+            model_id,
+            bound_backend.as_deref().unwrap_or("?"),
+            audio_secs,
+            best_ms,
+            rtf,
         );
+        println!(
+            "accuracy={:.1}% ({} of {} words; {} wrong, {} missing, {} extra)",
+            scored.accuracy * 100.0,
+            scored.correct,
+            scored.reference_words,
+            scored.substitutions,
+            scored.deletions,
+            scored.insertions,
+        );
+        println!("text: {}", text);
     } else {
         println!(
             "model={} device={} backend={} audio={:.2}s load={}ms best={}ms rtf={:.2}x",
@@ -878,6 +1044,10 @@ pub fn run(cli_args: CliArgs) {
                     .min_inner_size(680.0, 570.0)
                     .resizable(true)
                     .maximizable(true)
+                    // Centred rather than wherever Windows would cascade it.
+                    // The window is built hidden and shown later, so this is
+                    // the placement the user sees on first appearance.
+                    .center()
                     .visible(false);
 
             // Set the taskbar icon explicitly. Windows does not fall back to

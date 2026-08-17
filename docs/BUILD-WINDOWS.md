@@ -112,6 +112,51 @@ npx tauri build --no-bundle   # -> src-tauri\target\release\sprechstift.exe
 `--no-bundle` überspringt den Installer; für ein Auslieferungspaket entfällt
 der Schalter (siehe Issue #7).
 
+## Selbsttest ohne Mikrofon (für Automatisierung)
+
+Der Weg über `m3-verify.ps1` spielt Audio über die Lautsprecher ab und nimmt es
+mit dem Mikrofon wieder auf. Das prüft die ganze Kette einschließlich Akustik,
+ist dafür aber weder schnell noch reproduzierbar — und es belegt den Rechner.
+
+Für Messungen gibt es deshalb den headless-Pfad. Er speist die WAV **direkt**
+in die Transkription ein, ohne Mikrofon, ohne Fenster, ohne irgendwo Text
+einzufügen:
+
+```powershell
+$exe = "apps\local-voice\src-tauri\target\release\sprechstift.exe"
+$fx  = "apps\local-voice\src-tauri\tests\fixtures"
+
+# Batch-Pfad, mit Bewertung gegen den Sollsatz
+& $exe --transcribe-file "$fx\de_test_01.wav" `
+       --reference "Guten Tag. Dies ist ein Test der lokalen Spracherkennung." `
+       --json
+
+# Streaming-Pfad: Audio wird in Echtzeit eingespeist und gemessen,
+# wann Text tatsächlich erschienen ist
+& $exe --transcribe-file "$fx\de_test_01.wav" --stream `
+       --reference "Guten Tag. Dies ist ein Test der lokalen Spracherkennung." `
+       --json
+```
+
+Das JSON enthält unter `score`:
+
+| Feld | Bedeutung |
+|---|---|
+| `accuracy` | 1 minus Wortfehlerrate |
+| `correct` / `substitutions` / `deletions` / `insertions` | Wortbilanz |
+| `diff` | Wort-für-Wort-Abgleich (`same`, `missing`, `extra`, `different`) |
+| `commit_times_ms` | Zeitpunkt **jeder** Textzunahme seit Start |
+| `first_text_ms` | wann zum ersten Mal Text da war |
+| `median_gap_ms` | typischer Abstand zwischen Aktualisierungen |
+
+Bewertet wird mit derselben Logik wie in der Oberfläche (`src-tauri/src/selftest.rs`).
+Interpunktion, Groß- und Kleinschreibung sowie ß/ae-Schreibweisen zählen **nicht**
+als Fehler; Zahlwort gegen Ziffer dagegen schon — das ist ein echter Unterschied
+zwischen den Modellen.
+
+`--stream` braucht ein streaming-fähiges Modell (Nemotron); Parakeet V3 meldet
+`supports_streaming: false` und liefert dann einen Fehler statt stiller Stille.
+
 ## Native Abnahme
 
 ### Sprachfixtures erzeugen

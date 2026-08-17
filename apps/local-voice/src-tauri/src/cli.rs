@@ -60,4 +60,19 @@ pub struct CliArgs {
     /// Emit --transcribe-file results as JSON.
     #[arg(long)]
     pub json: bool,
+
+    /// Score the transcription of --transcribe-file against this phrase.
+    /// Adds accuracy, a word-level diff and error counts to the output.
+    /// Punctuation, capitalisation and ß/umlaut spellings are not counted as
+    /// errors; number words versus digits ARE, because that is a real
+    /// difference between models.
+    #[arg(long, value_name = "TEXT")]
+    pub reference: Option<String>,
+
+    /// Run --transcribe-file through the LIVE STREAMING path instead of batch,
+    /// feeding the audio in real time as if it were being spoken, and report
+    /// when text actually appeared. This is how streaming latency is measured
+    /// without a microphone or a stopwatch. Needs a streaming-capable model.
+    #[arg(long)]
+    pub stream: bool,
 }
