@@ -526,6 +526,10 @@ pub struct AppSettings {
     /// Obergrenze vorzulesender Zeichen; längere Texte werden mit Hinweis gekürzt.
     #[serde(default = "default_tts_max_chars")]
     pub tts_max_chars: u32,
+    /// Aktive Referenzstimme (reference_id im Fish-Server) oder None =
+    /// Seed-Standardstimme. TP2 Stimmen klonen.
+    #[serde(default)]
+    pub tts_voice: Option<String>,
 }
 
 fn default_model() -> String {
@@ -1099,6 +1103,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_seed: default_tts_seed(),
         tts_idle_minutes: default_tts_idle_minutes(),
         tts_max_chars: default_tts_max_chars(),
+        tts_voice: None,
     }
 }
 

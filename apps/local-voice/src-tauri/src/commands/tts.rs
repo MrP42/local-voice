@@ -51,3 +51,54 @@ pub fn tts_server_stop(app: AppHandle) -> Result<(), String> {
 pub fn tts_server_status(app: AppHandle) -> Result<TtsStatus, String> {
     Ok(app.state::<Arc<TtsManager>>().status())
 }
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct ImportedVoice {
+    pub id: String,
+    pub transcript: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_list_voices(app: AppHandle) -> Result<Vec<String>, String> {
+    Ok(app.state::<Arc<TtsManager>>().list_voice_ids())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_record_reference_start(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().record_reference_start()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_record_reference_stop(app: AppHandle) -> Result<String, String> {
+    app.state::<Arc<TtsManager>>().record_reference_stop()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_save_voice(app: AppHandle, name: String, transcript: String) -> Result<String, String> {
+    app.state::<Arc<TtsManager>>()
+        .save_pending_voice(&name, &transcript)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_import_voice(
+    app: AppHandle,
+    name: String,
+    wav_path: String,
+    transcript: Option<String>,
+) -> Result<ImportedVoice, String> {
+    let (id, transcript) = app
+        .state::<Arc<TtsManager>>()
+        .import_voice_file(&name, &wav_path, transcript)?;
+    Ok(ImportedVoice { id, transcript })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_delete_voice(app: AppHandle, id: String) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().delete_voice_id(&id)
+}

@@ -8,6 +8,7 @@
 pub mod player;
 pub mod protocol;
 pub mod state;
+pub mod voices;
 
 use player::Player;
 use state::TtsPhase;
@@ -44,6 +45,8 @@ pub struct TtsCore {
     max_chars: Mutex<u32>,
     volume: Mutex<f32>,
     output_device: Mutex<Option<String>>,
+    /// Aktive Referenzstimme (reference_id) oder None = Seed-Standardstimme.
+    voice: Mutex<Option<String>>,
     on_phase_change: Mutex<Option<Box<dyn Fn(TtsStatus) + Send + Sync>>>,
 }
 
@@ -62,6 +65,7 @@ impl TtsCore {
             max_chars: Mutex::new(5000),
             volume: Mutex::new(1.0),
             output_device: Mutex::new(None),
+            voice: Mutex::new(None),
             on_phase_change: Mutex::new(None),
         }
     }
@@ -161,7 +165,8 @@ impl TtsCore {
     /// Selbsttest (Task 8) denselben Pfad ohne Soundkarte messen kann.
     async fn fetch_wav(&self, port: u16, seed: i64, text: &str) -> Result<Vec<u8>, String> {
         let url = format!("{}/v1/tts", protocol::base_url(port));
-        let body = protocol::tts_request_body(text, seed);
+        let voice = self.voice.lock().unwrap().clone();
+        let body = protocol::tts_request_body(text, seed, voice.as_deref());
         let resp = self
             .http
             .post(url)
@@ -220,7 +225,13 @@ pub struct TtsManager {
     core: Arc<TtsCore>,
     app: tauri::AppHandle,
     child: Mutex<Option<Child>>,
+    /// Letzte Referenzaufnahme (16 kHz mono), wartet zwischen Stopp und
+    /// Speichern auf Namen + bestätigtes Transkript.
+    pending_reference: Mutex<Option<Vec<f32>>>,
 }
+
+/// Binding-Id des Referenzaufnahme-Flows im AudioRecordingManager.
+const REFERENCE_BINDING: &str = "voice_reference";
 
 impl TtsManager {
     pub fn new(app: &tauri::AppHandle) -> Arc<Self> {
@@ -238,6 +249,7 @@ impl TtsManager {
             core,
             app: app.clone(),
             child: Mutex::new(None),
+            pending_reference: Mutex::new(None),
         });
         manager.refresh_from_settings();
 
@@ -273,6 +285,7 @@ impl TtsManager {
         *self.core.max_chars.lock().unwrap() = settings.tts_max_chars;
         *self.core.volume.lock().unwrap() = settings.audio_feedback_volume;
         *self.core.output_device.lock().unwrap() = settings.selected_output_device;
+        *self.core.voice.lock().unwrap() = settings.tts_voice;
     }
 
     pub fn status(&self) -> TtsStatus {
@@ -371,6 +384,124 @@ impl TtsManager {
         }
     }
 
+    fn fish_dir(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(crate::settings::get_settings(&self.app).tts_fish_dir)
+    }
+
+    pub fn list_voice_ids(&self) -> Vec<String> {
+        voices::list_voices(&self.fish_dir())
+    }
+
+    /// Referenzaufnahme starten (VAD aus — auch leise Passagen gehören in die
+    /// Referenz). Stößt parallel das STT-Modell-Laden an, damit das Transkript
+    /// beim Stopp ohne Wartezeit entsteht.
+    pub fn record_reference_start(&self) -> Result<(), String> {
+        use tauri::Manager;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.initiate_model_load();
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        rm.try_start_recording(REFERENCE_BINDING, crate::audio_toolkit::VadPolicy::Disabled)
+    }
+
+    /// Aufnahme beenden, Samples einbehalten, Transkript per STT liefern.
+    /// Ein STT-Fehler verwirft die Aufnahme nicht — das Transkript kommt dann
+    /// leer zurück und wird im UI von Hand ergänzt.
+    pub fn record_reference_stop(&self) -> Result<String, String> {
+        use tauri::Manager;
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        let generation = rm.cancel_generation();
+        let samples = rm
+            .stop_recording(REFERENCE_BINDING, generation)
+            .ok_or_else(|| "no reference recording in progress".to_string())?;
+        if !voices::reference_long_enough(samples.len()) {
+            return Err(format!(
+                "Aufnahme zu kurz ({:.1} s) — mindestens {} s einsprechen",
+                samples.len() as f32 / 16_000.0,
+                voices::MIN_REFERENCE_SECS
+            ));
+        }
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        let transcript = match tm.transcribe(samples.clone()) {
+            Ok(text) => text,
+            Err(e) => {
+                log::warn!("reference transcription failed, keeping audio: {e}");
+                String::new()
+            }
+        };
+        *self.pending_reference.lock().unwrap() = Some(samples);
+        Ok(transcript)
+    }
+
+    /// Einbehaltene Aufnahme unter einem Namen als Stimme speichern.
+    /// Rückgabe: die sanierte Stimm-Id.
+    pub fn save_pending_voice(&self, name: &str, transcript: &str) -> Result<String, String> {
+        let id = voices::sanitize_voice_id(name)
+            .ok_or_else(|| "Name ergibt keine gültige Stimm-Id".to_string())?;
+        let samples = self
+            .pending_reference
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| "keine Referenzaufnahme vorhanden".to_string())?;
+        if let Err(e) = voices::save_voice(&self.fish_dir(), &id, &samples, transcript) {
+            // Aufnahme zurücklegen, damit ein Tippfehler sie nicht kostet.
+            *self.pending_reference.lock().unwrap() = Some(samples);
+            return Err(e);
+        }
+        Ok(id)
+    }
+
+    /// WAV-Datei als Stimme übernehmen. Ohne mitgeliefertes Transkript wird
+    /// die Datei für die STT auf 16 kHz mono gewandelt und transkribiert; die
+    /// Referenz selbst bleibt das unveränderte Original.
+    pub fn import_voice_file(
+        &self,
+        name: &str,
+        wav_path: &str,
+        transcript: Option<String>,
+    ) -> Result<(String, String), String> {
+        use tauri::Manager;
+        let id = voices::sanitize_voice_id(name)
+            .ok_or_else(|| "Name ergibt keine gültige Stimm-Id".to_string())?;
+        let source = std::path::Path::new(wav_path);
+        let transcript = match transcript.filter(|t| !t.trim().is_empty()) {
+            Some(t) => t,
+            None => {
+                let samples = voices::load_wav_mono_16k(source)?;
+                let tm = self
+                    .app
+                    .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+                tm.initiate_model_load();
+                tm.transcribe(samples).map_err(|e| {
+                    format!("Transkription fehlgeschlagen ({e}) — Transkript bitte manuell angeben")
+                })?
+            }
+        };
+        voices::import_voice(&self.fish_dir(), &id, source, &transcript)?;
+        Ok((id, transcript))
+    }
+
+    /// Stimme löschen; war sie aktiv, fällt die Auswahl auf die
+    /// Seed-Standardstimme zurück.
+    pub fn delete_voice_id(&self, id: &str) -> Result<(), String> {
+        voices::delete_voice(&self.fish_dir(), id)?;
+        let mut settings = crate::settings::get_settings(&self.app);
+        if settings.tts_voice.as_deref() == Some(id) {
+            settings.tts_voice = None;
+            crate::settings::write_settings(&self.app, settings);
+        }
+        self.refresh_from_settings();
+        Ok(())
+    }
+
     /// Selbsttest-Messpfad: Server sicherstellen, WAV holen (ohne Playback),
     /// Zeiten melden. Rückgabe: (wav_bytes, server_start_ms, tts_ms) —
     /// server_start_ms ist 0, wenn ein Server bereits lief.
@@ -431,7 +562,10 @@ mod tests {
     /// POST /v1/tts mit einem RIFF-Blob. Zählt TTS-Aufrufe. Schließt jede
     /// Verbindung nach einer Antwort (Connection: close), damit reqwest
     /// nicht auf Keep-Alive besteht.
-    async fn spawn_mock(tts_calls: Arc<AtomicUsize>) -> u16 {
+    async fn spawn_mock(
+        tts_calls: Arc<AtomicUsize>,
+        tts_bodies: Arc<std::sync::Mutex<Vec<String>>>,
+    ) -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
@@ -440,6 +574,7 @@ mod tests {
                     break;
                 };
                 let calls = tts_calls.clone();
+                let bodies = tts_bodies.clone();
                 tokio::spawn(async move {
                     let mut buf = vec![0u8; 65536];
                     let mut read = 0usize;
@@ -460,6 +595,11 @@ mod tests {
                             if read >= header_end + 4 + content_length {
                                 let body: Vec<u8> = if is_tts {
                                     calls.fetch_add(1, Ordering::SeqCst);
+                                    let received = String::from_utf8_lossy(
+                                        &buf[header_end + 4..header_end + 4 + content_length],
+                                    )
+                                    .to_string();
+                                    bodies.lock().unwrap().push(received);
                                     let mut wav = b"RIFF".to_vec();
                                     wav.extend_from_slice(&[0u8; 4096]);
                                     wav
@@ -487,7 +627,7 @@ mod tests {
     #[tokio::test]
     async fn an_external_healthy_server_is_adopted_not_owned() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let port = spawn_mock(calls).await;
+        let port = spawn_mock(calls, Arc::new(std::sync::Mutex::new(Vec::new()))).await;
         let core = TtsCore::for_test(port);
         core.ensure_server_core().await.unwrap();
         assert_eq!(core.phase(), TtsPhase::Ready);
@@ -497,7 +637,7 @@ mod tests {
     #[tokio::test]
     async fn speak_fetches_wav_and_hands_it_to_the_player() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let port = spawn_mock(calls.clone()).await;
+        let port = spawn_mock(calls.clone(), Arc::new(std::sync::Mutex::new(Vec::new()))).await;
         let core = TtsCore::for_test(port);
         core.ensure_server_core().await.unwrap();
         let played = core.speak_core("Hallo Welt").await.unwrap();
@@ -509,7 +649,7 @@ mod tests {
     #[tokio::test]
     async fn blank_text_never_reaches_the_server() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let port = spawn_mock(calls.clone()).await;
+        let port = spawn_mock(calls.clone(), Arc::new(std::sync::Mutex::new(Vec::new()))).await;
         let core = TtsCore::for_test(port);
         core.ensure_server_core().await.unwrap();
         assert!(core.speak_core("   ").await.is_err());
@@ -523,6 +663,26 @@ mod tests {
         assert!(core.ensure_server_core().await.is_err());
         assert_eq!(core.phase(), TtsPhase::Stopped);
         assert!(!core.owns_server());
+    }
+
+    #[tokio::test]
+    async fn a_selected_voice_travels_as_reference_id() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let port = spawn_mock(calls, bodies.clone()).await;
+        let core = TtsCore::for_test(port);
+        *core.voice.lock().unwrap() = Some("patrick".into());
+        core.ensure_server_core().await.unwrap();
+        core.speak_core("Hallo").await.unwrap();
+        let all = bodies.lock().unwrap().join("");
+        assert!(
+            all.contains(r#""reference_id":"patrick""#),
+            "Request muss die Stimme tragen, war: {all}"
+        );
+        assert!(
+            all.contains(r#""use_memory_cache":"on""#),
+            "Referenz-Cache muss aktiv sein"
+        );
     }
 
     #[tokio::test]

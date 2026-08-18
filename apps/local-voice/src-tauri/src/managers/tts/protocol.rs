@@ -32,15 +32,22 @@ pub fn prepare_text(raw: &str, max_chars: u32) -> Option<PreparedText> {
     })
 }
 
-/// Non-Streaming-WAV-Request; Seed fest gesetzt, damit die Stimme zwischen
-/// Aufträgen stabil bleibt, bis TP2 echte Referenzstimmen bringt.
-pub fn tts_request_body(text: &str, seed: i64) -> serde_json::Value {
-    serde_json::json!({
+/// Non-Streaming-WAV-Request. Ohne Referenzstimme hält der feste Seed die
+/// Zufallsstimme zwischen Aufträgen stabil; mit Stimme wählt `reference_id`
+/// die geklonte Stimme und `use_memory_cache` lässt den Server das
+/// Referenz-Encoding zwischen Requests wiederverwenden.
+pub fn tts_request_body(text: &str, seed: i64, reference_id: Option<&str>) -> serde_json::Value {
+    let mut body = serde_json::json!({
         "text": text,
         "format": "wav",
         "seed": seed,
         "streaming": false,
-    })
+    });
+    if let Some(voice) = reference_id {
+        body["reference_id"] = serde_json::json!(voice);
+        body["use_memory_cache"] = serde_json::json!("on");
+    }
+    body
 }
 
 /// RIFF-Magic plus nennenswerte Nutzlast (>1 KiB): filtert HTML-Fehlerseiten
@@ -78,11 +85,24 @@ mod tests {
 
     #[test]
     fn request_body_pins_wav_and_seed_and_disables_streaming() {
-        let b = tts_request_body("Hallo", 42);
+        let b = tts_request_body("Hallo", 42, None);
         assert_eq!(b["text"], "Hallo");
         assert_eq!(b["format"], "wav");
         assert_eq!(b["seed"], 42);
         assert_eq!(b["streaming"], false);
+        assert!(
+            b.get("reference_id").is_none(),
+            "ohne Stimme kein reference_id-Feld"
+        );
+        assert!(b.get("use_memory_cache").is_none());
+    }
+
+    #[test]
+    fn request_body_carries_the_voice_and_enables_the_reference_cache() {
+        let b = tts_request_body("Hallo", 42, Some("patrick"));
+        assert_eq!(b["reference_id"], "patrick");
+        assert_eq!(b["use_memory_cache"], "on");
+        assert_eq!(b["seed"], 42, "Seed bleibt für deterministisches Sampling");
     }
 
     #[test]

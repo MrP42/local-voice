@@ -841,6 +841,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_tts_seed_setting,
             shortcut::change_tts_idle_minutes_setting,
             shortcut::change_tts_max_chars_setting,
+            shortcut::change_tts_voice_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
@@ -943,6 +944,12 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_server_start,
             commands::tts::tts_server_stop,
             commands::tts::tts_server_status,
+            commands::tts::tts_list_voices,
+            commands::tts::tts_record_reference_start,
+            commands::tts::tts_record_reference_stop,
+            commands::tts::tts_save_voice,
+            commands::tts::tts_import_voice,
+            commands::tts::tts_delete_voice,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
