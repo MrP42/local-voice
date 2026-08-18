@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { commands, type TtsStatus } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { ShortcutInput } from "../ShortcutInput";
+import { VoicesCard } from "./VoicesCard";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Input } from "../../ui/Input";
@@ -158,6 +159,8 @@ export const TtsSettings = () => {
           </div>
         </div>
       </SettingsGroup>
+
+      <VoicesCard />
 
       <SettingsGroup title={t("tts.settingsTitle")}>
         <ShortcutInput shortcutId="speak_clipboard" grouped={true} />

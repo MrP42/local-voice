@@ -133,6 +133,14 @@ async changeTtsMaxCharsSetting(value: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsVoiceSetting(value: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_voice_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
@@ -944,6 +952,54 @@ async ttsServerStatus() : Promise<Result<TtsStatus, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async ttsListVoices() : Promise<Result<string[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_list_voices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsRecordReferenceStart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_record_reference_start") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsRecordReferenceStop() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_record_reference_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsSaveVoice(name: string, transcript: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_save_voice", { name, transcript }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsImportVoice(name: string, wavPath: string, transcript: string | null) : Promise<Result<ImportedVoice, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_import_voice", { name, wavPath, transcript }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsDeleteVoice(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_delete_voice", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -1076,7 +1132,12 @@ tts_idle_minutes?: number;
 /**
  * Obergrenze vorzulesender Zeichen; längere Texte werden mit Hinweis gekürzt.
  */
-tts_max_chars?: number }
+tts_max_chars?: number; 
+/**
+ * Aktive Referenzstimme (reference_id im Fish-Server) oder None =
+ * Seed-Standardstimme. TP2 Stimmen klonen.
+ */
+tts_voice?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1101,6 +1162,7 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+export type ImportedVoice = { id: string; transcript: string }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"

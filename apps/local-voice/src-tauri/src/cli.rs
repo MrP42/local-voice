@@ -94,4 +94,9 @@ pub struct CliArgs {
     /// Text for --tts-test (default: a short German sentence).
     #[arg(long, value_name = "TEXT")]
     pub tts_text: Option<String>,
+
+    /// Reference voice id for --tts-test (a folder under <fish_dir>/references).
+    /// Overrides the persisted tts_voice setting for this run only.
+    #[arg(long, value_name = "ID")]
+    pub tts_voice: Option<String>,
 }

@@ -1089,8 +1089,9 @@ pub fn run(cli_args: CliArgs) {
                             let text = args.tts_text.clone().unwrap_or_else(|| {
                                 "Dies ist der Selbsttest der lokalen Sprachausgabe.".to_string()
                             });
-                            let result =
-                                tauri::async_runtime::block_on(tts.bench_fetch(&text));
+                            let result = tauri::async_runtime::block_on(
+                                tts.bench_fetch(&text, args.tts_voice.as_deref()),
+                            );
                             let code = match result {
                                 Ok((bytes, start_ms, tts_ms)) => {
                                     let payload = serde_json::json!({

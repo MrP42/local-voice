@@ -37,6 +37,25 @@
       "error": "Fehler"
     },
     "vramHint": "Start dauert lange — VRAM freigeben: andere GPU-Apps schließen.",
+    "voices": {
+      "title": "Stimmen",
+      "description": "Stimme aus einer 10–30-Sekunden-Referenz klonen. Aufnahmen bleiben auf diesem Rechner; das Transkript entsteht automatisch und ist editierbar.",
+      "defaultVoice": "Standardstimme (Seed)",
+      "active": "Aktiv",
+      "activate": "Verwenden",
+      "delete": "Löschen",
+      "empty": "Noch keine geklonten Stimmen.",
+      "record": "Neue Stimme aufnehmen",
+      "import": "WAV importieren…",
+      "recording": "Aufnahme läuft… ({{seconds}} s)",
+      "stopRecording": "Stopp",
+      "recordingHint": "10–30 Sekunden natürlich sprechen, ohne Hintergrundgeräusche.",
+      "namePlaceholder": "Name der Stimme (z. B. patrick)",
+      "transcriptPlaceholder": "Exaktes Transkript der Aufnahme (automatisch erzeugt, editierbar)",
+      "transcriptImportPlaceholder": "Exaktes Transkript der Datei (leer lassen für automatische Transkription)",
+      "save": "Stimme speichern",
+      "discard": "Verwerfen"
+    },
     "settingsTitle": "Vorlesen-Einstellungen",
     "settings": {
       "fishDir": "Fish-Speech-Ordner",

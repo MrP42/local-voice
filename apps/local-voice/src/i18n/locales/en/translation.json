@@ -37,6 +37,25 @@
       "error": "Error"
     },
     "vramHint": "Startup is slow — free GPU memory by closing other GPU apps.",
+    "voices": {
+      "title": "Voices",
+      "description": "Clone a voice from a 10–30 second reference. Recordings stay on this computer; the transcript is generated automatically and can be edited.",
+      "defaultVoice": "Default voice (seed)",
+      "active": "Active",
+      "activate": "Use",
+      "delete": "Delete",
+      "empty": "No cloned voices yet.",
+      "record": "Record new voice",
+      "import": "Import WAV…",
+      "recording": "Recording… ({{seconds}}s)",
+      "stopRecording": "Stop",
+      "recordingHint": "Speak naturally for 10–30 seconds, no background noise.",
+      "namePlaceholder": "Voice name (e.g. patrick)",
+      "transcriptPlaceholder": "Exact transcript of the recording (auto-generated, editable)",
+      "transcriptImportPlaceholder": "Exact transcript of the file (leave empty to auto-transcribe)",
+      "save": "Save voice",
+      "discard": "Discard"
+    },
     "settingsTitle": "Read Aloud settings",
     "settings": {
       "fishDir": "Fish Speech folder",
