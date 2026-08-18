@@ -4,3 +4,4 @@
 //! Manager (Prozess, HTTP, Playback) folgt in den nächsten Tasks.
 
 pub mod protocol;
+pub mod state;
