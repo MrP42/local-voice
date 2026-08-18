@@ -1093,7 +1093,18 @@ pub fn run(cli_args: CliArgs) {
                                 tts.bench_fetch(&text, args.tts_voice.as_deref()),
                             );
                             let code = match result {
-                                Ok((bytes, start_ms, tts_ms)) => {
+                                Ok((wav, start_ms, tts_ms)) => {
+                                    let bytes = wav.len();
+                                    if let Some(path) = args.tts_out_wav.as_deref() {
+                                        match std::fs::write(path, &wav) {
+                                            Ok(()) => eprintln!("wrote {}", path.display()),
+                                            Err(e) => eprintln!(
+                                                "error: could not write {}: {}",
+                                                path.display(),
+                                                e
+                                            ),
+                                        }
+                                    }
                                     let payload = serde_json::json!({
                                         "mode": "tts",
                                         "wav_bytes": bytes,

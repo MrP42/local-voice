@@ -503,14 +503,14 @@ impl TtsManager {
     }
 
     /// Selbsttest-Messpfad: Server sicherstellen, WAV holen (ohne Playback),
-    /// Zeiten melden. Rückgabe: (wav_bytes, server_start_ms, tts_ms) —
+    /// Zeiten melden. Rückgabe: (wav, server_start_ms, tts_ms) —
     /// server_start_ms ist 0, wenn ein Server bereits lief. `voice_override`
     /// übersteuert die persistierte Stimme nur für diesen Lauf.
     pub async fn bench_fetch(
         &self,
         text: &str,
         voice_override: Option<&str>,
-    ) -> Result<(usize, u64, u64), String> {
+    ) -> Result<(Vec<u8>, u64, u64), String> {
         self.refresh_from_settings();
         if let Some(voice) = voice_override {
             *self.core.voice.lock().unwrap() = Some(voice.to_string());
@@ -535,7 +535,7 @@ impl TtsManager {
         let tts_start = Instant::now();
         let wav = self.core.fetch_wav(port, seed, &prepared.text).await?;
         let tts_ms = tts_start.elapsed().as_millis() as u64;
-        Ok((wav.len(), server_start_ms, tts_ms))
+        Ok((wav, server_start_ms, tts_ms))
     }
 
     /// Beendet AUSSCHLIESSLICH einen selbst gestarteten Serverprozess.

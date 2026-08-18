@@ -99,4 +99,8 @@ pub struct CliArgs {
     /// Overrides the persisted tts_voice setting for this run only.
     #[arg(long, value_name = "ID")]
     pub tts_voice: Option<String>,
+
+    /// Write the WAV produced by --tts-test to this file (audible evidence).
+    #[arg(long, value_name = "FILE")]
+    pub tts_out_wav: Option<PathBuf>,
 }
