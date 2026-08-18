@@ -59,7 +59,8 @@ lassen.
 | M2 vertikaler Pfad (Hotkey bis Einfügen) | **verifiziert 2026-07-29** — Harness-Lauf 6/8, siehe `docs/m2-evidence/` |
 | **M3 Stabilisierung des Basispfads** | **teilweise verifiziert 2026-08-17** — siehe unten |
 | **M4 / TP1 Vorlesen (Fish-Speech-TTS)** | **verifiziert (headless) 2026-08-18** — siehe `docs/m4-evidence/`; Hotkey-Hörtest manuell offen |
-| M5 bis M10 | **offen** |
+| **M5 / TP2 Stimmen klonen (zero-shot)** | **verifiziert (headless+live) 2026-08-18** — siehe `docs/m5-evidence/`; In-App-Aufnahme manuell offen |
+| M6 bis M10 | **offen** |
 
 ### Verifizierte Messung (2026-07-28, i9-13900K, CPU-Backend)
 
