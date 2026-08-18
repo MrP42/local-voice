@@ -204,6 +204,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    let tts_manager = managers::tts::TtsManager::new(app_handle);
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -217,6 +218,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(tts_manager);
     app_handle.manage(tray::CurrentTrayIconState::new());
 
     // Note: Shortcuts are NOT initialized here.
@@ -834,6 +836,11 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
             shortcut::change_selected_language_setting,
+            shortcut::change_tts_fish_dir_setting,
+            shortcut::change_tts_port_setting,
+            shortcut::change_tts_seed_setting,
+            shortcut::change_tts_idle_minutes_setting,
+            shortcut::change_tts_max_chars_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
@@ -930,6 +937,12 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::tts::tts_speak_text,
+            commands::tts::tts_speak_clipboard,
+            commands::tts::tts_cancel,
+            commands::tts::tts_server_start,
+            commands::tts::tts_server_stop,
+            commands::tts::tts_server_status,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![
@@ -1226,6 +1239,11 @@ pub fn run(cli_args: CliArgs) {
             tauri::RunEvent::Exit => {
                 if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                     let _ = tm.unload_model();
+                }
+                // Einen selbst gestarteten Fish-Speech-Server nie verwaisen
+                // lassen (17 GB VRAM); fremde Server bleiben unberührt.
+                if let Some(tts) = app.try_state::<Arc<managers::tts::TtsManager>>() {
+                    tts.stop_server();
                 }
             }
             _ => {}

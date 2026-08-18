@@ -93,6 +93,46 @@ async changeSelectedLanguageSetting(language: string) : Promise<Result<null, str
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsFishDirSetting(value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_fish_dir_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsPortSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_port_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsSeedSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_seed_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsIdleMinutesSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_idle_minutes_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsMaxCharsSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_max_chars_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
@@ -490,6 +530,17 @@ async cancelOperation() : Promise<void> {
 async isPortable() : Promise<boolean> {
     return await TAURI_INVOKE("is_portable");
 },
+/**
+ * Subscribe the main window to microphone level events.
+ * 
+ * Off by default: the levels fire at audio-callback rate, and delivering them
+ * to a webview that draws nothing is pure overhead (see the note on issue
+ * #1279 in overlay.rs). The dictation test turns this on while it is visible
+ * and off again when it is not.
+ */
+async setLevelMonitoring(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_level_monitoring", { enabled });
+},
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
@@ -845,6 +896,54 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async ttsSpeakText(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsSpeakClipboard() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_clipboard") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsCancel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsServerStart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_server_start") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsServerStop() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_server_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsServerStatus() : Promise<Result<TtsStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_server_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -905,11 +1004,79 @@ bindings?: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk?: boolean
  */
 whats_new_last_seen_version?: string; selected_model?: string; onboarding_completed?: boolean; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: SecretMap; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; theme?: Theme; experimental_enabled?: boolean; lazy_stream_close?: boolean; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number; typing_tool?: TypingTool; external_script_path?: string | null; custom_filler_words?: string[] | null; transcribe_accelerator?: TranscribeAcceleratorSetting; ort_accelerator?: OrtAcceleratorSetting; transcribe_gpu_device?: number; extra_recording_buffer_ms?: number; vad_enabled?: boolean; 
 /**
+ * Emit each spoken sentence as soon as the speaker pauses, instead of
+ * pasting the whole dictation in one block when recording stops.
+ * With a streaming-capable model, insert committed text at the caret while
+ * the user is still speaking instead of pasting once at the end.
+ */
+stream_injection?: boolean; 
+/**
+ * Agreeing hypotheses a prefix needs before streaming freezes it and it
+ * may be typed into the document. Lower reacts faster, higher is safer;
+ * 0 keeps the library default (3). Committed text cannot be retracted
+ * from a foreign window, so this trades latency against correctness.
+ */
+stream_commit_agreement?: number; 
+/**
+ * Microphone sensitivity, 0.0 (only loud, close speech counts) to 1.0
+ * (picks up quiet speech, and more background noise with it). Mapped onto
+ * the Silero VAD threshold, inverted: more sensitive means a lower
+ * threshold. 0.5 reproduces the previous fixed threshold of 0.3.
+ */
+mic_sensitivity?: number; 
+/**
+ * Right-hand attention context for Parakeet-family cache-aware streaming,
+ * in encoder frames. This is what actually governs how long the model
+ * waits before committing a word: less look-ahead, less delay, less
+ * accuracy. 0 keeps the model's own default.
+ * 
+ * **Only values the model was trained for are accepted.** Nemotron
+ * Streaming 3.5 lists `13, 6, 3, 0` — at roughly 80 ms per frame that is
+ * about 1.0 s, 480 ms, 240 ms and none. Anything else is rejected by the
+ * engine; the app then falls back to the default and logs the accepted
+ * values, so read the log rather than guessing.
+ */
+stream_lookahead_frames?: number; 
+/**
+ * Run local Ollama-based refinement for text that continuous streaming has
+ * already inserted into the target application.
+ */
+refine_enabled?: boolean; 
+/**
+ * Exact Ollama model name. When absent, the refiner chooses from the live
+ * local model list using its allowlisted preference order.
+ */
+refine_model?: string | null; refine_sentence_timeout_ms?: number; refine_final_timeout_ms?: number; segment_injection?: boolean; 
+/**
+ * Silence after speech, in ms, that counts as a sentence boundary.
+ */
+segment_pause_ms?: number; 
+/**
  * Which recording overlay to show: None / Minimal / Live. Streaming mode is
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * TP1 Vorlesen: Fish-Speech-Installationsverzeichnis (enthält .venv und tools/).
+ */
+tts_fish_dir?: string; 
+/**
+ * Port des lokalen TTS-Servers; Host ist fest 127.0.0.1.
+ */
+tts_port?: number; 
+/**
+ * Fester Sampling-Seed → konsistente Stimme, solange keine Referenzstimme (TP2) gewählt ist.
+ */
+tts_seed?: number; 
+/**
+ * Leerlauf in Minuten, nach dem ein selbst gestarteter Server beendet wird (0 = nie).
+ */
+tts_idle_minutes?: number; 
+/**
+ * Obergrenze vorzulesender Zeichen; längere Texte werden mit Hinweis gekürzt.
+ */
+tts_max_chars?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1019,6 +1186,8 @@ export type StreamWorkKind = "transcribing" | "polishing"
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TtsPhase = "stopped" | "starting" | "ready" | "speaking" | "error"
+export type TtsStatus = { phase: TtsPhase; owns_server: boolean; message: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 

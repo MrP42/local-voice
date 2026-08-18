@@ -572,6 +572,51 @@ pub fn change_selected_language_setting(app: AppHandle, language: String) -> Res
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_tts_fish_dir_setting(app: AppHandle, value: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_fish_dir = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_port_setting(app: AppHandle, value: u16) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_port = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_seed_setting(app: AppHandle, value: i64) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_seed = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_idle_minutes_setting(app: AppHandle, value: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_idle_minutes = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_max_chars_setting(app: AppHandle, value: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_max_chars = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_overlay_position_setting(app: AppHandle, position: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     let parsed = match position.as_str() {
