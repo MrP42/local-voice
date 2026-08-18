@@ -1,6 +1,8 @@
 # Sprechstift starten und benutzen
 
 Kurzanleitung für den stabilisierten Stand vom 17.08.2026.
+Die Voice-AI-Funktionen vom 18.08.2026 (Vorlesen, Stimmen klonen, Übersetzung,
+Stimmwechsler) sind am Ende dieses Dokuments beschrieben.
 
 ## Starten
 
@@ -99,3 +101,24 @@ Die Sicherung Ihrer vorherigen Einstellungen liegt unter
 
 Die alte Protokolldatei von vor der Bereinigung enthält noch vollständige Diktate im
 Klartext und heißt `handy.log.vor-m3-2026-08-17`. Sie darf gelöscht werden (Issue #6).
+
+## Voice AI: Vorlesen, Stimmen, Übersetzung, Stimmwechsler (Stand 18.08.2026)
+
+Alles davon läuft lokal: die Sprachsynthese über den Fish-Speech-Server aus
+`C:\AI\fish-speech` (die App startet und stoppt ihn selbst), die Spracherkennung
+über die vorhandenen Modelle, die Übersetzung über den konfigurierten
+Nachbearbeitungs-Provider (für lokal: Custom → Ollama).
+
+Alle vier Funktionen liegen im Hauptfenster unter **„Vorlesen"**:
+
+| Funktion | Bedienung |
+|---|---|
+| **Vorlesen** | Text ins Feld tippen → „Vorlesen"; oder Text kopieren und **Strg+Alt+Leertaste** drücken (zweiter Druck stoppt). Beim ersten Mal startet der Server (~2 Minuten, Status-Anzeige); danach kommt der erste Satz nach rund 2 Sekunden. Nach 15 Minuten Leerlauf stoppt der Server von selbst und gibt den Grafikspeicher frei. |
+| **Stimmen** | „Neue Stimme aufnehmen" → 10–30 Sekunden natürlich sprechen → Stopp. Das Transkript entsteht automatisch und ist korrigierbar. Name vergeben, speichern — die Stimme ist sofort aktiv. Alternativ eine WAV-Datei importieren (beste Qualität). Aufnahmen bleiben auf diesem Rechner. |
+| **Audio-Übersetzung** | Zielsprache wählen, dann tippen oder „Aufnehmen & übersetzen". Die Übersetzung erscheint als Text und wird in der gewählten Stimme gesprochen. Voraussetzung: ein Nachbearbeitungs-Provider mit Modell (für lokal: Ollama mit einem **kleinen** Modell — ein großes passt nicht neben die Sprachsynthese in den Grafikspeicher). |
+| **Stimmwechsler** | Aufnehmen oder WAV-Datei wählen → der Inhalt wird in der gewählten Stimme nachgesprochen und lässt sich als WAV exportieren. Kein Live-Effekt: erst erkennen, dann synthetisieren (ein 10-Sekunden-Ergebnis dauert etwa 7 Sekunden). |
+
+Ein Hinweis zur GPU: Während der Fish-Server geladen ist, belegt er rund 20 GB
+Grafikspeicher. Andere GPU-Programme (ComfyUI, große Ollama-Modelle) gleichzeitig
+laufen zu lassen macht alles um ein Vielfaches langsamer — die App zeigt beim
+Serverstart einen Hinweis, wenn genau das passiert.
