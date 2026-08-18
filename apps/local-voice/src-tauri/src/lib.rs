@@ -956,6 +956,10 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_translate_speak,
             commands::tts::tts_record_translate_start,
             commands::tts::tts_record_translate_stop,
+            commands::tts::tts_voicechange_record_start,
+            commands::tts::tts_voicechange_record_stop,
+            commands::tts::tts_voicechange_file,
+            commands::tts::tts_synthesize_to_file,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

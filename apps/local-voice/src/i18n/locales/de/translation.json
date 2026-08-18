@@ -70,6 +70,18 @@
       "result": "Übersetzung:",
       "providerHint": "Braucht einen konfigurierten Post-Processing-Provider mit Modell (Einstellungen → Nachbearbeitung). Für komplett lokale Übersetzung: Custom mit Ollama und einem kleinen Modell."
     },
+    "voiceChanger": {
+      "title": "Stimmwechsler",
+      "description": "Aufnahme oder WAV-Datei in der gewählten Stimme nachsprechen (Offline-Kaskade: transkribieren, dann synthetisieren — kein Live-Effekt).",
+      "record": "Aufnehmen",
+      "stopRecording": "Stopp & nachsprechen",
+      "pickFile": "WAV-Datei…",
+      "recording": "Aufnahme läuft…",
+      "working": "Arbeitet…",
+      "heard": "Verstanden:",
+      "export": "Als WAV exportieren…",
+      "savedTo": "Gespeichert: {{path}}"
+    },
     "settingsTitle": "Vorlesen-Einstellungen",
     "settings": {
       "fishDir": "Fish-Speech-Ordner",

@@ -286,6 +286,8 @@ pub struct TtsManager {
 const REFERENCE_BINDING: &str = "voice_reference";
 /// Binding-Id des Übersetzungsaufnahme-Flows.
 const TRANSLATE_BINDING: &str = "translate_input";
+/// Binding-Id des Stimmwechsler-Flows.
+const VOICECHANGE_BINDING: &str = "voicechange_input";
 
 impl TtsManager {
     pub fn new(app: &tauri::AppHandle) -> Arc<Self> {
@@ -557,18 +559,7 @@ impl TtsManager {
     ) -> Result<String, String> {
         let settings = crate::settings::get_settings(&self.app);
         let translation = crate::translator::translate(&settings, text, target_lang).await?;
-        let manager = Arc::clone(self);
-        let spoken = translation.clone();
-        tauri::async_runtime::spawn(async move {
-            manager.refresh_from_settings();
-            if let Err(e) = manager.ensure_server().await {
-                log::error!("translate: server start failed: {e}");
-                return;
-            }
-            if let Err(e) = manager.speak_text(&spoken).await {
-                log::warn!("translate: speaking failed: {e}");
-            }
-        });
+        self.speak_in_background(translation.clone());
         Ok(translation)
     }
 
@@ -614,6 +605,95 @@ impl TtsManager {
         }
         let translation = self.translate_and_speak(&transcript, target_lang).await?;
         Ok((transcript, translation))
+    }
+
+    /// Stimmwechsler: Aufnahme starten (Kaskade Aufnahme → STT → TTS in der
+    /// aktiven Stimme; offline, kein Echtzeit-Effekt).
+    pub fn record_voicechange_start(&self) -> Result<(), String> {
+        use tauri::Manager;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.initiate_model_load();
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        rm.try_start_recording(VOICECHANGE_BINDING, crate::audio_toolkit::VadPolicy::Offline)
+    }
+
+    /// Stimmwechsler-Aufnahme beenden: transkribieren und in der aktiven
+    /// Stimme nachsprechen. Rückgabe: das Transkript (Sprechen läuft im
+    /// Hintergrund, Fehler kommen über tts-state-changed).
+    pub async fn record_voicechange_stop(self: &Arc<Self>) -> Result<String, String> {
+        use tauri::Manager;
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        let generation = rm.cancel_generation();
+        let samples = rm
+            .stop_recording(VOICECHANGE_BINDING, generation)
+            .ok_or_else(|| "no voice-change recording in progress".to_string())?;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        let transcript = tm
+            .transcribe(samples)
+            .map_err(|e| format!("Transkription fehlgeschlagen: {e}"))?;
+        if transcript.trim().is_empty() {
+            return Err("Es wurde keine Sprache erkannt".into());
+        }
+        self.speak_in_background(transcript.clone());
+        Ok(transcript)
+    }
+
+    /// Stimmwechsler für eine WAV-Datei: transkribieren und in der aktiven
+    /// Stimme nachsprechen. Rückgabe: das Transkript.
+    pub async fn respeak_file(self: &Arc<Self>, wav_path: &str) -> Result<String, String> {
+        use tauri::Manager;
+        let samples = voices::load_wav_mono_16k(std::path::Path::new(wav_path))?;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.initiate_model_load();
+        let transcript = tm
+            .transcribe(samples)
+            .map_err(|e| format!("Transkription fehlgeschlagen: {e}"))?;
+        if transcript.trim().is_empty() {
+            return Err("In der Datei wurde keine Sprache erkannt".into());
+        }
+        self.speak_in_background(transcript.clone());
+        Ok(transcript)
+    }
+
+    fn speak_in_background(self: &Arc<Self>, text: String) {
+        let manager = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            manager.refresh_from_settings();
+            if let Err(e) = manager.ensure_server().await {
+                log::error!("respeak: server start failed: {e}");
+                return;
+            }
+            if let Err(e) = manager.speak_text(&text).await {
+                log::warn!("respeak: speaking failed: {e}");
+            }
+        });
+    }
+
+    /// Text in der aktiven Stimme als WAV-Datei synthetisieren (ein Request,
+    /// ohne Playback) — der Datei-Export des Stimmwechslers.
+    pub async fn synthesize_to_file(&self, text: &str, out_path: &str) -> Result<usize, String> {
+        self.refresh_from_settings();
+        self.ensure_server().await?;
+        let prepared = {
+            let max_chars = *self.core.max_chars.lock().unwrap();
+            protocol::prepare_text(text, max_chars).ok_or_else(|| "empty text".to_string())?
+        };
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+        let wav = self.core.fetch_wav(port, seed, &prepared.text).await?;
+        std::fs::write(out_path, &wav).map_err(|e| format!("could not write {out_path}: {e}"))?;
+        *self.core.last_used.lock().unwrap() = Instant::now();
+        Ok(wav.len())
     }
 
     /// Stimme löschen; war sie aktiv, fällt die Auswahl auf die

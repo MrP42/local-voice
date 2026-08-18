@@ -6,6 +6,7 @@ import { useSettings } from "../../../hooks/useSettings";
 import { ShortcutInput } from "../ShortcutInput";
 import { VoicesCard } from "./VoicesCard";
 import { TranslateCard } from "./TranslateCard";
+import { VoiceChangerCard } from "./VoiceChangerCard";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Input } from "../../ui/Input";
@@ -165,6 +166,8 @@ export const TtsSettings = () => {
       <VoicesCard />
 
       <TranslateCard />
+
+      <VoiceChangerCard />
 
       <SettingsGroup title={t("tts.settingsTitle")}>
         <ShortcutInput shortcutId="speak_clipboard" grouped={true} />

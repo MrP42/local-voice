@@ -139,3 +139,34 @@ pub async fn tts_record_translate_stop(
         translation,
     })
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_voicechange_record_start(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().record_voicechange_start()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_voicechange_record_stop(app: AppHandle) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.record_voicechange_stop().await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_voicechange_file(app: AppHandle, wav_path: String) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.respeak_file(&wav_path).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_synthesize_to_file(
+    app: AppHandle,
+    text: String,
+    out_path: String,
+) -> Result<(), String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.synthesize_to_file(&text, &out_path).await.map(|_| ())
+}

@@ -70,6 +70,18 @@
       "result": "Translation:",
       "providerHint": "Requires a configured post-processing provider with a model (Settings → Post Process). For fully local translation use Custom with Ollama and a small model."
     },
+    "voiceChanger": {
+      "title": "Voice Changer",
+      "description": "Re-speak a recording or WAV file in the selected voice (offline cascade: transcribe, then synthesize — not a live effect).",
+      "record": "Record",
+      "stopRecording": "Stop & re-speak",
+      "pickFile": "WAV file…",
+      "recording": "Recording…",
+      "working": "Working…",
+      "heard": "Heard:",
+      "export": "Export as WAV…",
+      "savedTo": "Saved: {{path}}"
+    },
     "settingsTitle": "Read Aloud settings",
     "settings": {
       "fishDir": "Fish Speech folder",
