@@ -511,6 +511,21 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// TP1 Vorlesen: Fish-Speech-Installationsverzeichnis (enthält .venv und tools/).
+    #[serde(default = "default_tts_fish_dir")]
+    pub tts_fish_dir: String,
+    /// Port des lokalen TTS-Servers; Host ist fest 127.0.0.1.
+    #[serde(default = "default_tts_port")]
+    pub tts_port: u16,
+    /// Fester Sampling-Seed → konsistente Stimme, solange keine Referenzstimme (TP2) gewählt ist.
+    #[serde(default = "default_tts_seed")]
+    pub tts_seed: i64,
+    /// Leerlauf in Minuten, nach dem ein selbst gestarteter Server beendet wird (0 = nie).
+    #[serde(default = "default_tts_idle_minutes")]
+    pub tts_idle_minutes: u32,
+    /// Obergrenze vorzulesender Zeichen; längere Texte werden mit Hinweis gekürzt.
+    #[serde(default = "default_tts_max_chars")]
+    pub tts_max_chars: u32,
 }
 
 fn default_model() -> String {
@@ -871,6 +886,26 @@ fn default_typing_tool() -> TypingTool {
     TypingTool::Auto
 }
 
+fn default_tts_fish_dir() -> String {
+    r"C:\AI\fish-speech".to_string()
+}
+
+fn default_tts_port() -> u16 {
+    8080
+}
+
+fn default_tts_seed() -> i64 {
+    42
+}
+
+fn default_tts_idle_minutes() -> u32 {
+    15
+}
+
+fn default_tts_max_chars() -> u32 {
+    5000
+}
+
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
@@ -980,6 +1015,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "escape".to_string(),
         },
     );
+    bindings.insert(
+        "speak_clipboard".to_string(),
+        ShortcutBinding {
+            id: "speak_clipboard".to_string(),
+            name: "Speak Clipboard".to_string(),
+            description: "Reads the current clipboard text aloud.".to_string(),
+            default_binding: "ctrl+alt+space".to_string(),
+            current_binding: "ctrl+alt+space".to_string(),
+        },
+    );
 
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
@@ -1049,6 +1094,11 @@ pub fn get_default_settings() -> AppSettings {
         segment_injection: default_segment_injection(),
         segment_pause_ms: default_segment_pause_ms(),
         overlay_style: default_overlay_style(),
+        tts_fish_dir: default_tts_fish_dir(),
+        tts_port: default_tts_port(),
+        tts_seed: default_tts_seed(),
+        tts_idle_minutes: default_tts_idle_minutes(),
+        tts_max_chars: default_tts_max_chars(),
     }
 }
 
@@ -1707,5 +1757,26 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn tts_defaults_are_local_and_conservative() {
+        let s = get_default_settings();
+        assert_eq!(s.tts_fish_dir, r"C:\AI\fish-speech");
+        assert_eq!(s.tts_port, 8080);
+        assert_eq!(s.tts_seed, 42);
+        assert_eq!(s.tts_idle_minutes, 15);
+        assert_eq!(s.tts_max_chars, 5000);
+        let b = &s.bindings["speak_clipboard"];
+        assert_eq!(b.default_binding, "ctrl+alt+space");
+        assert_eq!(b.current_binding, "ctrl+alt+space");
+    }
+
+    #[test]
+    fn tts_fields_survive_a_partial_store() {
+        // Bestehende Stores kennen die tts_-Keys nicht; sie müssen mit Defaults laden.
+        let s: AppSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(s.tts_port, 8080);
+        assert_eq!(s.tts_max_chars, 5000);
     }
 }
