@@ -113,6 +113,12 @@ const settingUpdaters: {
     commands.updateRecordingRetentionPeriod(value as string),
   translate_to_english: (value) =>
     commands.changeTranslateToEnglishSetting(value as boolean),
+  tts_fish_dir: (value) => commands.changeTtsFishDirSetting(value as string),
+  tts_port: (value) => commands.changeTtsPortSetting(value as number),
+  tts_seed: (value) => commands.changeTtsSeedSetting(value as number),
+  tts_idle_minutes: (value) =>
+    commands.changeTtsIdleMinutesSetting(value as number),
+  tts_max_chars: (value) => commands.changeTtsMaxCharsSetting(value as number),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

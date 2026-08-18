@@ -8,6 +8,7 @@ import {
   Sparkles,
   Cpu,
   Mic,
+  Volume2,
 } from "lucide-react";
 import SprechstiftLogo, { SprechstiftMark } from "./icons/SprechstiftLogo";
 import { useSettings } from "../hooks/useSettings";
@@ -20,6 +21,7 @@ import {
   PostProcessingSettings,
   ModelsSettings,
   DictationTest,
+  TtsSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -62,6 +64,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.dictationTest",
     icon: Mic,
     component: DictationTest,
+    enabled: () => true,
+  },
+  tts: {
+    labelKey: "sidebar.tts",
+    icon: Volume2,
+    component: TtsSettings,
     enabled: () => true,
   },
   advanced: {

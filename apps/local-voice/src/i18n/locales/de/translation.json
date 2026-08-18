@@ -16,7 +16,40 @@
     "history": "Verlauf",
     "debug": "Debug",
     "about": "Info",
-    "dictationTest": "Diktattest"
+    "dictationTest": "Diktattest",
+    "tts": "Vorlesen"
+  },
+  "tts": {
+    "title": "Vorlesen",
+    "serverTitle": "Fish-Speech-Server",
+    "description": "Lokale Sprachausgabe über Fish Speech auf der eigenen GPU. Der Server startet bei Bedarf und wird nach Leerlauf wieder gestoppt, um VRAM freizugeben.",
+    "inputPlaceholder": "Text zum Vorlesen eingeben oder einfügen…",
+    "speak": "Vorlesen",
+    "stop": "Stopp",
+    "serverStart": "Server starten",
+    "serverStop": "Server stoppen",
+    "externalServerHint": "Dieser Server wurde außerhalb der App gestartet und wird von hier nie beendet.",
+    "status": {
+      "stopped": "Server aus",
+      "starting": "Startet… ({{seconds}} s)",
+      "ready": "Bereit",
+      "speaking": "Spricht",
+      "error": "Fehler"
+    },
+    "vramHint": "Start dauert lange — VRAM freigeben: andere GPU-Apps schließen.",
+    "settingsTitle": "Vorlesen-Einstellungen",
+    "settings": {
+      "fishDir": "Fish-Speech-Ordner",
+      "fishDirDescription": "Installationsordner mit .venv und tools/api_server.py.",
+      "port": "Server-Port",
+      "portDescription": "Lokaler Port auf 127.0.0.1, auf dem der TTS-Server lauscht.",
+      "seed": "Stimm-Seed",
+      "seedDescription": "Fester Seed hält die Stimme zwischen Aufträgen konstant.",
+      "idleMinutes": "Server stoppen nach Leerlauf (Minuten)",
+      "idleMinutesDescription": "0 bedeutet: Der Server wird nie automatisch gestoppt.",
+      "maxChars": "Maximale Zeichen pro Auftrag",
+      "maxCharsDescription": "Längere Texte werden gekürzt — Schutz vor versehentlichen Riesen-Zwischenablagen."
+    }
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",

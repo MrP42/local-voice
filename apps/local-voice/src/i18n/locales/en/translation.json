@@ -16,7 +16,40 @@
     "history": "History",
     "debug": "Debug",
     "about": "About",
-    "dictationTest": "Dictation test"
+    "dictationTest": "Dictation test",
+    "tts": "Read Aloud"
+  },
+  "tts": {
+    "title": "Read Aloud",
+    "serverTitle": "Fish Speech server",
+    "description": "Local text-to-speech via Fish Speech on your own GPU. The server starts on demand and is stopped again after idle time to free VRAM.",
+    "inputPlaceholder": "Type or paste text to read aloud…",
+    "speak": "Speak",
+    "stop": "Stop",
+    "serverStart": "Start server",
+    "serverStop": "Stop server",
+    "externalServerHint": "This server was started outside the app and is never stopped from here.",
+    "status": {
+      "stopped": "Server off",
+      "starting": "Starting… ({{seconds}}s)",
+      "ready": "Ready",
+      "speaking": "Speaking",
+      "error": "Error"
+    },
+    "vramHint": "Startup is slow — free GPU memory by closing other GPU apps.",
+    "settingsTitle": "Read Aloud settings",
+    "settings": {
+      "fishDir": "Fish Speech folder",
+      "fishDirDescription": "Installation folder containing .venv and tools/api_server.py.",
+      "port": "Server port",
+      "portDescription": "Local port on 127.0.0.1 the TTS server listens on.",
+      "seed": "Voice seed",
+      "seedDescription": "Fixed seed keeps the same voice between requests.",
+      "idleMinutes": "Stop server after idle (minutes)",
+      "idleMinutesDescription": "0 means the server is never stopped automatically.",
+      "maxChars": "Maximum characters per request",
+      "maxCharsDescription": "Longer texts are truncated to protect against accidental huge clipboards."
+    }
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
