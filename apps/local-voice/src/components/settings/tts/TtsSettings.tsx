@@ -11,6 +11,7 @@ import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { ToggleSwitch } from "../../ui/ToggleSwitch";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -237,6 +238,14 @@ export const TtsSettings = () => {
             className="w-24"
           />
         </SettingContainer>
+        <ToggleSwitch
+          checked={getSetting("tts_compile") ?? true}
+          onChange={(checked) => updateSetting("tts_compile", checked)}
+          isUpdating={isUpdating("tts_compile")}
+          label={t("tts.settings.compile")}
+          description={t("tts.settings.compileDescription")}
+          grouped={true}
+        />
         <SettingContainer
           title={t("tts.settings.maxChars")}
           description={t("tts.settings.maxCharsDescription")}

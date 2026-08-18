@@ -149,7 +149,9 @@ impl TtsCore {
         let port = *self.port.lock().unwrap();
         let seed = *self.seed.lock().unwrap();
         self.set_phase(TtsPhase::Speaking, None);
-        let result = self.fetch_and_play(port, seed, &prepared.text, my_cancel).await;
+        let result = self
+            .fetch_and_play_pipelined(port, seed, &prepared.text, my_cancel)
+            .await;
         // Nur der jüngste Auftrag darf den Endzustand setzen.
         if self.generation.load(Ordering::Acquire) == my_generation {
             match &result {
@@ -185,25 +187,75 @@ impl TtsCore {
         Ok(bytes)
     }
 
-    async fn fetch_and_play(
+    /// Satz-Pipeline: Satz N wird abgespielt, während Satz N+1 bereits beim
+    /// Server liegt. Die gefühlte Latenz ist damit die Synthese des ersten
+    /// Satzes; bei RTF < 1 (compile) bleibt die Wiedergabe lückenlos.
+    async fn fetch_and_play_pipelined(
         &self,
         port: u16,
         seed: i64,
         text: &str,
         cancelled: Arc<AtomicBool>,
     ) -> Result<usize, String> {
-        let bytes = self.fetch_wav(port, seed, text).await?;
-        if cancelled.load(Ordering::Acquire) {
-            return Ok(bytes.len()); // überholt — nicht mehr abspielen
+        let sentences = protocol::split_sentences(text);
+        let mut previous_playback: Option<tauri::async_runtime::JoinHandle<Result<(), String>>> =
+            None;
+        let mut total_bytes = 0usize;
+        let mut failure: Option<String> = None;
+
+        for sentence in &sentences {
+            if cancelled.load(Ordering::Acquire) {
+                break;
+            }
+            match self.fetch_wav(port, seed, sentence).await {
+                Ok(bytes) => {
+                    total_bytes += bytes.len();
+                    // Vorherigen Satz zu Ende spielen lassen (Reihenfolge!).
+                    if let Some(handle) = previous_playback.take() {
+                        match handle.await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                failure = Some(e);
+                                break;
+                            }
+                            Err(e) => {
+                                failure = Some(e.to_string());
+                                break;
+                            }
+                        }
+                    }
+                    if cancelled.load(Ordering::Acquire) {
+                        break;
+                    }
+                    let player = self.player.clone();
+                    let device = self.output_device.lock().unwrap().clone();
+                    let volume = *self.volume.lock().unwrap();
+                    let cancel_flag = cancelled.clone();
+                    previous_playback = Some(tauri::async_runtime::spawn_blocking(move || {
+                        player.play(bytes, device, volume, cancel_flag)
+                    }));
+                }
+                Err(e) => {
+                    failure = Some(e);
+                    break;
+                }
+            }
         }
-        let len = bytes.len();
-        let player = self.player.clone();
-        let device = self.output_device.lock().unwrap().clone();
-        let volume = *self.volume.lock().unwrap();
-        tauri::async_runtime::spawn_blocking(move || player.play(bytes, device, volume, cancelled))
-            .await
-            .map_err(|e| e.to_string())??;
-        Ok(len)
+        if let Some(handle) = previous_playback {
+            match handle.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    failure.get_or_insert(e);
+                }
+                Err(e) => {
+                    failure.get_or_insert(e.to_string());
+                }
+            }
+        }
+        match failure {
+            Some(e) => Err(e),
+            None => Ok(total_bytes),
+        }
     }
 
     pub fn cancel_core(&self) {
@@ -329,6 +381,10 @@ impl TtsManager {
             .env("HF_HUB_DISABLE_TELEMETRY", "1")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
+        if settings.tts_compile {
+            // 9x schnellere Synthese (RTF ~0,65 statt ~6), kostet ~60 s beim Start.
+            cmd.arg("--compile");
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -671,6 +727,24 @@ mod tests {
         assert!(core.ensure_server_core().await.is_err());
         assert_eq!(core.phase(), TtsPhase::Stopped);
         assert!(!core.owns_server());
+    }
+
+    #[tokio::test]
+    async fn multi_sentence_text_is_pipelined_as_separate_requests() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let port = spawn_mock(calls.clone(), bodies.clone()).await;
+        let core = TtsCore::for_test(port);
+        core.ensure_server_core().await.unwrap();
+        let total = core
+            .speak_core("Der erste Satz ist lang genug. Der zweite Satz ist es ebenfalls.")
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "ein Request pro Satz");
+        assert!(total > 2 * 1024, "beide WAVs gezählt");
+        let all = bodies.lock().unwrap().join("|");
+        assert!(all.contains("Der erste Satz"));
+        assert!(all.contains("Der zweite Satz"));
     }
 
     #[tokio::test]

@@ -119,6 +119,9 @@ const settingUpdaters: {
   tts_idle_minutes: (value) =>
     commands.changeTtsIdleMinutesSetting(value as number),
   tts_max_chars: (value) => commands.changeTtsMaxCharsSetting(value as number),
+  tts_voice: (value) =>
+    commands.changeTtsVoiceSetting(value as string | null),
+  tts_compile: (value) => commands.changeTtsCompileSetting(value as boolean),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

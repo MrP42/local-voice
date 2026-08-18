@@ -67,7 +67,9 @@
       "idleMinutes": "Server stoppen nach Leerlauf (Minuten)",
       "idleMinutesDescription": "0 bedeutet: Der Server wird nie automatisch gestoppt.",
       "maxChars": "Maximale Zeichen pro Auftrag",
-      "maxCharsDescription": "Längere Texte werden gekürzt — Schutz vor versehentlichen Riesen-Zwischenablagen."
+      "maxCharsDescription": "Längere Texte werden gekürzt — Schutz vor versehentlichen Riesen-Zwischenablagen.",
+      "compile": "GPU-Kompilierung (9× schneller)",
+      "compileDescription": "Startet den Server mit torch.compile: Synthese schneller als Echtzeit (RTF ~0,65 statt ~6), dafür ~60 s längerer Serverstart."
     }
   },
   "onboarding": {

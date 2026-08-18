@@ -530,6 +530,14 @@ pub struct AppSettings {
     /// Seed-Standardstimme. TP2 Stimmen klonen.
     #[serde(default)]
     pub tts_voice: Option<String>,
+    /// Server mit torch.compile starten (triton-windows). Gemessen 2026-08-18:
+    /// RTF 0,63–0,72 statt ~6 (9x), dafür ~60 s längerer Serverstart.
+    #[serde(default = "default_tts_compile")]
+    pub tts_compile: bool,
+}
+
+fn default_tts_compile() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -1104,6 +1112,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_idle_minutes: default_tts_idle_minutes(),
         tts_max_chars: default_tts_max_chars(),
         tts_voice: None,
+        tts_compile: default_tts_compile(),
     }
 }
 

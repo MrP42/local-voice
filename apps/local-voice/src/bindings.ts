@@ -141,6 +141,14 @@ async changeTtsVoiceSetting(value: string | null) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsCompileSetting(value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_compile_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
@@ -1137,7 +1145,12 @@ tts_max_chars?: number;
  * Aktive Referenzstimme (reference_id im Fish-Server) oder None =
  * Seed-Standardstimme. TP2 Stimmen klonen.
  */
-tts_voice?: string | null }
+tts_voice?: string | null; 
+/**
+ * Server mit torch.compile starten (triton-windows). Gemessen 2026-08-18:
+ * RTF 0,63–0,72 statt ~6 (9x), dafür ~60 s längerer Serverstart.
+ */
+tts_compile?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

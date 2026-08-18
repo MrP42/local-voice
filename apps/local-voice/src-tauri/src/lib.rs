@@ -842,6 +842,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_tts_idle_minutes_setting,
             shortcut::change_tts_max_chars_setting,
             shortcut::change_tts_voice_setting,
+            shortcut::change_tts_compile_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,

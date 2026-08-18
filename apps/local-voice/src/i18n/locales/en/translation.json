@@ -67,7 +67,9 @@
       "idleMinutes": "Stop server after idle (minutes)",
       "idleMinutesDescription": "0 means the server is never stopped automatically.",
       "maxChars": "Maximum characters per request",
-      "maxCharsDescription": "Longer texts are truncated to protect against accidental huge clipboards."
+      "maxCharsDescription": "Longer texts are truncated to protect against accidental huge clipboards.",
+      "compile": "GPU compile (9× faster)",
+      "compileDescription": "Starts the server with torch.compile: synthesis faster than real time (RTF ~0.65 instead of ~6), at the cost of ~60 s longer server startup."
     }
   },
   "onboarding": {
