@@ -1016,6 +1016,47 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+/// Zweiter Druck während des Sprechens = Stopp; in jeder anderen Phase ist
+/// der Druck ein (neuer) Sprechauftrag.
+pub(crate) fn speak_press_should_cancel(phase: crate::managers::tts::state::TtsPhase) -> bool {
+    phase == crate::managers::tts::state::TtsPhase::Speaking
+}
+
+/// Liest die Zwischenablage über den lokalen Fish-Speech-Server vor (TP1).
+struct SpeakClipboardAction;
+
+impl ShortcutAction for SpeakClipboardAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let tts = Arc::clone(&app.state::<Arc<crate::managers::tts::TtsManager>>());
+        let app = app.clone();
+        if speak_press_should_cancel(tts.status().phase) {
+            tts.cancel();
+            return;
+        }
+        tauri::async_runtime::spawn(async move {
+            use tauri_plugin_clipboard_manager::ClipboardExt;
+            let text = match app.clipboard().read_text() {
+                Ok(t) => t,
+                Err(e) => {
+                    warn!("speak_clipboard: clipboard read failed: {e}");
+                    return;
+                }
+            };
+            tts.refresh_from_settings();
+            if let Err(e) = tts.ensure_server().await {
+                error!("speak_clipboard: server start failed: {e}");
+                return;
+            }
+            if let Err(e) = tts.speak_text(&text).await {
+                // Kein Text im Log — nur der Fehlergrund.
+                warn!("speak_clipboard: {e}");
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -1068,6 +1109,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "speak_clipboard".to_string(),
+        Arc::new(SpeakClipboardAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
@@ -1158,6 +1203,18 @@ mod tests {
         assert!(should_start_segmenter(true, false));
         assert!(!should_start_segmenter(true, true));
         assert!(!should_start_segmenter(false, false));
+    }
+
+    #[test]
+    fn speak_clipboard_press_toggles_between_speak_and_cancel() {
+        use crate::managers::tts::state::TtsPhase;
+        assert!(super::speak_press_should_cancel(TtsPhase::Speaking));
+        assert!(!super::speak_press_should_cancel(TtsPhase::Ready));
+        assert!(!super::speak_press_should_cancel(TtsPhase::Stopped));
+        assert!(
+            !super::speak_press_should_cancel(TtsPhase::Starting),
+            "Start nicht abwürgen"
+        );
     }
 
     /// Each fallback reason must reach the UI as its own key, otherwise two
