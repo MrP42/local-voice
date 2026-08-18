@@ -66,8 +66,9 @@ Status/Fortschritt zusätzlich als Events (`tts-state-changed`).
 ### Hotkey
 
 Neue Action „Clipboard vorlesen“ in der bestehenden Action-/Shortcut-
-Registrierung, Standard-Bindung konfigurierbar, Default: keine (Nutzer weist im
-Settings-Bereich zu — vermeidet Kollisionen mit Diktat-Hotkeys).
+Registrierung. Default-Bindung `ctrl+alt+space` (konfigurierbar) — ein leerer
+Binding-String ist im Registrierungspfad unverifiziert, daher ein kollisionsfreier
+echter Default statt „keine“ (Korrektur aus der Planungsphase).
 
 ### Settings (Erweiterung `settings.rs`)
 
