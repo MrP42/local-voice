@@ -60,7 +60,8 @@ lassen.
 | **M3 Stabilisierung des Basispfads** | **teilweise verifiziert 2026-08-17** — siehe unten |
 | **M4 / TP1 Vorlesen (Fish-Speech-TTS)** | **verifiziert (headless) 2026-08-18** — siehe `docs/m4-evidence/`; Hotkey-Hörtest manuell offen |
 | **M5 / TP2 Stimmen klonen (zero-shot)** | **verifiziert (headless+live) 2026-08-18** — siehe `docs/m5-evidence/`; In-App-Aufnahme manuell offen |
-| M6 bis M10 | **offen** |
+| **M6 / TP5 Performance (compile + Satz-Pipeline)** | **verifiziert 2026-08-18** — RTF 0,63–0,72 statt ~6; erster Satz in ~1,8 s; siehe `docs/m6-evidence/` |
+| M7 bis M10 | **offen** |
 
 ### Verifizierte Messung (2026-07-28, i9-13900K, CPU-Backend)
 
