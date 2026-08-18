@@ -122,6 +122,8 @@ const settingUpdaters: {
   tts_voice: (value) =>
     commands.changeTtsVoiceSetting(value as string | null),
   tts_compile: (value) => commands.changeTtsCompileSetting(value as boolean),
+  tts_translate_lang: (value) =>
+    commands.changeTtsTranslateLangSetting(value as string),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

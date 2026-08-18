@@ -149,6 +149,14 @@ async changeTtsCompileSetting(value: boolean) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsTranslateLangSetting(value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_translate_lang_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
@@ -1008,6 +1016,30 @@ async ttsDeleteVoice(id: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async ttsTranslateSpeak(text: string, targetLang: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_translate_speak", { text, targetLang }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsRecordTranslateStart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_record_translate_start") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsRecordTranslateStop(targetLang: string) : Promise<Result<TranslateOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_record_translate_stop", { targetLang }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Stub implementation for non-macOS platforms
  * Always returns false since laptop detection is macOS-specific
@@ -1150,7 +1182,12 @@ tts_voice?: string | null;
  * Server mit torch.compile starten (triton-windows). Gemessen 2026-08-18:
  * RTF 0,63–0,72 statt ~6 (9x), dafür ~60 s längerer Serverstart.
  */
-tts_compile?: boolean }
+tts_compile?: boolean; 
+/**
+ * Zielsprache der Audio-Übersetzung (TP3), als englischer Sprachname
+ * für den Übersetzungs-Prompt (z. B. "English", "German").
+ */
+tts_translate_lang?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1261,6 +1298,7 @@ export type StreamWorkKind = "transcribing" | "polishing"
  */
 export type Theme = "system" | "light" | "dark"
 export type TranscribeAcceleratorSetting = "auto" | "cpu" | "gpu"
+export type TranslateOutcome = { transcript: string; translation: string }
 export type TtsPhase = "stopped" | "starting" | "ready" | "speaking" | "error"
 export type TtsStatus = { phase: TtsPhase; owns_server: boolean; message: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"

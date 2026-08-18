@@ -102,3 +102,40 @@ pub fn tts_import_voice(
 pub fn tts_delete_voice(app: AppHandle, id: String) -> Result<(), String> {
     app.state::<Arc<TtsManager>>().delete_voice_id(&id)
 }
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct TranslateOutcome {
+    pub transcript: String,
+    pub translation: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_translate_speak(
+    app: AppHandle,
+    text: String,
+    target_lang: String,
+) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.translate_and_speak(&text, &target_lang).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_record_translate_start(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().record_translate_start()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_record_translate_stop(
+    app: AppHandle,
+    target_lang: String,
+) -> Result<TranslateOutcome, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    let (transcript, translation) = tts.record_translate_stop(&target_lang).await?;
+    Ok(TranslateOutcome {
+        transcript,
+        translation,
+    })
+}

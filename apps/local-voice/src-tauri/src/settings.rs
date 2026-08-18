@@ -534,6 +534,14 @@ pub struct AppSettings {
     /// RTF 0,63–0,72 statt ~6 (9x), dafür ~60 s längerer Serverstart.
     #[serde(default = "default_tts_compile")]
     pub tts_compile: bool,
+    /// Zielsprache der Audio-Übersetzung (TP3), als englischer Sprachname
+    /// für den Übersetzungs-Prompt (z. B. "English", "German").
+    #[serde(default = "default_tts_translate_lang")]
+    pub tts_translate_lang: String,
+}
+
+fn default_tts_translate_lang() -> String {
+    "English".to_string()
 }
 
 fn default_tts_compile() -> bool {
@@ -1113,6 +1121,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_max_chars: default_tts_max_chars(),
         tts_voice: None,
         tts_compile: default_tts_compile(),
+        tts_translate_lang: default_tts_translate_lang(),
     }
 }
 

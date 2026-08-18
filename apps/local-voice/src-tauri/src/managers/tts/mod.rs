@@ -284,6 +284,8 @@ pub struct TtsManager {
 
 /// Binding-Id des Referenzaufnahme-Flows im AudioRecordingManager.
 const REFERENCE_BINDING: &str = "voice_reference";
+/// Binding-Id des Übersetzungsaufnahme-Flows.
+const TRANSLATE_BINDING: &str = "translate_input";
 
 impl TtsManager {
     pub fn new(app: &tauri::AppHandle) -> Arc<Self> {
@@ -543,6 +545,75 @@ impl TtsManager {
         };
         voices::import_voice(&self.fish_dir(), &id, source, &transcript)?;
         Ok((id, transcript))
+    }
+
+    /// Text übersetzen und die Übersetzung sprechen. Die Rückgabe (der
+    /// übersetzte Text) kommt sofort; das Sprechen läuft im Hintergrund und
+    /// meldet Fehler über die tts-state-changed-Events.
+    pub async fn translate_and_speak(
+        self: &Arc<Self>,
+        text: &str,
+        target_lang: &str,
+    ) -> Result<String, String> {
+        let settings = crate::settings::get_settings(&self.app);
+        let translation = crate::translator::translate(&settings, text, target_lang).await?;
+        let manager = Arc::clone(self);
+        let spoken = translation.clone();
+        tauri::async_runtime::spawn(async move {
+            manager.refresh_from_settings();
+            if let Err(e) = manager.ensure_server().await {
+                log::error!("translate: server start failed: {e}");
+                return;
+            }
+            if let Err(e) = manager.speak_text(&spoken).await {
+                log::warn!("translate: speaking failed: {e}");
+            }
+        });
+        Ok(translation)
+    }
+
+    /// Aufnahme für die Sprach-zu-Sprach-Übersetzung starten (VAD wie beim
+    /// Diktat; STT-Modell wird parallel geladen).
+    pub fn record_translate_start(&self) -> Result<(), String> {
+        use tauri::Manager;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.initiate_model_load();
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        rm.try_start_recording(TRANSLATE_BINDING, crate::audio_toolkit::VadPolicy::Offline)
+    }
+
+    /// Aufnahme beenden: transkribieren, übersetzen, Übersetzung sprechen.
+    /// Rückgabe: (Transkript, Übersetzung) — das Sprechen läuft im Hintergrund.
+    pub async fn record_translate_stop(
+        self: &Arc<Self>,
+        target_lang: &str,
+    ) -> Result<(String, String), String> {
+        use tauri::Manager;
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        let generation = rm.cancel_generation();
+        let samples = rm
+            .stop_recording(TRANSLATE_BINDING, generation)
+            .ok_or_else(|| "no translate recording in progress".to_string())?;
+        if samples.is_empty() {
+            return Err("Aufnahme enthielt keine Sprache".into());
+        }
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        let transcript = tm
+            .transcribe(samples)
+            .map_err(|e| format!("Transkription fehlgeschlagen: {e}"))?;
+        if transcript.trim().is_empty() {
+            return Err("Es wurde keine Sprache erkannt".into());
+        }
+        let translation = self.translate_and_speak(&transcript, target_lang).await?;
+        Ok((transcript, translation))
     }
 
     /// Stimme löschen; war sie aktiv, fällt die Auswahl auf die

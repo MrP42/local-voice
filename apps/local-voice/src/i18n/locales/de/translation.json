@@ -56,6 +56,20 @@
       "save": "Stimme speichern",
       "discard": "Verwerfen"
     },
+    "translate": {
+      "title": "Audio-Übersetzung",
+      "description": "In einer Sprache sprechen oder tippen — in einer anderen hören, in der gewählten Stimme. Transkription und Sprachausgabe laufen lokal; die Übersetzung nutzt den konfigurierten Post-Processing-Provider (Custom = lokales Ollama).",
+      "targetLang": "Zielsprache",
+      "inputPlaceholder": "Text zum Übersetzen und Vorlesen eingeben…",
+      "translateSpeak": "Übersetzen & vorlesen",
+      "record": "Aufnehmen & übersetzen",
+      "stopRecording": "Stopp & übersetzen",
+      "recording": "Aufnahme läuft…",
+      "working": "Arbeitet…",
+      "heard": "Verstanden:",
+      "result": "Übersetzung:",
+      "providerHint": "Braucht einen konfigurierten Post-Processing-Provider mit Modell (Einstellungen → Nachbearbeitung). Für komplett lokale Übersetzung: Custom mit Ollama und einem kleinen Modell."
+    },
     "settingsTitle": "Vorlesen-Einstellungen",
     "settings": {
       "fishDir": "Fish-Speech-Ordner",

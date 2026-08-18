@@ -21,6 +21,7 @@ mod settings;
 mod shortcut;
 mod signal_handle;
 mod transcription_coordinator;
+mod translator;
 mod tray;
 mod tray_i18n;
 mod utils;
@@ -843,6 +844,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_tts_max_chars_setting,
             shortcut::change_tts_voice_setting,
             shortcut::change_tts_compile_setting,
+            shortcut::change_tts_translate_lang_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
@@ -951,6 +953,9 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_save_voice,
             commands::tts::tts_import_voice,
             commands::tts::tts_delete_voice,
+            commands::tts::tts_translate_speak,
+            commands::tts::tts_record_translate_start,
+            commands::tts::tts_record_translate_stop,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![

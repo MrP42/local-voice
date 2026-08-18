@@ -56,6 +56,20 @@
       "save": "Save voice",
       "discard": "Discard"
     },
+    "translate": {
+      "title": "Audio Translation",
+      "description": "Speak or type in one language — hear it in another, in your selected voice. Transcription and speech run locally; translation uses your configured post-processing provider (Custom = local Ollama).",
+      "targetLang": "Target language",
+      "inputPlaceholder": "Type text to translate and speak…",
+      "translateSpeak": "Translate & speak",
+      "record": "Record & translate",
+      "stopRecording": "Stop & translate",
+      "recording": "Recording…",
+      "working": "Working…",
+      "heard": "Heard:",
+      "result": "Translation:",
+      "providerHint": "Requires a configured post-processing provider with a model (Settings → Post Process). For fully local translation use Custom with Ollama and a small model."
+    },
     "settingsTitle": "Read Aloud settings",
     "settings": {
       "fishDir": "Fish Speech folder",

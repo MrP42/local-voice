@@ -626,6 +626,15 @@ pub fn change_tts_compile_setting(app: AppHandle, value: bool) -> Result<(), Str
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_tts_translate_lang_setting(app: AppHandle, value: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_translate_lang = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_tts_voice_setting(app: AppHandle, value: Option<String>) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.tts_voice = value.filter(|v| !v.trim().is_empty());
