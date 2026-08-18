@@ -963,8 +963,10 @@ pub fn run(cli_args: CliArgs) {
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.
-    let headless_mode =
-        cli_args.transcribe_file.is_some() || cli_args.list_devices || cli_args.list_models;
+    let headless_mode = cli_args.transcribe_file.is_some()
+        || cli_args.list_devices
+        || cli_args.list_models
+        || cli_args.tts_test;
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -1067,6 +1069,59 @@ pub fn run(cli_args: CliArgs) {
             // recorder (so it never opens the mic, even with always_on_microphone),
             // signal handlers, and autostart that initialize_core_logic sets up.
             if headless_mode {
+                // TTS-Selbsttest: braucht weder Modelle noch Mikrofon — nur den
+                // TtsManager. Misst Serverstart und Synthese, validiert das WAV
+                // und beendet den Prozess mit einem CI-tauglichen Exit-Code.
+                if cli_args.tts_test {
+                    let app_handle = app.handle().clone();
+                    let args = cli_args.clone();
+                    std::thread::spawn(move || {
+                        let code = run_headless_guarded(|| {
+                            crate::selftest::begin_headless_run();
+                            let tts = managers::tts::TtsManager::new(&app_handle);
+                            let text = args.tts_text.clone().unwrap_or_else(|| {
+                                "Dies ist der Selbsttest der lokalen Sprachausgabe.".to_string()
+                            });
+                            let result =
+                                tauri::async_runtime::block_on(tts.bench_fetch(&text));
+                            let code = match result {
+                                Ok((bytes, start_ms, tts_ms)) => {
+                                    let payload = serde_json::json!({
+                                        "mode": "tts",
+                                        "wav_bytes": bytes,
+                                        "server_start_ms": start_ms,
+                                        "tts_ms": tts_ms,
+                                    });
+                                    if args.json {
+                                        emit_headless_payload(&payload, args.out.as_deref());
+                                    } else {
+                                        if let Some(path) = args.out.as_deref() {
+                                            emit_headless_payload(&payload, Some(path));
+                                        }
+                                        println!(
+                                            "tts ok: {} bytes, server_start={}ms, tts={}ms",
+                                            bytes, start_ms, tts_ms
+                                        );
+                                    }
+                                    0
+                                }
+                                Err(e) => {
+                                    eprintln!("error: tts self-test failed: {e}");
+                                    1
+                                }
+                            };
+                            // Nur selbst gestartete Server wieder stoppen.
+                            tts.stop_server();
+                            code
+                        });
+                        use std::io::Write;
+                        let _ = std::io::stdout().flush();
+                        let _ = std::io::stderr().flush();
+                        std::process::exit(code);
+                    });
+                    return Ok(());
+                }
+
                 let app_handle = app.handle().clone();
                 let model_manager = Arc::new(
                     ModelManager::new(&app_handle).expect("Failed to initialize model manager"),

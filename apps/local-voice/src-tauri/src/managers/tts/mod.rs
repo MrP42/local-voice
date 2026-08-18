@@ -371,6 +371,34 @@ impl TtsManager {
         }
     }
 
+    /// Selbsttest-Messpfad: Server sicherstellen, WAV holen (ohne Playback),
+    /// Zeiten melden. Rückgabe: (wav_bytes, server_start_ms, tts_ms) —
+    /// server_start_ms ist 0, wenn ein Server bereits lief.
+    pub async fn bench_fetch(&self, text: &str) -> Result<(usize, u64, u64), String> {
+        self.refresh_from_settings();
+        let already_running = self.core.ensure_server_core().await.is_ok();
+        let start = Instant::now();
+        if !already_running {
+            self.ensure_server().await?;
+        }
+        let server_start_ms = if already_running {
+            0
+        } else {
+            start.elapsed().as_millis() as u64
+        };
+
+        let prepared = {
+            let max_chars = *self.core.max_chars.lock().unwrap();
+            protocol::prepare_text(text, max_chars).ok_or_else(|| "empty text".to_string())?
+        };
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+        let tts_start = Instant::now();
+        let wav = self.core.fetch_wav(port, seed, &prepared.text).await?;
+        let tts_ms = tts_start.elapsed().as_millis() as u64;
+        Ok((wav.len(), server_start_ms, tts_ms))
+    }
+
     /// Beendet AUSSCHLIESSLICH einen selbst gestarteten Serverprozess.
     pub fn stop_server(&self) {
         if !self.core.owns_server() {

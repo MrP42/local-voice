@@ -84,4 +84,14 @@ pub struct CliArgs {
     /// without a microphone or a stopwatch. Needs a streaming-capable model.
     #[arg(long)]
     pub stream: bool,
+
+    /// Run a headless TTS self-test against the local fish-speech server and
+    /// exit: server sicherstellen, einen Satz synthetisieren, WAV validieren,
+    /// Zeiten in ms melden. Honors --json and --out.
+    #[arg(long)]
+    pub tts_test: bool,
+
+    /// Text for --tts-test (default: a short German sentence).
+    #[arg(long, value_name = "TEXT")]
+    pub tts_text: Option<String>,
 }
