@@ -49,6 +49,11 @@ const RecordingOverlay: React.FC = () => {
   // Set just before the overlay switches to the "notice" state: why a finished
   // dictation was not inserted, and whether the text is in the clipboard.
   const [notice, setNotice] = useState<PasteFallbackNotice | null>(null);
+  // A notice that carries nothing but an i18n key — used by backend paths that
+  // need one line on screen while the main window is hidden (meeting recording
+  // indicator, dictation blocked). Takes precedence over the paste fallback
+  // because it is always the more recent event.
+  const [keyNotice, setKeyNotice] = useState<string | null>(null);
   // True once live text overflows the cap. A top overlay fades its top edge only
   // while overflowing, so the resting first line stays crisp flush under the pill.
   const [overflowing, setOverflowing] = useState(false);
@@ -79,6 +84,10 @@ const RecordingOverlay: React.FC = () => {
         }
         const overlayState = event.payload as OverlayState;
         setState(overlayState);
+        // A key notice only belongs to the "notice" state it was emitted for.
+        if (overlayState !== "notice") {
+          setKeyNotice(null);
+        }
         if (overlayState === "recording" || overlayState === "streaming") {
           setStreamText({ committed: "", tentative: "" });
         }
@@ -99,6 +108,14 @@ const RecordingOverlay: React.FC = () => {
         "paste-fallback-notice",
         (event) => {
           setNotice(event.payload);
+          setKeyNotice(null);
+        },
+      );
+
+      const unlistenKeyNotice = await listen<{ key: string }>(
+        "persistent-notice",
+        (event) => {
+          setKeyNotice(event.payload.key);
         },
       );
 
@@ -128,6 +145,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenHide();
         unlistenNotice();
+        unlistenKeyNotice();
         unlistenLevel();
         unlistenStream();
         unlistenPhase();
@@ -231,6 +249,19 @@ const RecordingOverlay: React.FC = () => {
   // ---- Paste-fallback notice: the dictation finished but was not inserted ----
   // This is the only overlay form that reports a failure, so it says both what
   // happened and what the user can do about it right now.
+  if (state === "notice" && keyNotice) {
+    return (
+      <div
+        dir={direction}
+        className={`ov-stage ${position} ov-fade ${isVisible ? "show" : ""}`}
+      >
+        <div className="scard snotice">
+          <div className="snotice-title">{t(keyNotice)}</div>
+        </div>
+      </div>
+    );
+  }
+
   if (state === "notice") {
     const reason = notice?.reason ?? "injection_failed";
     return (

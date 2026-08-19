@@ -633,5 +633,9 @@
   },
   "whatsNew": {
     "title": "חדש ב-Handy v{{version}}"
+  },
+  "meetings": {
+    "recordingIndicator": "Meeting recording is running",
+    "dictationBlocked": "Dictation is blocked while a meeting is recording."
   }
 }

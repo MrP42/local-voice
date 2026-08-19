@@ -1,7 +1,5 @@
 mod actions;
 mod appdata_migration;
-#[cfg(windows)]
-mod context_menu;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -10,6 +8,8 @@ mod catalog;
 pub mod cli;
 mod clipboard;
 mod commands;
+#[cfg(windows)]
+mod context_menu;
 mod helpers;
 mod input;
 mod llm_client;
@@ -17,10 +17,10 @@ mod managers;
 mod media;
 mod overlay;
 mod paste_guard;
-pub mod selftest;
 pub mod portable;
 mod refinement;
 pub mod segmenter;
+pub mod selftest;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -211,6 +211,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
     let tts_manager = managers::tts::TtsManager::new(app_handle);
+    // Meetings (M8): the store is shared by recorder and commands. A store
+    // that fails to open must not take the whole app down — dictation and TTS
+    // work without it, so meetings degrade to "unavailable" instead.
+    let meeting_store = match managers::meetings::store::MeetingStore::new(app_handle) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(e) => {
+            log::error!("Failed to initialize meetings store: {e}");
+            None
+        }
+    };
 
     // Initialize the transcribe-cpp native backend (logging + backend module
     // registration) once, before any whisper model is loaded.
@@ -226,6 +236,19 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(tts_manager);
     app_handle.manage(tray::CurrentTrayIconState::new());
+
+    if let Some(store) = meeting_store {
+        let recorder = Arc::new(managers::meetings::recorder::MeetingRecorderManager::new(
+            app_handle,
+            store.clone(),
+            transcription_manager.clone(),
+        ));
+        // A meeting still marked 'recording' means the app died mid recording:
+        // repair the WAV headers and hand the meeting back as 'ready'.
+        recorder.recover_orphans();
+        app_handle.manage(store);
+        app_handle.manage(recorder);
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -455,7 +478,10 @@ mod headless_guard_tests {
 fn emit_headless_payload(payload: &serde_json::Value, out: Option<&std::path::Path>) {
     println!("{}", payload);
     if let Some(path) = out {
-        match std::fs::write(path, serde_json::to_string_pretty(payload).unwrap_or_default()) {
+        match std::fs::write(
+            path,
+            serde_json::to_string_pretty(payload).unwrap_or_default(),
+        ) {
             Ok(()) => eprintln!("wrote {}", path.display()),
             Err(e) => eprintln!("error: could not write {}: {}", path.display(), e),
         }
@@ -489,7 +515,8 @@ fn run_headless_stream(
     // Timestamp every committed growth. The event carries the whole committed
     // prefix, so a growth is "longer than last time"; the model also rewrites
     // the tentative tail constantly, which is not what we are timing.
-    let observed: Arc<Mutex<(Vec<u64>, String)>> = Arc::new(Mutex::new((Vec::new(), String::new())));
+    let observed: Arc<Mutex<(Vec<u64>, String)>> =
+        Arc::new(Mutex::new((Vec::new(), String::new())));
     let start = Instant::now();
     let sink = Arc::clone(&observed);
     let listener = app.listen("stream-text-event", move |event| {
@@ -784,8 +811,13 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
         }
         emit_headless_payload(&payload, args.out.as_deref());
     } else if let Some(reference) = args.reference.as_deref() {
-        let scored =
-            crate::selftest::SelfTestResult::build(reference, &text, Vec::new(), best_ms, audio_secs);
+        let scored = crate::selftest::SelfTestResult::build(
+            reference,
+            &text,
+            Vec::new(),
+            best_ms,
+            audio_secs,
+        );
         println!(
             "model={} backend={} audio={:.2}s best={}ms rtf={:.2}x",
             model_id,
@@ -954,6 +986,16 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::meetings::meetings_start,
+            commands::meetings::meetings_pause,
+            commands::meetings::meetings_resume,
+            commands::meetings::meetings_stop,
+            commands::meetings::meetings_is_recording,
+            commands::meetings::meetings_list,
+            commands::meetings::meetings_get_segments,
+            commands::meetings::meetings_update_segment,
+            commands::meetings::meetings_get_documents,
+            commands::meetings::meetings_delete,
             commands::tts::tts_speak_text,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_cancel,
@@ -989,6 +1031,7 @@ pub fn run(cli_args: CliArgs) {
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
+            managers::meetings::recorder::MeetingEvent,
             managers::transcription::StreamTextEvent,
             managers::transcription::StreamPhaseEvent,
         ]);

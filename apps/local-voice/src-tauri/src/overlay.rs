@@ -599,6 +599,38 @@ pub fn show_paste_fallback_notice(
     });
 }
 
+/// Show a notice that stays until something else takes the overlay over —
+/// used by the meetings recorder for the "this machine is recording"
+/// indicator (M8 Spec A1). Like the paste-fallback notice it uses the
+/// `notice` state, so it appears even at `overlay_style: none`; unlike it,
+/// nothing hides it automatically. `i18n_key` is resolved in the overlay
+/// webview, so the notice follows the app language without a backend lookup.
+pub fn show_persistent_notice(app_handle: &AppHandle, i18n_key: &str) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Payload first, so the webview already has it when the state flips.
+        let _ = overlay_window.emit("persistent-notice", serde_json::json!({ "key": i18n_key }));
+    }
+    show_overlay_state(app_handle, "notice");
+}
+
+/// Show a self-hiding notice carrying only an i18n key — for backend paths
+/// that need to tell the user "not now" while the main window is hidden
+/// (e.g. a dictation hotkey pressed during a meeting recording).
+pub fn show_transient_notice(app_handle: &AppHandle, i18n_key: &str) {
+    show_persistent_notice(app_handle, i18n_key);
+
+    // Same generation guard as the paste-fallback notice: never hide an
+    // overlay that a later state change has since taken over.
+    let generation = OVERLAY_STATE_GENERATION.load(Ordering::Acquire);
+    let app_handle = app_handle.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(NOTICE_VISIBLE);
+        if OVERLAY_STATE_GENERATION.load(Ordering::Acquire) == generation {
+            hide_recording_overlay(&app_handle);
+        }
+    });
+}
+
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {

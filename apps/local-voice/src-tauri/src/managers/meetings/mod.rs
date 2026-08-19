@@ -6,5 +6,6 @@
 
 pub mod chunker;
 pub mod mic_capture;
+pub mod recorder;
 pub mod store;
 pub use store::*;

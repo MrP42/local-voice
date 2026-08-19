@@ -799,5 +799,9 @@
   },
   "micMeter": {
     "unavailable": "Mikrofonpegel nicht verfügbar — Zugriff verweigert oder kein Gerät."
+  },
+  "meetings": {
+    "recordingIndicator": "Meeting-Aufnahme läuft",
+    "dictationBlocked": "Diktat ist gesperrt, solange eine Meeting-Aufnahme läuft."
   }
 }

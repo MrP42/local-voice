@@ -799,5 +799,9 @@
   },
   "micMeter": {
     "unavailable": "Microphone level unavailable — access denied or no device."
+  },
+  "meetings": {
+    "recordingIndicator": "Meeting recording is running",
+    "dictationBlocked": "Dictation is blocked while a meeting is recording."
   }
 }

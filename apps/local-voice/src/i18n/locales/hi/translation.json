@@ -633,5 +633,9 @@
   "overlay": {
     "transcribing": "ट्रांसक्राइब हो रहा है...",
     "processing": "प्रोसेस हो रहा है..."
+  },
+  "meetings": {
+    "recordingIndicator": "Meeting recording is running",
+    "dictationBlocked": "Dictation is blocked while a meeting is recording."
   }
 }

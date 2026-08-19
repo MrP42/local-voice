@@ -633,5 +633,9 @@
   },
   "whatsNew": {
     "title": "Handy v{{version}} 新功能"
+  },
+  "meetings": {
+    "recordingIndicator": "Meeting recording is running",
+    "dictationBlocked": "Dictation is blocked while a meeting is recording."
   }
 }
