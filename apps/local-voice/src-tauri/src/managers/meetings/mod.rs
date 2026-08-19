@@ -5,7 +5,9 @@
 #![allow(dead_code, unused_imports)]
 
 pub mod chunker;
+pub mod import;
 pub mod mic_capture;
 pub mod recorder;
 pub mod store;
+pub mod subtitle;
 pub use store::*;

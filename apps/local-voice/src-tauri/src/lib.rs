@@ -996,6 +996,7 @@ pub fn run(cli_args: CliArgs) {
             commands::meetings::meetings_update_segment,
             commands::meetings::meetings_get_documents,
             commands::meetings::meetings_delete,
+            commands::meetings::meetings_import_file,
             commands::tts::tts_speak_text,
             commands::tts::tts_speak_clipboard,
             commands::tts::tts_cancel,

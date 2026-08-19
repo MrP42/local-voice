@@ -2,12 +2,15 @@
 //! (pattern: `commands/history.rs`). No logic beyond argument shuffling and
 //! error mapping lives here.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
 
+use crate::managers::meetings::import::import_media_file;
 use crate::managers::meetings::recorder::MeetingRecorderManager;
 use crate::managers::meetings::store::{Meeting, MeetingDocument, MeetingStore, StoredSegment};
+use crate::managers::transcription::TranscriptionManager;
 
 /// Starting touches audio hardware and can block for seconds (loopback
 /// start-up), hence `spawn_blocking` rather than running on the command task.
@@ -119,4 +122,29 @@ pub async fn meetings_delete(
         .soft_delete_meeting(&meeting_id)
         .map(|_paths| ())
         .map_err(|e| e.to_string())
+}
+
+/// Imports a local audio/video file or a VTT/SRT subtitle file as a new
+/// meeting. Audio/video decoding and transcription can take a while, hence
+/// this stays `async` end to end rather than blocking the command task
+/// (`import_media_file` itself moves the heavy work to `spawn_blocking`).
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_import_file(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<MeetingStore>>,
+    transcription: State<'_, Arc<TranscriptionManager>>,
+    path: String,
+    consent_confirmed: bool,
+) -> Result<String, String> {
+    let store = Arc::clone(&store);
+    let transcription = Arc::clone(&transcription);
+    import_media_file(
+        &app,
+        store,
+        transcription,
+        PathBuf::from(path),
+        consent_confirmed,
+    )
+    .await
 }
