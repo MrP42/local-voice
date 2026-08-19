@@ -296,6 +296,24 @@ impl MeetingStore {
         Ok(())
     }
 
+    /// Records when the meeting actually ended (recording stop / import
+    /// completion). Used as the anchor for `Days(n)` retention — without
+    /// this, `ended_at` stayed `NULL` forever and retention math fell back
+    /// to "now" wherever it was computed, which drifts every time it's
+    /// recomputed (e.g. minutes generated well after the meeting ended).
+    pub fn set_ended_at(&self, id: &str, ended_at: i64) -> Result<()> {
+        let conn = self.get_connection()?;
+        let now = Utc::now().timestamp();
+        let updated = conn.execute(
+            "UPDATE meetings SET ended_at = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+            params![ended_at, now, id],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("Meeting {} not found", id));
+        }
+        Ok(())
+    }
+
     pub fn set_audio_paths(
         &self,
         id: &str,

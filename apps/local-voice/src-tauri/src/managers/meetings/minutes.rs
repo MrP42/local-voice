@@ -627,18 +627,25 @@ pub async fn generate_minutes(
     let settings = crate::settings::get_settings(app);
     let document = generate_minutes_with_settings(&settings, store.clone(), meeting_id).await?;
 
-    // A minutes document now exists — recompute the audio's retention. Under
-    // the (default) `AfterMinutes` policy that makes it due right now, and
-    // waiting for the next startup sweep would delay the deletion the spec
-    // wants to happen immediately, so purge this meeting's audio inline.
+    // A minutes document now exists — recompute the audio's retention.
+    // Anchored to the meeting's actual `ended_at` (falling back to
+    // `created_at` for the vanishingly unlikely case it's still unset), not
+    // to "now" — minutes are often generated well after the meeting ended,
+    // and a `Days(n)` policy must not silently extend from that later time.
+    // Under the (default) `AfterMinutes` policy this is due right now
+    // regardless of `ended_at`, and waiting for the next startup sweep would
+    // delay the deletion the spec wants to happen immediately, so purge this
+    // meeting's audio inline.
     let now = chrono::Utc::now().timestamp();
     let policy = settings.meeting_audio_retention;
-    let until = super::retention::retention_until(&policy, now, now, true);
+    let meeting = store.get_meeting(meeting_id).map_err(|e| e.to_string())?;
+    let ended_at = meeting.as_ref().map(|m| m.ended_at.unwrap_or(m.created_at));
+    let until = ended_at.and_then(|ended_at| super::retention::retention_until(&policy, now, ended_at, true));
     if let Err(e) = store.set_retention_until(meeting_id, until) {
         log::warn!("meetings: retention_until not stored after minutes: {e}");
     }
     if until.is_some_and(|due| due <= now) {
-        if let Ok(Some(meeting)) = store.get_meeting(meeting_id) {
+        if let Some(meeting) = meeting {
             let mut paths = Vec::new();
             if let Some(mic) = &meeting.mic_audio_path {
                 paths.push(mic.clone());

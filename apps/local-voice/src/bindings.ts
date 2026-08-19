@@ -542,6 +542,14 @@ async changeTranscribeGpuDevice(device: number) : Promise<Result<null, string>> 
 async getAvailableAccelerators() : Promise<AvailableAccelerators> {
     return await TAURI_INVOKE("get_available_accelerators");
 },
+async changeMeetingAudioRetentionSetting(retention: MeetingAudioRetention) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_audio_retention_setting", { retention }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Start key recording mode
  */
@@ -952,6 +960,125 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Starting touches audio hardware and can block for seconds (loopback
+ * start-up), hence `spawn_blocking` rather than running on the command task.
+ */
+async meetingsStart(title: string, consentConfirmed: boolean, captureSystem: boolean) : Promise<Result<Meeting, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_start", { title, consentConfirmed, captureSystem }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsPause() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_pause") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsResume() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_resume") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stopping waits for the tail chunks to finish transcribing, so it must not
+ * occupy the async runtime's worker.
+ */
+async meetingsStop() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsIsRecording() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_is_recording") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsList(offset: number, limit: number) : Promise<Result<Meeting[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_list", { offset, limit }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsGetSegments(meetingId: string) : Promise<Result<StoredSegment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_get_segments", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsUpdateSegment(meetingId: string, segmentIndex: number, text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_update_segment", { meetingId, segmentIndex, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsGetDocuments(meetingId: string) : Promise<Result<MeetingDocument[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_get_documents", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Soft-deletes the meeting, then hard-deletes its audio files from disk
+ * (Spec A2 — a tombstoned meeting must never leave an orphaned WAV behind).
+ */
+async meetingsDelete(meetingId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_delete", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Imports a local audio/video file or a VTT/SRT subtitle file as a new
+ * meeting. Audio/video decoding and transcription can take a while, hence
+ * this stays `async` end to end rather than blocking the command task
+ * (`import_media_file` itself moves the heavy work to `spawn_blocking`).
+ */
+async meetingsImportFile(path: string, consentConfirmed: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_import_file", { path, consentConfirmed }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Generates the standardized minutes for a finished meeting and stores them
+ * as a new document version. The meeting status stays untouched — a failed
+ * generation leaves a 'ready' meeting 'ready' and only returns the error.
+ */
+async meetingsGenerateMinutes(meetingId: string) : Promise<Result<MeetingDocument, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_generate_minutes", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsSpeakText(text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_text", { text }) };
@@ -1219,10 +1346,12 @@ async isLaptop() : Promise<Result<boolean, string>> {
 
 export const events = __makeEvents__<{
 historyUpdatePayload: HistoryUpdatePayload,
+meetingEvent: MeetingEvent,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent
 }>({
 historyUpdatePayload: "history-update-payload",
+meetingEvent: "meeting-event",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event"
 })
@@ -1367,7 +1496,13 @@ tts_export_format?: string;
  * Windows-Explorer-Kontextmenü „Mit Local Voice AI vorlesen" für
  * Dokumente (txt/md/pdf/docx). Benutzer-Registry, kein Admin nötig.
  */
-tts_context_menu?: boolean }
+tts_context_menu?: boolean; 
+/**
+ * M8 Meetings: wie lange Audiodateien nach einer Aufnahme/einem Import
+ * aufbewahrt werden, bevor sie hart gelöscht werden. Default: sobald ein
+ * Protokoll existiert (Spec Default-Verhalten).
+ */
+meeting_audio_retention?: MeetingAudioRetention }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1396,6 +1531,31 @@ export type ImportedVoice = { id: string; transcript: string }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+export type Meeting = { id: string; title: string; status: string; source: string; started_at: number | null; ended_at: number | null; language: string | null; mic_audio_path: string | null; system_audio_path: string | null; duration_ms: number | null; consent_confirmed_at: number | null; audio_retention_until: number | null; created_at: number; deleted_at: number | null }
+/**
+ * How long a meeting's audio survives after the meeting ends.
+ */
+export type MeetingAudioRetention = 
+/**
+ * Delete the audio as soon as a minutes document exists for the
+ * meeting (the spec default — the transcript plus protocol are the
+ * durable record, the raw audio is not).
+ */
+"after_minutes" | 
+/**
+ * Keep the audio for a fixed number of days after the meeting ended.
+ */
+{ days: number } | 
+/**
+ * Never delete the audio automatically.
+ */
+"forever"
+export type MeetingDocument = { id: string; meeting_id: string; kind: string; body_format: string; body: string; version: number; created_at: number }
+/**
+ * Typed frontend event (pattern: `HistoryUpdatePayload`). `message` on the
+ * error variant carries an i18n-able code string, never a prose sentence.
+ */
+export type MeetingEvent = { kind: "state"; meeting_id: string; status: string; paused: boolean } | { kind: "segments"; meeting_id: string; appended: StoredSegment[] } | { kind: "levels"; mic: number; system: number } | { kind: "error"; meeting_id: string; message: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1452,6 +1612,7 @@ export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "
 export type SecretMap = Partial<{ [key in string]: string }>
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+export type StoredSegment = { segment_index: number; text: string; start_ms: number; end_ms: number; channel: number; speaker_index: number | null }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

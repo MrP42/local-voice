@@ -132,6 +132,46 @@ mod tests {
         assert_eq!(retention_until(&MeetingAudioRetention::Forever, 5, 1, true), None);
     }
 
+    /// Regression for the review finding: a `Days(n)` expiry must stay
+    /// anchored to the meeting's real `ended_at` (persisted via
+    /// `set_ended_at`, mirroring what `stop()`/import do) even when it is
+    /// recomputed much later — e.g. once minutes are generated well after
+    /// the meeting ended. Recomputing with "now" instead of the stored
+    /// `ended_at` would silently push the expiry further into the future
+    /// every time it's recomputed.
+    #[test]
+    fn days_retention_stays_anchored_to_stored_ended_at_when_recomputed_later() {
+        let (s, _dir) = store();
+        let meeting = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+
+        let ended_at = 1_000_000;
+        s.set_ended_at(&meeting.id, ended_at).unwrap();
+
+        let policy = MeetingAudioRetention::Days(3);
+        let expected = Some(ended_at + 3 * 86_400);
+
+        // Computed right at meeting end (mirrors `stop()`).
+        let now_at_end = ended_at + 100;
+        let until_at_end = retention_until(&policy, now_at_end, ended_at, false);
+        s.set_retention_until(&meeting.id, until_at_end).unwrap();
+        assert_eq!(until_at_end, expected);
+
+        // Recomputed much later (mirrors minutes generated after a delay):
+        // reading `ended_at` back from the store, not substituting "now".
+        let now_much_later = ended_at + 500_000;
+        let stored = s.get_meeting(&meeting.id).unwrap().unwrap();
+        let until_later = retention_until(
+            &policy,
+            now_much_later,
+            stored.ended_at.unwrap(),
+            true,
+        );
+        assert_eq!(
+            until_later, expected,
+            "Days(n) expiry must not drift when recomputed later"
+        );
+    }
+
     #[test]
     fn purge_deletes_files_and_clears_paths() {
         let (s, dir) = store();

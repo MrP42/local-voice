@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
+  MeetingAudioRetention,
 } from "@/bindings";
 import { commands } from "@/bindings";
 
@@ -182,7 +183,7 @@ const settingUpdaters: {
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
   meeting_audio_retention: (value) =>
-    commands.changeMeetingAudioRetentionSetting(value as any),
+    commands.changeMeetingAudioRetentionSetting(value as MeetingAudioRetention),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

@@ -610,8 +610,13 @@ impl MeetingRecorderManager {
             warn!("meetings: audio paths not stored: {e}");
         }
         // Retention starts counting from the moment the meeting ends; no
-        // minutes document exists yet at this point.
+        // minutes document exists yet at this point. `ended_at` is recorded
+        // here so later recomputations (e.g. after minutes generation) stay
+        // anchored to this moment instead of drifting to whenever they run.
         let now = chrono::Utc::now().timestamp();
+        if let Err(e) = self.store.set_ended_at(&meeting_id, now) {
+            warn!("meetings: ended_at not stored: {e}");
+        }
         let policy = crate::settings::get_meeting_audio_retention(&self.app);
         let until = super::retention::retention_until(&policy, now, now, false);
         if let Err(e) = self.store.set_retention_until(&meeting_id, until) {
