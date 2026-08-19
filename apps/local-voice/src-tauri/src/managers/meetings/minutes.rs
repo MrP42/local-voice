@@ -625,7 +625,38 @@ pub async fn generate_minutes(
     meeting_id: &str,
 ) -> Result<MeetingDocument, String> {
     let settings = crate::settings::get_settings(app);
-    generate_minutes_with_settings(&settings, store, meeting_id).await
+    let document = generate_minutes_with_settings(&settings, store.clone(), meeting_id).await?;
+
+    // A minutes document now exists — recompute the audio's retention. Under
+    // the (default) `AfterMinutes` policy that makes it due right now, and
+    // waiting for the next startup sweep would delay the deletion the spec
+    // wants to happen immediately, so purge this meeting's audio inline.
+    let now = chrono::Utc::now().timestamp();
+    let policy = settings.meeting_audio_retention;
+    let until = super::retention::retention_until(&policy, now, now, true);
+    if let Err(e) = store.set_retention_until(meeting_id, until) {
+        log::warn!("meetings: retention_until not stored after minutes: {e}");
+    }
+    if until.is_some_and(|due| due <= now) {
+        if let Ok(Some(meeting)) = store.get_meeting(meeting_id) {
+            let mut paths = Vec::new();
+            if let Some(mic) = &meeting.mic_audio_path {
+                paths.push(mic.clone());
+            }
+            if let Some(system) = &meeting.system_audio_path {
+                paths.push(system.clone());
+            }
+            super::retention::delete_audio_files(&paths);
+            if let Err(e) = store.set_audio_paths(meeting_id, None, None, meeting.duration_ms) {
+                log::warn!("meetings: audio paths not cleared after minutes purge: {e}");
+            }
+            if let Err(e) = store.set_retention_until(meeting_id, None) {
+                log::warn!("meetings: retention marker not cleared after minutes purge: {e}");
+            }
+        }
+    }
+
+    Ok(document)
 }
 
 #[cfg(test)]

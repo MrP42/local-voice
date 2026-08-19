@@ -609,8 +609,14 @@ impl MeetingRecorderManager {
         ) {
             warn!("meetings: audio paths not stored: {e}");
         }
-        // `audio_retention_until` stays unset until Task 12 supplies the
-        // retention calculation.
+        // Retention starts counting from the moment the meeting ends; no
+        // minutes document exists yet at this point.
+        let now = chrono::Utc::now().timestamp();
+        let policy = crate::settings::get_meeting_audio_retention(&self.app);
+        let until = super::retention::retention_until(&policy, now, now, false);
+        if let Err(e) = self.store.set_retention_until(&meeting_id, until) {
+            warn!("meetings: retention_until not stored: {e}");
+        }
         if let Err(e) = self.store.set_status(&meeting_id, MeetingStatus::Ready) {
             warn!("meetings: status 'ready' not stored: {e}");
         }

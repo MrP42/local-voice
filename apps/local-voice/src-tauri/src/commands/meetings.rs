@@ -10,6 +10,7 @@ use tauri::State;
 use crate::managers::meetings::import::import_media_file;
 use crate::managers::meetings::minutes::generate_minutes;
 use crate::managers::meetings::recorder::MeetingRecorderManager;
+use crate::managers::meetings::retention::delete_audio_files;
 use crate::managers::meetings::store::{Meeting, MeetingDocument, MeetingStore, StoredSegment};
 use crate::managers::transcription::TranscriptionManager;
 
@@ -111,18 +112,19 @@ pub async fn meetings_get_documents(
     store.get_documents(&meeting_id).map_err(|e| e.to_string())
 }
 
-/// Soft-deletes the meeting. The returned audio paths are dropped for now —
-/// deleting the files from disk arrives with the retention work (Task 12).
+/// Soft-deletes the meeting, then hard-deletes its audio files from disk
+/// (Spec A2 — a tombstoned meeting must never leave an orphaned WAV behind).
 #[tauri::command]
 #[specta::specta]
 pub async fn meetings_delete(
     store: State<'_, Arc<MeetingStore>>,
     meeting_id: String,
 ) -> Result<(), String> {
-    store
+    let paths = store
         .soft_delete_meeting(&meeting_id)
-        .map(|_paths| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    delete_audio_files(&paths);
+    Ok(())
 }
 
 /// Generates the standardized minutes for a finished meeting and stores them

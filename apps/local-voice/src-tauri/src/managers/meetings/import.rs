@@ -182,6 +182,15 @@ fn run_import(
     match outcome {
         Ok(duration_ms) => {
             mark_import_ready(store, meeting_id)?;
+            // Imports have no separate "recording ended" moment, so `now`
+            // stands in for `ended_at` here too (mirrors the live recorder's
+            // `stop()`). No minutes document exists yet.
+            let now = chrono::Utc::now().timestamp();
+            let policy = crate::settings::get_meeting_audio_retention(app);
+            let until = super::retention::retention_until(&policy, now, now, false);
+            if let Err(e) = store.set_retention_until(meeting_id, until) {
+                log::warn!("meetings: retention_until not stored after import: {e}");
+            }
             emit_state(app, meeting_id, "ready");
             info!("meetings: import ready ({meeting_id}, {duration_ms} ms)");
             Ok(())

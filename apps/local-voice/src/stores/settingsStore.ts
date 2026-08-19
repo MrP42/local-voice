@@ -181,6 +181,8 @@ const settingUpdaters: {
     commands.changeTranscribeGpuDevice(value as number),
   extra_recording_buffer_ms: (value) =>
     commands.changeExtraRecordingBufferSetting(value as number),
+  meeting_audio_retention: (value) =>
+    commands.changeMeetingAudioRetentionSetting(value as any),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

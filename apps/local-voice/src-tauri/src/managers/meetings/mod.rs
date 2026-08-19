@@ -9,6 +9,7 @@ pub mod import;
 pub mod mic_capture;
 pub mod minutes;
 pub mod recorder;
+pub mod retention;
 pub mod stats;
 pub mod store;
 pub mod subtitle;

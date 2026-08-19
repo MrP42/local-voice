@@ -1380,6 +1380,18 @@ pub fn change_transcribe_gpu_device(app: AppHandle, device: i32) -> Result<(), S
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_meeting_audio_retention_setting(
+    app: AppHandle,
+    retention: crate::managers::meetings::retention::MeetingAudioRetention,
+) -> Result<(), String> {
+    let mut s = settings::get_settings(&app);
+    s.meeting_audio_retention = retention;
+    settings::write_settings(&app, s);
+    Ok(())
+}
+
 /// Return which accelerators and GPU devices are available for this build.
 ///
 /// First-call cost is dominated by enumerating GPU devices through the

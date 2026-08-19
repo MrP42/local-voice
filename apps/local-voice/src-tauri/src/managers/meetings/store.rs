@@ -316,6 +316,42 @@ impl MeetingStore {
         Ok(())
     }
 
+    /// Sets (or clears) the audio expiry timestamp computed by
+    /// `retention::retention_until`. Task 12.
+    pub fn set_retention_until(&self, id: &str, until: Option<i64>) -> Result<()> {
+        let conn = self.get_connection()?;
+        let now = Utc::now().timestamp();
+        let updated = conn.execute(
+            "UPDATE meetings SET audio_retention_until = ?1, updated_at = ?2
+             WHERE id = ?3 AND deleted_at IS NULL",
+            params![until, now, id],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("Meeting {} not found", id));
+        }
+        Ok(())
+    }
+
+    /// Meetings whose audio is due for hard-deletion: not soft-deleted (that
+    /// cascade already hard-deletes on its own path) and past their
+    /// `audio_retention_until`. Task 12 (`retention::purge_due_audio`).
+    pub fn meetings_with_due_audio(&self, now_unix: i64) -> Result<Vec<Meeting>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, status, source, started_at, ended_at, language,
+                    mic_audio_path, system_audio_path, duration_ms, consent_confirmed_at,
+                    audio_retention_until, created_at, deleted_at
+             FROM meetings
+             WHERE deleted_at IS NULL
+               AND audio_retention_until IS NOT NULL
+               AND audio_retention_until <= ?1",
+        )?;
+        let meetings = stmt
+            .query_map(params![now_unix], Self::map_meeting)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(meetings)
+    }
+
     pub fn get_meeting(&self, id: &str) -> Result<Option<Meeting>> {
         let conn = self.get_connection()?;
         let meeting = conn

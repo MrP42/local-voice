@@ -246,6 +246,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         // A meeting still marked 'recording' means the app died mid recording:
         // repair the WAV headers and hand the meeting back as 'ready'.
         recorder.recover_orphans();
+        // Retention (Task 12): sweep for audio whose `audio_retention_until`
+        // already passed while the app was closed (e.g. a `Days(n)` policy).
+        // The `AfterMinutes` fast path also purges inline right after a
+        // protocol is generated, so this mainly catches the elapsed-days case.
+        if let Err(e) =
+            managers::meetings::retention::purge_due_audio(&store, chrono::Utc::now().timestamp())
+        {
+            log::warn!("meetings: startup retention purge failed: {e}");
+        }
         app_handle.manage(store);
         app_handle.manage(recorder);
     }
@@ -933,6 +942,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_ort_accelerator_setting,
             shortcut::change_transcribe_gpu_device,
             shortcut::get_available_accelerators,
+            shortcut::change_meeting_audio_retention_setting,
             shortcut::handy_keys::start_handy_keys_recording,
             shortcut::handy_keys::stop_handy_keys_recording,
             trigger_update_check,

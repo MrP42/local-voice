@@ -554,6 +554,16 @@ pub struct AppSettings {
     /// Dokumente (txt/md/pdf/docx). Benutzer-Registry, kein Admin nötig.
     #[serde(default)]
     pub tts_context_menu: bool,
+    /// M8 Meetings: wie lange Audiodateien nach einer Aufnahme/einem Import
+    /// aufbewahrt werden, bevor sie hart gelöscht werden. Default: sobald ein
+    /// Protokoll existiert (Spec Default-Verhalten).
+    #[serde(default = "default_meeting_audio_retention")]
+    pub meeting_audio_retention: crate::managers::meetings::retention::MeetingAudioRetention,
+}
+
+fn default_meeting_audio_retention(
+) -> crate::managers::meetings::retention::MeetingAudioRetention {
+    crate::managers::meetings::retention::MeetingAudioRetention::AfterMinutes
 }
 
 fn default_tts_translate_lang() -> String {
@@ -1154,6 +1164,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_speed: default_tts_speed(),
         tts_export_format: default_tts_export_format(),
         tts_context_menu: false,
+        meeting_audio_retention: default_meeting_audio_retention(),
     }
 }
 
@@ -1389,6 +1400,13 @@ pub fn get_history_limit(app: &AppHandle) -> usize {
 pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeriod {
     let settings = get_settings(app);
     settings.recording_retention_period
+}
+
+pub fn get_meeting_audio_retention(
+    app: &AppHandle,
+) -> crate::managers::meetings::retention::MeetingAudioRetention {
+    let settings = get_settings(app);
+    settings.meeting_audio_retention
 }
 
 #[cfg(test)]
