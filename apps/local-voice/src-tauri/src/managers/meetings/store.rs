@@ -209,6 +209,22 @@ impl MeetingStore {
         Ok(Connection::open(&self.db_path)?)
     }
 
+    /// Guards write paths that key off a `meeting_id` but don't otherwise
+    /// touch the `meetings` row (`append_delta`, `upsert_document`): without
+    /// this, a typo'd id or a write arriving after `soft_delete_meeting`
+    /// would silently create orphaned/invisible rows instead of failing.
+    fn ensure_meeting_is_live(conn: &Connection, meeting_id: &str) -> Result<()> {
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meetings WHERE id = ?1 AND deleted_at IS NULL)",
+            params![meeting_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(anyhow!("Meeting {} not found", meeting_id));
+        }
+        Ok(())
+    }
+
     fn map_meeting(row: &rusqlite::Row<'_>) -> rusqlite::Result<Meeting> {
         Ok(Meeting {
             id: row.get("id")?,
@@ -393,6 +409,8 @@ impl MeetingStore {
         let now = Utc::now().timestamp();
         let tx = conn.transaction()?;
 
+        Self::ensure_meeting_is_live(&tx, meeting_id)?;
+
         // Lazily create the transcript row on first delta.
         let transcript_id: Option<String> = tx
             .query_row(
@@ -501,6 +519,8 @@ impl MeetingStore {
     ) -> Result<String> {
         let conn = self.get_connection()?;
         let now = Utc::now().timestamp();
+
+        Self::ensure_meeting_is_live(&conn, meeting_id)?;
 
         let current_max_version: Option<i64> = conn
             .query_row(
@@ -652,5 +672,29 @@ mod tests {
         let docs = s.get_documents(&m.id).unwrap();
         assert_eq!(docs.len(), 2, "Regenerieren erzeugt neue Version statt Überschreiben (Spec M10-Vorgriff)");
         assert_eq!(docs.iter().map(|d| d.version).max(), Some(2));
+    }
+
+    #[test]
+    fn append_delta_to_a_deleted_or_unknown_meeting_is_an_error() {
+        let s = store();
+        let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+        s.soft_delete_meeting(&m.id).unwrap();
+
+        let delta = TranscriptDelta { new_segments: vec![StoredSegment {
+            segment_index: 0, text: "Zu spät.".into(), start_ms: 0, end_ms: 500, channel: 0, speaker_index: None }] };
+        assert!(s.append_delta(&m.id, &delta).is_err());
+        assert!(s.append_delta(&Ulid::new().to_string(), &delta).is_err());
+    }
+
+    #[test]
+    fn upsert_document_requires_a_live_meeting() {
+        let s = store();
+        let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+        s.soft_delete_meeting(&m.id).unwrap();
+
+        assert!(s.upsert_document(&m.id, "minutes", "markdown@1", "# V1", None).is_err());
+        assert!(s
+            .upsert_document(&Ulid::new().to_string(), "minutes", "markdown@1", "# V1", None)
+            .is_err());
     }
 }
