@@ -200,3 +200,6 @@
 .sprechstift-mark__wave {
   stroke: var(--color-logo-primary);
 }
+.sprechstift-mark__dot {
+  fill: var(--color-logo-primary);
+}

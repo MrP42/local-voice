@@ -1,7 +1,7 @@
 [package]
 name = "sprechstift"
 version = "0.1.0"
-description = "Sprechstift - lokale Diktiersoftware"
+description = "Local Voice AI - lokale Sprach-KI (Diktat, Vorlesen, Stimmen, Übersetzung)"
 authors = ["Patrick Wolff"]
 edition = "2021"
 license = "MIT"

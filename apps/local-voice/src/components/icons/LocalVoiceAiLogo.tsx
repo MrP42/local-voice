@@ -1,7 +1,7 @@
 import React from "react";
 
 /**
- * Sprechstift word mark, built on the WAI design system.
+ * Local Voice AI word mark, built on the WAI design system.
  *
  * Follows the same lockup grammar as the Wolff Applied AI logo: mark on the
  * left, word mark beside it, endorsement as a small line underneath — never
@@ -9,10 +9,14 @@ import React from "react";
  * light background it gets the same 0.5px ink outline the WAI mark uses,
  * because yellow type on light alone is too low in contrast.
  *
+ * The CSS class names keep the historical `sprechstift-` prefix on purpose:
+ * they are internal styling hooks in App.css, and renaming them would churn
+ * the stylesheet without any visible effect.
+ *
  * This replaces the upstream Handy mark on purpose: Handy's code is MIT, its
  * name and logo are not (see docs/DECISIONS.md D2).
  */
-const SprechstiftLogo = ({
+const LocalVoiceAiLogo = ({
   width,
   height,
   className,
@@ -28,27 +32,31 @@ const SprechstiftLogo = ({
       className={`sprechstift-logo ${className ?? ""}`}
       style={width ? { width } : undefined}
     >
-      <SprechstiftMark height={height ?? 26} />
+      <LocalVoiceAiMark height={height ?? 26} />
       <span className="sprechstift-logo__text">
+        {/* Markenname und Endorsement sind Eigennamen — bewusst nicht übersetzt. */}
+        {/* eslint-disable i18next/no-literal-string */}
         <span className="sprechstift-logo__name">
-          Sprech<span className="sprechstift-logo__accent">stift</span>
+          Local&nbsp;
+          <span className="sprechstift-logo__accent">Voice&nbsp;AI</span>
         </span>
         {showEndorsement && (
           <small className="sprechstift-logo__endorsement">
             Ingenieurbüro Wolff
           </small>
         )}
+        {/* eslint-enable i18next/no-literal-string */}
       </span>
     </span>
   );
 };
 
 /**
- * The pictorial mark: a pen nib whose tip emits speech waves — dictation as
- * writing. Sits on its own carrier tile, mirroring the WAI solo-"W" rule that
- * a yellow mark always needs a dark ground to be visible.
+ * The pictorial mark: a spoken waveform crowned by a small AI spark — voice
+ * in, intelligence on top. Sits on its own carrier tile, mirroring the WAI
+ * solo-"W" rule that a yellow mark always needs a dark ground to be visible.
  */
-export const SprechstiftMark = ({
+export const LocalVoiceAiMark = ({
   height = 26,
   size: sizeProp,
   className,
@@ -71,30 +79,41 @@ export const SprechstiftMark = ({
       aria-hidden="true"
     >
       <rect className="sprechstift-mark__tile" width="32" height="32" rx="7" />
-      {/* Pen body, angled like a held pen. */}
-      <path
-        className="sprechstift-mark__nib"
-        d="M19.6 7.4 22.9 10.7 13.2 20.4 8.6 21.7 9.9 17.1z"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      {/* Two speech arcs off the writing tip. */}
+      {/* Five waveform bars — the voice. */}
       <path
         className="sprechstift-mark__wave"
-        d="M23.3 15.1a4.6 4.6 0 0 1 0 6.2"
-        strokeWidth="1.7"
+        d="M7 14.5v5"
+        strokeWidth="2.4"
         strokeLinecap="round"
-        fill="none"
       />
       <path
         className="sprechstift-mark__wave"
-        d="M26.1 12.6a8.3 8.3 0 0 1 0 11.2"
-        strokeWidth="1.7"
+        d="M11.5 11.5v11"
+        strokeWidth="2.4"
         strokeLinecap="round"
-        fill="none"
       />
+      <path
+        className="sprechstift-mark__wave"
+        d="M16 9v16"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      <path
+        className="sprechstift-mark__wave"
+        d="M20.5 11.5v11"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      <path
+        className="sprechstift-mark__wave"
+        d="M25 14.5v5"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      {/* The AI spark above the loudest bar. */}
+      <circle className="sprechstift-mark__dot" cx="25" cy="8.2" r="1.7" />
     </svg>
   );
 };
 
-export default SprechstiftLogo;
+export default LocalVoiceAiLogo;

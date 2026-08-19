@@ -181,7 +181,7 @@
     },
     "permissions": {
       "title": "Berechtigungen erforderlich",
-      "description": "Sprechstift benötigt einige Berechtigungen, um richtig zu funktionieren.",
+      "description": "Local Voice AI benötigt einige Berechtigungen, um richtig zu funktionieren.",
       "microphone": {
         "title": "Mikrofonzugriff",
         "description": "Erforderlich, um deine Stimme für die Transkription zu hören."
@@ -253,13 +253,13 @@
       "searchPlaceholder": "Modelle nach Namen suchen…",
       "rescan": {
         "label": "Neu scannen",
-        "tooltip": "Erneut nach Modellen scannen, die außerhalb von Sprechstift zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
+        "tooltip": "Erneut nach Modellen scannen, die außerhalb von Local Voice AI zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
       }
     },
     "general": {
       "title": "Allgemein",
       "shortcut": {
-        "title": "Sprechstift-Tastenkürzel",
+        "title": "Local-Voice-AI-Tastenkürzel",
         "description": "Tastenkürzel für die Sprachaufnahme konfigurieren",
         "loading": "Tastenkürzel werden geladen...",
         "none": "Keine Tastenkürzel konfiguriert",
@@ -355,11 +355,11 @@
       },
       "autostart": {
         "label": "Beim Start ausführen",
-        "description": "Sprechstift automatisch beim Anmelden starten."
+        "description": "Local Voice AI automatisch beim Anmelden starten."
       },
       "showTrayIcon": {
         "label": "Taskleistensymbol anzeigen",
-        "description": "Das Sprechstift-Symbol im Infobereich anzeigen."
+        "description": "Das Local-Voice-AI-Symbol im Infobereich anzeigen."
       },
       "overlay": {
         "style": {
@@ -542,7 +542,7 @@
       },
       "updateChecks": {
         "label": "Nach Updates suchen",
-        "description": "Automatisch nach neuen Versionen von Sprechstift suchen"
+        "description": "Automatisch nach neuen Versionen von Local Voice AI suchen"
       },
       "soundTheme": {
         "label": "Sound-Thema",
@@ -621,11 +621,11 @@
       "title": "Info",
       "version": {
         "title": "Version",
-        "description": "Aktuelle Version von Sprechstift"
+        "description": "Aktuelle Version von Local Voice AI"
       },
       "appDataDirectory": {
         "title": "App-Datenverzeichnis",
-        "description": "Speicherort der Sprechstift-Daten"
+        "description": "Speicherort der Local-Voice-AI-Daten"
       },
       "sourceCode": {
         "title": "Quellcode",
@@ -634,7 +634,7 @@
       },
       "supportDevelopment": {
         "title": "Entwicklung unterstützen",
-        "description": "Hilf uns, Sprechstift weiterzuentwickeln",
+        "description": "Hilf uns, Local Voice AI weiterzuentwickeln",
         "button": "Spenden"
       },
       "acknowledgments": {
@@ -642,7 +642,7 @@
         "ggml": {
           "title": "ggml",
           "description": "Hochleistungs-Inferenz des Whisper-Spracherkennungsmodells von OpenAI",
-          "details": "Sprechstift verwendet ggml für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
+          "details": "Local Voice AI verwendet ggml für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
         }
       },
       "whatsNewUpdates": {
@@ -674,7 +674,7 @@
     "noOptionsFound": "Keine Optionen gefunden"
   },
   "accessibility": {
-    "permissionsDescription": "Sprechstift benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
+    "permissionsDescription": "Local Voice AI benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
     "openSettings": "Systemeinstellungen öffnen"
   },
   "errors": {
@@ -702,7 +702,7 @@
   },
   "theme": {
     "title": "Anwendungsdesign",
-    "description": "Wählen Sie, ob Sprechstift dem Systemthema folgt oder hell bzw. dunkel bleibt",
+    "description": "Wählen Sie, ob Local Voice AI dem Systemthema folgt oder hell bzw. dunkel bleibt",
     "options": {
       "system": "System",
       "light": "Hell",
@@ -720,14 +720,14 @@
         "no_target": "Beim Beenden der Aufnahme war kein Zielfenster bestimmbar.",
         "focus_changed": "Der Fokus wechselte während der Transkription in ein anderes Fenster.",
         "focus_changed_during_paste": "Der Fokus wechselte während des Einfügens in ein anderes Fenster.",
-        "target_elevated": "Die Zielanwendung läuft mit Administratorrechten; Windows blockiert Eingaben von Sprechstift.",
+        "target_elevated": "Die Zielanwendung läuft mit Administratorrechten; Windows blockiert Eingaben von Local Voice AI.",
         "injection_failed": "Der Tastendruck zum Einfügen ließ sich nicht zustellen.",
         "clipboard_unverified": "Der Text ließ sich nicht nachweisbar in die Zwischenablage legen."
       }
     }
   },
   "whatsNew": {
-    "title": "Neu in Sprechstift v{{version}}"
+    "title": "Neu in Local Voice AI v{{version}}"
   },
   "dictationTest": {
     "title": "Diktattest",

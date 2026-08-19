@@ -181,7 +181,7 @@
     },
     "permissions": {
       "title": "Permissions Required",
-      "description": "Sprechstift needs a couple of permissions to work properly.",
+      "description": "Local Voice AI needs a couple of permissions to work properly.",
       "microphone": {
         "title": "Microphone Access",
         "description": "Required to hear your voice for transcription."
@@ -241,7 +241,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Sprechstift Shortcuts",
+        "title": "Local Voice AI Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -293,7 +293,7 @@
       },
       "rescan": {
         "label": "Rescan",
-        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Sprechstift"
+        "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Local Voice AI"
       },
       "noModelsMatch": "No models match this filter."
     },
@@ -355,11 +355,11 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Sprechstift when you log in to your computer."
+        "description": "Automatically start Local Voice AI when you log in to your computer."
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Sprechstift icon in the system tray."
+        "description": "Display the Local Voice AI icon in the system tray."
       },
       "overlay": {
         "style": {
@@ -542,7 +542,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Sprechstift"
+        "description": "Automatically check for new versions of Local Voice AI"
       },
       "whatsNewPreview": {
         "title": "Preview What's New",
@@ -621,15 +621,15 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Sprechstift"
+        "description": "Current version of Local Voice AI"
       },
       "whatsNewUpdates": {
         "label": "Show What's New",
-        "description": "Show release notes after Sprechstift updates"
+        "description": "Show release notes after Local Voice AI updates"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Sprechstift stores its data"
+        "description": "Location where Local Voice AI stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -638,7 +638,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Sprechstift",
+        "description": "Help us continue building Local Voice AI",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -646,7 +646,7 @@
         "ggml": {
           "title": "ggml",
           "description": "High-performance tensor library for on-device machine learning inference",
-          "details": "Sprechstift's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "Local Voice AI's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -665,7 +665,7 @@
     "portableUpdateButton": "Open GitHub Releases"
   },
   "whatsNew": {
-    "title": "New in Sprechstift v{{version}}"
+    "title": "New in Local Voice AI v{{version}}"
   },
   "common": {
     "loading": "Loading...",
@@ -677,7 +677,7 @@
     "noOptionsFound": "No options found"
   },
   "accessibility": {
-    "permissionsDescription": "Sprechstift needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "Local Voice AI needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings"
   },
   "errors": {
@@ -701,11 +701,11 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Sprechstift interface"
+    "description": "Change the language of the Local Voice AI interface"
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Sprechstift follows your system theme or stays light or dark",
+    "description": "Choose whether Local Voice AI follows your system theme or stays light or dark",
     "options": {
       "system": "System",
       "light": "Light",
@@ -723,7 +723,7 @@
         "no_target": "No target window could be determined when the recording stopped.",
         "focus_changed": "The focus moved to a different window while transcribing.",
         "focus_changed_during_paste": "The focus moved to a different window while inserting.",
-        "target_elevated": "The target application runs with administrator rights; Windows blocks input from Sprechstift.",
+        "target_elevated": "The target application runs with administrator rights; Windows blocks input from Local Voice AI.",
         "injection_failed": "The insertion keystroke could not be delivered.",
         "clipboard_unverified": "The text could not be verifiably placed in the clipboard."
       }
