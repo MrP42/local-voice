@@ -33,6 +33,11 @@ export const LiveTranscript: React.FC = () => {
   const { t } = useTranslation();
   const [segments, setSegments] = useState<StoredSegment[]>([]);
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
+  // Ref mirror of the active meeting so the (mount-once) listener can filter
+  // without going stale: segment events from OTHER meetings — an import
+  // running while a recording is live is the everyday case — must never be
+  // merged into this transcript (M8 acceptance follow-up 7.1).
+  const activeIdRef = useRef<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,6 +45,7 @@ export const LiveTranscript: React.FC = () => {
       const payload = e.payload;
       if (payload.kind === "state") {
         if (payload.status === "recording") {
+          activeIdRef.current = payload.meeting_id;
           setActiveMeetingId((prev) =>
             prev === payload.meeting_id ? prev : payload.meeting_id,
           );
@@ -48,6 +54,7 @@ export const LiveTranscript: React.FC = () => {
           // recording starts rather than clearing it out from under the user.
         }
       } else if (payload.kind === "segments") {
+        if (payload.meeting_id !== activeIdRef.current) return;
         setSegments((prev) => {
           const merged = [...prev, ...payload.appended];
           return merged.sort((a, b) => a.start_ms - b.start_ms);
