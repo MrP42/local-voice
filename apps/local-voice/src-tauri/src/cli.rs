@@ -104,6 +104,28 @@ pub struct CliArgs {
     #[arg(long, value_name = "FILE")]
     pub tts_out_wav: Option<PathBuf>,
 
+    /// Import this file (audio/video/vtt/srt) as a meeting headlessly and
+    /// exit. Runs the same import pipeline the UI command uses, then prints
+    /// `MEETING_ID=<ulid>` and `DB=<path>` on stdout. Used by the M8
+    /// acceptance harness (scripts/m8-verify.ps1).
+    #[arg(long, value_name = "FILE")]
+    pub import_meeting: Option<PathBuf>,
+
+    /// Print one meeting's stored state as JSON (status, segment count,
+    /// first/last segment times, audio paths, retention marker) and exit.
+    /// Keeps the harness free of an external sqlite3 dependency.
+    #[arg(long, value_name = "ID")]
+    pub dump_meeting: Option<String>,
+
+    /// Test hook for the crash-recovery scenario: fabricates an "app died
+    /// mid recording" meeting — a row left on `recording` with a WAV whose
+    /// RIFF/data sizes were never patched — from this 16 kHz mono WAV, then
+    /// prints `MEETING_ID=<ulid>`. The next meetings run repairs it through
+    /// the real `recover_orphans` path. Hidden: it only ever writes test
+    /// data, it is not a user-facing feature.
+    #[arg(long, value_name = "WAV", hide = true)]
+    pub make_orphan: Option<PathBuf>,
+
     /// Open this document (txt/md/pdf/docx) in the read-aloud library and
     /// start playback — used by the Explorer context menu. Forwards to a
     /// running instance if there is one.

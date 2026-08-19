@@ -154,6 +154,13 @@ impl MeetingStore {
         Self::open_at(&db_path)
     }
 
+    /// Where this store's SQLite file lives. Reported by the headless
+    /// `--import-meeting` / `--dump-meeting` runs so a harness can point at
+    /// the very database the app just wrote.
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
+    }
+
     /// Opens a store at an explicit path, running migrations. Used directly by tests.
     pub fn open_at(path: &Path) -> Result<Self> {
         let store = Self {

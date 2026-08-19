@@ -632,6 +632,313 @@ fn run_headless_stream(
     0
 }
 
+/// Headless meetings path (`--import-meeting` / `--dump-meeting` /
+/// `--make-orphan`), the M8 counterpart to `run_headless_transcription`.
+///
+/// Every run first performs the *same* startup housekeeping
+/// `initialize_core_logic` does for the real app — `recover_orphans()` then
+/// `retention::purge_due_audio()` — because that is precisely what the
+/// acceptance harness needs to observe: "restart the app and see that the
+/// due audio is gone / the orphan was repaired" becomes "run the CLI a
+/// second time". Skipping it here would make the headless path a different
+/// program from the one being accepted.
+///
+/// stdout carries only machine-readable lines (`MEETING_ID=`, `DB=`, or one
+/// JSON object); logs already go to stderr in headless mode.
+fn run_headless_meetings(app: &AppHandle, args: &CliArgs) -> i32 {
+    // Same first move as every other headless entry point: this process must
+    // never paste into a foreign window.
+    crate::selftest::begin_headless_run();
+
+    use managers::meetings::{retention, store::MeetingStore};
+
+    let store = match MeetingStore::new(app) {
+        Ok(store) => Arc::new(store),
+        Err(e) => {
+            eprintln!("error: meetings store unavailable: {e}");
+            return 1;
+        }
+    };
+    println!("DB={}", store.db_path().display());
+
+    let tm = app.state::<Arc<TranscriptionManager>>().inner().clone();
+
+    // --- startup housekeeping, mirroring initialize_core_logic -------------
+    let recorder = Arc::new(managers::meetings::recorder::MeetingRecorderManager::new(
+        app,
+        Arc::clone(&store),
+        Arc::clone(&tm),
+    ));
+    recorder.recover_orphans();
+    match retention::purge_due_audio(&store, chrono::Utc::now().timestamp()) {
+        Ok(deleted) => eprintln!("meetings: startup retention purge deleted {deleted} file(s)"),
+        Err(e) => eprintln!("warning: startup retention purge failed: {e}"),
+    }
+
+    if let Some(source) = args.make_orphan.clone() {
+        return make_orphan_meeting(&store, &source, args.out.as_deref());
+    }
+
+    if let Some(path) = args.import_meeting.clone() {
+        if !path.exists() {
+            eprintln!("error: no such file: {}", path.display());
+            return 2;
+        }
+        // Audio/video imports go through `tm.transcribe_segments`, which —
+        // unlike `transcribe()` — does NOT load a model on demand. The app
+        // never hits this because the UI path has one loaded already; a cold
+        // headless process does, so load it here (same call and the same
+        // `--model` / `--device-index` semantics as `--transcribe-file`).
+        // Subtitle imports never touch the model, so they must not require one.
+        let is_subtitle = matches!(
+            path.extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default()
+                .to_lowercase()
+                .as_str(),
+            "vtt" | "srt"
+        );
+        if !is_subtitle {
+            let model_id = args
+                .model
+                .clone()
+                .unwrap_or_else(|| get_settings(app).selected_model);
+            if model_id.is_empty() {
+                eprintln!("error: no model selected (pass --model or pick one in the app)");
+                return 2;
+            }
+            let load_start = std::time::Instant::now();
+            if let Err(e) = tm.load_model_with_device(&model_id, args.device_index) {
+                eprintln!("error: load_model('{model_id}') failed: {e}");
+                return 1;
+            }
+            println!("MODEL={model_id}");
+            println!("LOAD_MS={}", load_start.elapsed().as_millis());
+        }
+
+        let started = std::time::Instant::now();
+        // Consent is confirmed by the caller: a headless import is an
+        // explicit, deliberate act by whoever typed the flag (the UI gate
+        // itself is covered by the consent-gate scenario, not by this path).
+        let result = tauri::async_runtime::block_on(managers::meetings::import::import_media_file(
+            app,
+            Arc::clone(&store),
+            Arc::clone(&tm),
+            path.clone(),
+            true,
+        ));
+        match result {
+            Ok(meeting_id) => {
+                println!("MEETING_ID={meeting_id}");
+                println!("IMPORT_MS={}", started.elapsed().as_millis());
+                // The release binary targets the Windows GUI subsystem, where
+                // a calling script cannot reliably capture stdout (see
+                // scripts/selftest-matrix.ps1) — so --out is the dependable
+                // channel back to the harness. `--dump-meeting` in the same
+                // run owns the file instead; the harness never combines them.
+                if args.dump_meeting.is_none() {
+                    // The full post-import state, not just the id: with a
+                    // short retention policy the audio can already be gone by
+                    // the time a *second* process could look, because every
+                    // meetings run purges at startup. Observing "the audio
+                    // was there and had an expiry" is therefore only possible
+                    // from inside the run that created it.
+                    let mut payload =
+                        meeting_payload(&store, &meeting_id).unwrap_or_else(|| serde_json::json!({}));
+                    payload["meeting_id"] = serde_json::json!(meeting_id);
+                    payload["db"] = serde_json::json!(store.db_path().display().to_string());
+                    payload["import_ms"] = serde_json::json!(started.elapsed().as_millis() as u64);
+                    payload["source_file"] = serde_json::json!(path.display().to_string());
+                    payload["audio_file_exists"] = serde_json::json!(payload["mic_audio_path"]
+                        .as_str()
+                        .map(|p| std::path::Path::new(p).exists())
+                        .unwrap_or(false));
+                    emit_headless_payload(&payload, args.out.as_deref());
+                }
+            }
+            Err(e) => {
+                eprintln!("error: import failed: {e}");
+                return 1;
+            }
+        }
+    }
+
+    if let Some(id) = args.dump_meeting.clone() {
+        return dump_meeting(&store, &id, args.out.as_deref());
+    }
+
+    0
+}
+
+/// `--dump-meeting`: one JSON object describing what the store actually
+/// holds for `id`. Deliberately includes the derived numbers the harness
+/// asserts on (segment count, first/last segment times, channel set) so the
+/// assertions live in one place instead of being re-derived from raw rows.
+fn dump_meeting(
+    store: &Arc<managers::meetings::store::MeetingStore>,
+    id: &str,
+    out: Option<&std::path::Path>,
+) -> i32 {
+    match meeting_payload(store, id) {
+        Some(payload) => {
+            emit_headless_payload(&payload, out);
+            0
+        }
+        None => {
+            eprintln!("error: no meeting {id}");
+            2
+        }
+    }
+}
+
+/// Shared by `--dump-meeting` and the `--import-meeting` result: everything
+/// the harness asserts on, including the derived numbers (segment count,
+/// first/last segment times, the set of channels used), so those derivations
+/// live in one place instead of being re-done in PowerShell.
+fn meeting_payload(
+    store: &Arc<managers::meetings::store::MeetingStore>,
+    id: &str,
+) -> Option<serde_json::Value> {
+    let meeting = match store.get_meeting(id) {
+        Ok(Some(m)) => m,
+        Ok(None) => return None,
+        Err(e) => {
+            eprintln!("error: meeting lookup failed: {e}");
+            return None;
+        }
+    };
+    let segments = match store.get_segments(id) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: segment lookup failed: {e}");
+            return None;
+        }
+    };
+    let documents = store.get_documents(id).unwrap_or_default();
+
+    let mut channels: Vec<u8> = segments.iter().map(|s| s.channel).collect();
+    channels.sort_unstable();
+    channels.dedup();
+
+    Some(serde_json::json!({
+        "id": meeting.id,
+        "title": meeting.title,
+        "status": meeting.status,
+        "source": meeting.source,
+        "duration_ms": meeting.duration_ms,
+        "ended_at": meeting.ended_at,
+        "mic_audio_path": meeting.mic_audio_path,
+        "system_audio_path": meeting.system_audio_path,
+        "audio_retention_until": meeting.audio_retention_until,
+        "consent_confirmed_at": meeting.consent_confirmed_at,
+        "segment_count": segments.len(),
+        "channels": channels,
+        "first_start_ms": segments.first().map(|s| s.start_ms),
+        "last_start_ms": segments.last().map(|s| s.start_ms),
+        "last_end_ms": segments.last().map(|s| s.end_ms),
+        "total_text_chars": segments.iter().map(|s| s.text.len()).sum::<usize>(),
+        "document_kinds": documents.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(),
+        "segments": segments,
+    }))
+}
+
+/// `--make-orphan`: fabricates exactly the on-disk situation a crash during
+/// a live recording leaves behind — a meeting row still on `recording`,
+/// already-appended segments, and a WAV whose RIFF/data size fields were
+/// never patched because `finalize()` never ran. The recovery itself is NOT
+/// simulated: the next run goes through the real `recover_orphans()` above.
+fn make_orphan_meeting(
+    store: &Arc<managers::meetings::store::MeetingStore>,
+    source: &std::path::Path,
+    out: Option<&std::path::Path>,
+) -> i32 {
+    use audio_toolkit::audio::wav_writer::StreamingWavWriter;
+    use managers::meetings::store::{MeetingSource, StoredSegment, TranscriptDelta};
+
+    // The live recorder writes i16 PCM; read_wav_samples hands back f32, so
+    // scale back to what StreamingWavWriter actually appends.
+    let samples: Vec<i16> = match crate::audio_toolkit::read_wav_samples(source) {
+        Ok(s) => s
+            .into_iter()
+            .map(|v| (v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+            .collect(),
+        Err(e) => {
+            eprintln!("error: cannot read {}: {e}", source.display());
+            return 2;
+        }
+    };
+
+    let meeting = match store.create_meeting("Crash-Test", MeetingSource::Live, Some(0)) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("error: create_meeting failed: {e}");
+            return 1;
+        }
+    };
+
+    // Temp, not next to the source fixture: a harness that dies mid-run must
+    // not leave debris in the repo.
+    let dir = std::env::temp_dir().join(format!(
+        "m8-orphan-{}",
+        &meeting.id[meeting.id.len().saturating_sub(8)..]
+    ));
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("error: orphan dir failed: {e}");
+        return 1;
+    }
+    let wav_path = dir.join("mic.wav");
+
+    // Write and flush, then drop WITHOUT finalize — that is the crash.
+    {
+        let mut writer = match StreamingWavWriter::create(&wav_path, 16_000) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("error: wav writer failed: {e}");
+                return 1;
+            }
+        };
+        if let Err(e) = writer.append(&samples) {
+            eprintln!("error: wav append failed: {e}");
+            return 1;
+        }
+        // No flush_header() either: the sizes stay at 0, the worst case.
+    }
+
+    let segment = StoredSegment {
+        segment_index: 0,
+        text: "Vor dem Absturz aufgezeichnet.".to_string(),
+        start_ms: 0,
+        end_ms: 3_000,
+        channel: 0,
+        speaker_index: None,
+    };
+    if let Err(e) = store.append_delta(
+        &meeting.id,
+        &TranscriptDelta {
+            new_segments: vec![segment],
+        },
+    ) {
+        eprintln!("error: append_delta failed: {e}");
+        return 1;
+    }
+    if let Err(e) = store.set_audio_paths(&meeting.id, wav_path.to_str(), None, None) {
+        eprintln!("error: set_audio_paths failed: {e}");
+        return 1;
+    }
+
+    println!("MEETING_ID={}", meeting.id);
+    println!("ORPHAN_WAV={}", wav_path.display());
+    emit_headless_payload(
+        &serde_json::json!({
+            "meeting_id": meeting.id,
+            "orphan_wav": wav_path.display().to_string(),
+            "samples": samples.len(),
+        }),
+        out,
+    );
+    0
+}
+
 fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     // Before anything else: this process must not paste into any window.
     crate::selftest::begin_headless_run();
@@ -1063,7 +1370,10 @@ pub fn run(cli_args: CliArgs) {
     let headless_mode = cli_args.transcribe_file.is_some()
         || cli_args.list_devices
         || cli_args.list_models
-        || cli_args.tts_test;
+        || cli_args.tts_test
+        || cli_args.import_meeting.is_some()
+        || cli_args.dump_meeting.is_some()
+        || cli_args.make_orphan.is_some();
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -1264,8 +1574,15 @@ pub fn run(cli_args: CliArgs) {
 
                 let handle = app_handle.clone();
                 let args = cli_args.clone();
+                let meetings_mode = args.import_meeting.is_some()
+                    || args.dump_meeting.is_some()
+                    || args.make_orphan.is_some();
                 std::thread::spawn(move || {
-                    let code = run_headless_guarded(|| run_headless_transcription(&handle, &args));
+                    let code = if meetings_mode {
+                        run_headless_guarded(|| run_headless_meetings(&handle, &args))
+                    } else {
+                        run_headless_guarded(|| run_headless_transcription(&handle, &args))
+                    };
                     // Drop the loaded engine before teardown: ggml-metal's global
                     // device free asserts (SIGABRT) if a model's Metal resources
                     // are still alive at C++ static-destructor time.
