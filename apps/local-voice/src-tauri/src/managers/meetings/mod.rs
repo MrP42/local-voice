@@ -4,6 +4,7 @@
 // caller yet — expected for a store-only milestone, not dead code to prune.
 #![allow(dead_code, unused_imports)]
 
+pub mod chunker;
 pub mod mic_capture;
 pub mod store;
 pub use store::*;
