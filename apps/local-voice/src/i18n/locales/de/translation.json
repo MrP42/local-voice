@@ -854,6 +854,43 @@
       "days90": "90 Tage",
       "forever": "Unbegrenzt",
       "placeholder": "Aufbewahrung wählen"
+    },
+    "list": {
+      "title": "Besprechungen",
+      "empty": "Noch keine Besprechungen.",
+      "import": "Importieren…",
+      "importError": "Import fehlgeschlagen",
+      "loading": "Wird geladen…",
+      "date": "Datum",
+      "duration": "Dauer",
+      "deleteConfirmTitle": "Besprechung löschen?",
+      "deleteConfirm": "Die Besprechung samt Transkript und Protokoll wird unwiderruflich gelöscht.",
+      "deleteButton": "Löschen",
+      "cancel": "Abbrechen"
+    },
+    "detail": {
+      "transcriptTab": "Transkript",
+      "minutesTab": "Protokoll",
+      "generate": "Erzeugen",
+      "regenerate": "Neu erzeugen",
+      "export": "Als .md exportieren",
+      "editSegment": "Segment bearbeiten",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "shares": "Redeanteile",
+      "back": "Zurück zur Liste"
+    },
+    "status": {
+      "recording": "Aufnahme läuft",
+      "processing": "Wird verarbeitet",
+      "ready": "Fertig",
+      "failed": "Fehlgeschlagen"
+    },
+    "minutes": {
+      "empty": "Noch kein Protokoll erzeugt.",
+      "generating": "Protokoll wird erzeugt…",
+      "exportSaved": "Gespeichert unter {{path}}",
+      "exportError": "Export fehlgeschlagen"
     }
   }
 }

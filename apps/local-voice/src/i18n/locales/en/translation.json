@@ -854,6 +854,43 @@
       "days90": "90 days",
       "forever": "Forever",
       "placeholder": "Choose retention"
+    },
+    "list": {
+      "title": "Meetings",
+      "empty": "No meetings yet.",
+      "import": "Import…",
+      "importError": "Import failed",
+      "loading": "Loading…",
+      "date": "Date",
+      "duration": "Duration",
+      "deleteConfirmTitle": "Delete meeting?",
+      "deleteConfirm": "The meeting, its transcript and minutes will be permanently deleted.",
+      "deleteButton": "Delete",
+      "cancel": "Cancel"
+    },
+    "detail": {
+      "transcriptTab": "Transcript",
+      "minutesTab": "Minutes",
+      "generate": "Generate",
+      "regenerate": "Regenerate",
+      "export": "Export as .md",
+      "editSegment": "Edit segment",
+      "save": "Save",
+      "cancel": "Cancel",
+      "shares": "Speaking shares",
+      "back": "Back to list"
+    },
+    "status": {
+      "recording": "Recording",
+      "processing": "Processing",
+      "ready": "Ready",
+      "failed": "Failed"
+    },
+    "minutes": {
+      "empty": "No minutes generated yet.",
+      "generating": "Generating minutes…",
+      "exportSaved": "Saved to {{path}}",
+      "exportError": "Export failed"
     }
   }
 }
