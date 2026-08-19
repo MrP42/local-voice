@@ -51,6 +51,33 @@ $ErrorActionPreference = 'Continue'
 $script:Results = @()
 $script:Notes   = @()
 
+# ------------------------------------------- meetings-DB sandbox (mandatory)
+# The harness must NEVER touch the productive meetings.db (M8 acceptance
+# ruling). It therefore always runs against a fresh sandbox directory via
+# LVA_MEETINGS_DIR, and a guard hard-aborts the whole script if the binary
+# ever reports a DB outside that sandbox. LVA_HARNESS_DESTRUCTIVE stays an
+# ADDITIONAL safeguard for --make-orphan, not the only one.
+$script:ProductiveMeetingsDb = Join-Path $env:APPDATA 'de.wolffappliedai.localvoiceai\meetings\meetings.db'
+$script:SandboxDir = Join-Path $env:TEMP ("lva-m8-sandbox-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+New-Item -ItemType Directory -Force $script:SandboxDir | Out-Null
+$env:LVA_MEETINGS_DIR = $script:SandboxDir
+Write-Host ("Meetings sandbox (LVA_MEETINGS_DIR): " + $script:SandboxDir) -ForegroundColor DarkGray
+$script:Notes += ("sandbox: Harness lief gegen LVA_MEETINGS_DIR=" + $script:SandboxDir + " - die produktive meetings.db wird nie beruehrt; ein Guard bricht sonst hart ab (Exit 10).")
+
+function Assert-SandboxDb {
+    param([string]$DbPath)
+    if (-not $DbPath) { return }
+    $normalized = [System.IO.Path]::GetFullPath($DbPath)
+    $sandbox    = [System.IO.Path]::GetFullPath($script:SandboxDir)
+    $productive = [System.IO.Path]::GetFullPath($script:ProductiveMeetingsDb)
+    $inSandbox  = $normalized.StartsWith($sandbox, [System.StringComparison]::OrdinalIgnoreCase)
+    if (($normalized -ieq $productive) -or (-not $inSandbox)) {
+        Write-Host ("SAFEGUARD TRIPPED: binary reports meetings DB outside the sandbox: " + $normalized) -ForegroundColor Red
+        Write-Host ("Expected under: " + $sandbox + " - aborting the whole harness, productive data at risk.") -ForegroundColor Red
+        [Environment]::Exit(10)
+    }
+}
+
 # ---------------------------------------------------------------- plumbing
 function New-Result {
     param($Name, $Pass, $Detail, $Data = $null)
@@ -121,6 +148,8 @@ function Invoke-App {
         $tail = ($stderr -split "`n" | Select-Object -Last 6) -join ' | '
         throw ("no result from '{0}' (exit {1}): {2}" -f ($CliArgs -join ' '), $proc.ExitCode, $tail)
     }
+    # Sandbox guard: every run that reports its DB must report the sandbox DB.
+    if ($payload.PSObject.Properties['db']) { Assert-SandboxDb $payload.db }
     return [pscustomobject]@{
         Payload  = $payload
         ExitCode = $proc.ExitCode

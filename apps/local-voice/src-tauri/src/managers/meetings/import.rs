@@ -161,9 +161,8 @@ fn run_import(
         let (wav_path, _tmp_guard) = media::ensure_wav(path, 16_000)?;
         let samples = read_wav_i16_mono_16k(&wav_path)?;
 
-        let dir = crate::portable::app_data_dir(app)
+        let dir = super::meetings_data_dir(app)
             .map_err(|e| format!("app_data_dir_failed: {e}"))?
-            .join("meetings")
             .join(meeting_id);
         std::fs::create_dir_all(&dir).map_err(|e| format!("meeting_dir_failed: {e}"))?;
         let import_wav_path = dir.join("import.wav");

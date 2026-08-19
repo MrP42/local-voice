@@ -160,10 +160,11 @@ pub struct MeetingStore {
 }
 
 impl MeetingStore {
-    /// Opens (and, on first run, creates + migrates) `<appdata>/meetings/meetings.db`.
+    /// Opens (and, on first run, creates + migrates) `<meetings_dir>/meetings.db`
+    /// — normally `<appdata>/meetings`, overridable via `LVA_MEETINGS_DIR`
+    /// (harness sandbox, see `super::meetings_data_dir`).
     pub fn new(app: &tauri::AppHandle) -> Result<Self> {
-        let app_data_dir = crate::portable::app_data_dir(app)?;
-        let meetings_dir = app_data_dir.join("meetings");
+        let meetings_dir = super::meetings_data_dir(app)?;
         if !meetings_dir.exists() {
             std::fs::create_dir_all(&meetings_dir)?;
             debug!("Created meetings directory: {:?}", meetings_dir);

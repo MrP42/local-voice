@@ -305,9 +305,8 @@ impl MeetingRecorderManager {
             .map_err(|e| format!("meeting_create_failed: {e}"))?;
         let meeting_id = meeting.id.clone();
 
-        let dir = crate::portable::app_data_dir(&self.app)
+        let dir = super::meetings_data_dir(&self.app)
             .map_err(|e| format!("app_data_dir_failed: {e}"))?
-            .join("meetings")
             .join(&meeting_id);
         std::fs::create_dir_all(&dir).map_err(|e| format!("meeting_dir_failed: {e}"))?;
 
