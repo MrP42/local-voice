@@ -72,9 +72,14 @@ pub struct MinutesHead {
     pub date_iso: String,
     pub duration_ms: u64,
     pub shares: Vec<SpeakerShare>,
-    /// Ein-Sprecher-Aufnahme (Diktat/Import): Redeanteile sind dann keine
-    /// Information, sondern Rauschen — Tabelle und Validator lassen sie weg.
+    /// Nur ein Kanal im Transkript: Redeanteile sind dann keine Information,
+    /// sondern Rauschen — Tabelle und Validator lassen sie weg.
     pub single_speaker: bool,
+    /// Der einzige Kanal ist eine Mischaufnahme (MixedCapture, Kanal 2): ein
+    /// Import kann vier Personen enthalten, die alle auf denselben Kanal
+    /// laufen. „Ein Kanal" heißt hier ausdrücklich NICHT „ein Sprecher" —
+    /// die Unterscheidung steuert die Prompt-Formulierung.
+    pub mixed_channel: bool,
 }
 
 // -- Formatierung ---------------------------------------------------------
@@ -223,7 +228,18 @@ fn head_facts_block(head: &MinutesHead) -> String {
         head.date_iso,
         duration_label(head.duration_ms),
     );
-    if head.single_speaker || head.shares.is_empty() {
+    if head.mixed_channel {
+        // Eine Mischaufnahme kann beliebig viele Personen enthalten. Dem
+        // Modell hier „ein Sprecher" als Fakt zu geben, würde ein Meeting mit
+        // vier Personen zum Monolog machen — genau die Halluzination, die der
+        // System-Prompt verbietet.
+        block.push_str(
+            "Speakers: the transcript is a single mixed recording channel; the \
+             number of speakers is unknown and speaking shares are not \
+             available. Attribute statements only where the transcript itself \
+             makes the speaker clear.\n",
+        );
+    } else if head.single_speaker || head.shares.is_empty() {
         block.push_str("Speakers: a single recorded speaker (no speaking shares).\n");
     } else {
         block.push_str("Speaking shares:\n");
@@ -537,11 +553,16 @@ fn build_head(meeting: &super::store::Meeting, segments: &[StoredSegment]) -> Mi
         .map(|dt| dt.format("%Y-%m-%d").to_string())
         .unwrap_or_default();
 
+    // Importe landen vollständig auf Kanal 2 (MixedCapture) — dort steht ein
+    // Kanal für unbekannt viele Sprecher, nicht für einen.
+    let mixed_channel = segments.iter().any(|segment| segment.channel == 2);
+
     MinutesHead {
         title: meeting.title.clone(),
         date_iso,
         duration_ms,
         single_speaker: shares.len() <= 1,
+        mixed_channel,
         shares,
     }
 }
@@ -631,6 +652,25 @@ mod tests {
                 },
             ],
             single_speaker: single,
+            mixed_channel: false,
+        }
+    }
+
+    /// Kopf eines Imports: alles auf Kanal 2, ein Kanal — aber unbekannt
+    /// viele Sprecher.
+    fn mixed_import_head() -> MinutesHead {
+        MinutesHead {
+            title: "Aufzeichnung Kundencall".into(),
+            date_iso: "2026-08-19".into(),
+            duration_ms: 1_800_000,
+            shares: vec![SpeakerShare {
+                label: "Aufnahme".into(),
+                channel: 2,
+                speech_ms: 1_500_000,
+                percent: 100.0,
+            }],
+            single_speaker: true,
+            mixed_channel: true,
         }
     }
 
@@ -653,6 +693,80 @@ mod tests {
         assert!(p.contains("60")); // Redeanteil steht als Fakt im Prompt
         assert!(p.contains("Ich [00:00]: Hallo."));
         assert!(p.contains("Do not invent")); // Anti-Halluzination-Regel
+    }
+
+    #[test]
+    fn a_mixed_import_prompt_calls_the_speaker_count_unknown_instead_of_one() {
+        let p = minutes_user_prompt(&mixed_import_head(), "Aufnahme [00:00]: Guten Tag.");
+        assert!(
+            p.contains("single mixed recording channel"),
+            "Mischaufnahme wird als solche benannt"
+        );
+        assert!(
+            p.contains("number of speakers is unknown"),
+            "Sprecherzahl bleibt ausdrücklich offen"
+        );
+        assert!(
+            !p.contains("a single recorded speaker"),
+            "ein Import mit vier Personen darf nicht als Monolog behauptet werden"
+        );
+        assert!(
+            !p.contains("Speaking shares:"),
+            "ohne Kanaltrennung gibt es keine Redeanteile"
+        );
+    }
+
+    #[test]
+    fn a_mic_only_recording_still_says_a_single_recorded_speaker() {
+        let mut mic_only = head(true);
+        mic_only.shares = vec![SpeakerShare {
+            label: "Ich".into(),
+            channel: 0,
+            speech_ms: 1_500_000,
+            percent: 100.0,
+        }];
+        let p = minutes_user_prompt(&mic_only, "Ich [00:00]: Notiz an mich selbst.");
+        assert!(p.contains("a single recorded speaker"));
+        assert!(!p.contains("number of speakers is unknown"));
+    }
+
+    #[test]
+    fn build_head_marks_channel_two_as_mixed_and_channel_zero_as_not_mixed() {
+        let meeting = super::super::store::Meeting {
+            id: "m".into(),
+            title: "T".into(),
+            status: "ready".into(),
+            source: "import".into(),
+            started_at: None,
+            ended_at: None,
+            language: None,
+            mic_audio_path: None,
+            system_audio_path: None,
+            duration_ms: Some(10_000),
+            consent_confirmed_at: None,
+            audio_retention_until: None,
+            created_at: 1_755_600_000,
+            deleted_at: None,
+        };
+        let segment = |channel: u8| StoredSegment {
+            segment_index: 0,
+            text: "x".into(),
+            start_ms: 0,
+            end_ms: 1_000,
+            channel,
+            speaker_index: None,
+        };
+
+        let imported = build_head(&meeting, &[segment(2)]);
+        assert!(imported.mixed_channel);
+        assert!(
+            imported.single_speaker,
+            "ein Kanal → keine Redeanteil-Tabelle"
+        );
+
+        let mic_only = build_head(&meeting, &[segment(0)]);
+        assert!(!mic_only.mixed_channel);
+        assert!(mic_only.single_speaker);
     }
 
     #[test]
@@ -681,6 +795,17 @@ mod tests {
             "leere Listen sind zulässig"
         );
         m.summary = "  ".into();
+        assert!(validate_minutes(&m, false).is_err());
+    }
+
+    #[test]
+    fn a_recording_without_channel_separation_may_have_no_scope() {
+        let mut m = minimal_minutes();
+        m.scope = "".into();
+        assert!(
+            validate_minutes(&m, true).is_ok(),
+            "Diktat wie Mischaufnahme: unbekannter Rahmen ist kein Fehler"
+        );
         assert!(validate_minutes(&m, false).is_err());
     }
 
