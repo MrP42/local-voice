@@ -1,5 +1,6 @@
 {
   "tray": {
+    "meetingRecording": "Meeting recording is running",
     "settings": "设置...",
     "checkUpdates": "检查更新...",
     "copyLastTranscript": "复制最新转录",

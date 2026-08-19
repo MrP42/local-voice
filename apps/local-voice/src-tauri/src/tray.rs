@@ -159,6 +159,30 @@ pub fn tray_tooltip() -> String {
     version_label()
 }
 
+/// Pure: the tray tooltip text. A meeting recording and a dictation share the
+/// recording icon, so the tooltip is what tells them apart — without it the
+/// tray cannot report *what* is being recorded (M8 Spec A1).
+fn tooltip_text(version_label: &str, meeting_recording_label: Option<&str>) -> String {
+    match meeting_recording_label {
+        Some(label) if !label.is_empty() => format!("{version_label} — {label}"),
+        _ => version_label.to_string(),
+    }
+}
+
+/// The meeting label to append while a meeting records, `None` otherwise.
+/// `try_state` keeps this a no-op where no recorder is managed.
+fn meeting_recording_label(
+    app: &AppHandle,
+    strings: &crate::tray_i18n::TrayStrings,
+) -> Option<String> {
+    let recorder = app
+        .try_state::<std::sync::Arc<crate::managers::meetings::recorder::MeetingRecorderManager>>(
+        )?;
+    recorder
+        .is_recording()
+        .then(|| strings.meeting_recording.clone())
+}
+
 fn version_label() -> String {
     if cfg!(debug_assertions) {
         format!("Local Voice AI v{} (Dev)", env!("CARGO_PKG_VERSION"))
@@ -295,7 +319,8 @@ pub fn update_tray_menu(app: &AppHandle, locale: Option<&str>) {
     let tray = app.state::<TrayIcon>();
     let _ = tray.set_menu(Some(menu));
     let _ = tray.set_icon_as_template(true);
-    let _ = tray.set_tooltip(Some(version_label));
+    let meeting_label = meeting_recording_label(app, &strings);
+    let _ = tray.set_tooltip(Some(tooltip_text(&version_label, meeting_label.as_deref())));
 }
 
 fn last_transcript_text(entry: &HistoryEntry) -> &str {
@@ -347,7 +372,7 @@ pub fn copy_last_transcript(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{last_transcript_text, load_tray_icon};
+    use super::{last_transcript_text, load_tray_icon, tooltip_text};
     use crate::managers::history::HistoryEntry;
 
     fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
@@ -362,6 +387,24 @@ mod tests {
             post_process_prompt: None,
             post_process_requested: false,
         }
+    }
+
+    #[test]
+    fn the_tooltip_names_a_running_meeting_recording() {
+        assert_eq!(
+            tooltip_text("Local Voice AI v1.0", None),
+            "Local Voice AI v1.0"
+        );
+        assert_eq!(
+            tooltip_text("Local Voice AI v1.0", Some("Meeting recording is running")),
+            "Local Voice AI v1.0 — Meeting recording is running"
+        );
+        // A locale without the string falls back to the plain version label
+        // rather than a tooltip ending in a dangling dash.
+        assert_eq!(
+            tooltip_text("Local Voice AI v1.0", Some("")),
+            "Local Voice AI v1.0"
+        );
     }
 
     #[test]

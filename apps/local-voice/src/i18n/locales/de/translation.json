@@ -1,5 +1,6 @@
 {
   "tray": {
+    "meetingRecording": "Meeting-Aufnahme läuft",
     "settings": "Einstellungen...",
     "checkUpdates": "Nach Updates suchen...",
     "copyLastTranscript": "Letzte Transkription kopieren",

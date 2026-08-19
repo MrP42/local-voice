@@ -599,6 +599,41 @@ pub fn show_paste_fallback_notice(
     });
 }
 
+/// i18n key of the meeting recording indicator. Lives here because the
+/// overlay re-asserts the indicator itself after every hide (see
+/// [`hide_decision`]).
+pub const MEETING_RECORDING_NOTICE_KEY: &str = "meetings.recordingIndicator";
+
+/// What a hide request should actually do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HideDecision {
+    /// Hide the overlay window.
+    Hide,
+    /// Do not hide — put the meeting recording indicator back up instead.
+    RestoreMeetingIndicator,
+}
+
+/// Pure: the indicator that a meeting is recording (Spec A1) must survive
+/// every other overlay episode. Anything that hides the overlay mid-meeting —
+/// a transient notice expiring, a dictation or TTS overlay ending — would
+/// otherwise silently remove it for the rest of the recording.
+pub fn hide_decision(meeting_recording: bool) -> HideDecision {
+    if meeting_recording {
+        HideDecision::RestoreMeetingIndicator
+    } else {
+        HideDecision::Hide
+    }
+}
+
+/// True while a meeting recording is running. `try_state` keeps this a no-op
+/// in builds/tests where no recorder is managed.
+fn meeting_is_recording(app_handle: &AppHandle) -> bool {
+    app_handle
+        .try_state::<std::sync::Arc<crate::managers::meetings::recorder::MeetingRecorderManager>>()
+        .map(|recorder| recorder.is_recording())
+        .unwrap_or(false)
+}
+
 /// Show a notice that stays until something else takes the overlay over —
 /// used by the meetings recorder for the "this machine is recording"
 /// indicator (M8 Spec A1). Like the paste-fallback notice it uses the
@@ -666,8 +701,17 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
     }
 }
 
-/// Hides the recording overlay window with fade-out animation
+/// Hides the recording overlay window with fade-out animation — unless a
+/// meeting is recording, in which case its indicator goes back up instead.
+/// This is the single central re-assert: every hide path (transient notice
+/// expiry, dictation end, TTS) runs through here, so no caller has to
+/// remember the meeting.
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    if hide_decision(meeting_is_recording(app_handle)) == HideDecision::RestoreMeetingIndicator {
+        show_persistent_notice(app_handle, MEETING_RECORDING_NOTICE_KEY);
+        return;
+    }
+
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -752,6 +796,14 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_hide_during_a_meeting_restores_the_recording_indicator() {
+        // Spec A1: the indicator must outlive every other overlay episode —
+        // a transient notice expiring must not silently end it.
+        assert_eq!(hide_decision(true), HideDecision::RestoreMeetingIndicator);
+        assert_eq!(hide_decision(false), HideDecision::Hide);
+    }
 
     #[test]
     fn monitor_hit_test_uses_half_open_physical_bounds() {

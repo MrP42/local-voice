@@ -677,7 +677,10 @@ impl MeetingRecorderManager {
     fn set_indicator(&self, on: bool) {
         if on {
             crate::tray::change_tray_icon(&self.app, crate::tray::TrayIconState::Recording);
-            crate::overlay::show_persistent_notice(&self.app, "meetings.recordingIndicator");
+            crate::overlay::show_persistent_notice(
+                &self.app,
+                crate::overlay::MEETING_RECORDING_NOTICE_KEY,
+            );
         } else {
             crate::overlay::hide_recording_overlay(&self.app);
             crate::tray::change_tray_icon(&self.app, crate::tray::TrayIconState::Idle);

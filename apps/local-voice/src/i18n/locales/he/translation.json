@@ -1,5 +1,6 @@
 {
   "tray": {
+    "meetingRecording": "Meeting recording is running",
     "settings": "הגדרות...",
     "checkUpdates": "בדוק עדכונים...",
     "copyLastTranscript": "העתק את התמלול האחרון",
