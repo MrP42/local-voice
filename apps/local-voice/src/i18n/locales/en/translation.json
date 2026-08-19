@@ -18,7 +18,8 @@
     "debug": "Debug",
     "about": "About",
     "dictationTest": "Dictation test",
-    "tts": "Read Aloud"
+    "tts": "Read Aloud",
+    "meetings": "Meetings"
   },
   "tts": {
     "title": "Read Aloud",
@@ -56,11 +57,24 @@
       "loadUrl": "Load URL",
       "sourcePlaceholder": "Paste text here, load a document or a URL…",
       "length": "Length",
-      "lengths": { "short": "Short (~150 words)", "medium": "Medium (~400)", "long": "Long (~900)" },
+      "lengths": {
+        "short": "Short (~150 words)",
+        "medium": "Medium (~400)",
+        "long": "Long (~900)"
+      },
       "detail": "Detail",
-      "details": { "overview": "Overview", "balanced": "Balanced", "deep": "Detailed" },
+      "details": {
+        "overview": "Overview",
+        "balanced": "Balanced",
+        "deep": "Detailed"
+      },
       "audience": "Audience",
-      "audiences": { "general": "General", "expert": "Experts", "management": "Management", "plain": "Plain language" },
+      "audiences": {
+        "general": "General",
+        "expert": "Experts",
+        "management": "Management",
+        "plain": "Plain language"
+      },
       "run": "Summarize",
       "working": "Working…",
       "speak": "Read aloud",
@@ -803,6 +817,43 @@
   },
   "meetings": {
     "recordingIndicator": "Meeting recording is running",
-    "dictationBlocked": "Dictation is blocked while a meeting is recording."
+    "dictationBlocked": "Dictation is blocked while a meeting is recording.",
+    "title": "Meetings",
+    "record": {
+      "start": "Start recording",
+      "stop": "Stop",
+      "pause": "Pause",
+      "resume": "Resume",
+      "titlePlaceholder": "Meeting title",
+      "captureSystem": "Capture system audio (other party)",
+      "micLevel": "Microphone",
+      "systemLevel": "System"
+    },
+    "consent": {
+      "title": "Consent required",
+      "body": "Recording non-public conversations without the consent of ALL participants is unlawful in many jurisdictions. Confirm that all participants have been informed and have agreed.",
+      "confirm": "All participants have agreed",
+      "cancel": "Cancel"
+    },
+    "live": {
+      "empty": "No segments yet — the first one appears after ~20 seconds.",
+      "me": "Me",
+      "remote": "Other party",
+      "mixed": "Recording"
+    },
+    "errors": {
+      "consentRequired": "Recording will not start without confirmed consent.",
+      "dictationActive": "A dictation is currently running — please stop it first."
+    },
+    "retention": {
+      "title": "Audio file retention",
+      "description": "Controls how long the recording is kept after the meeting ends.",
+      "afterMinutes": "Until minutes are generated",
+      "days3": "3 days",
+      "days14": "14 days",
+      "days90": "90 days",
+      "forever": "Forever",
+      "placeholder": "Choose retention"
+    }
   }
 }

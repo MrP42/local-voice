@@ -8,6 +8,7 @@ export { PostProcessingSettings } from "./post-processing/PostProcessingSettings
 export { ModelsSettings } from "./models/ModelsSettings";
 export { DictationTest } from "./dictation-test/DictationTest";
 export { TtsSettings } from "./tts/TtsSettings";
+export { MeetingsSettings } from "./meetings/MeetingsSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

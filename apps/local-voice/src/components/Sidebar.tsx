@@ -8,6 +8,7 @@ import {
   Sparkles,
   Cpu,
   Mic,
+  Users,
   Volume2,
 } from "lucide-react";
 import LocalVoiceAiLogo, { LocalVoiceAiMark } from "./icons/LocalVoiceAiLogo";
@@ -22,6 +23,7 @@ import {
   ModelsSettings,
   DictationTest,
   TtsSettings,
+  MeetingsSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -52,6 +54,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  meetings: {
+    labelKey: "sidebar.meetings",
+    icon: Users,
+    component: MeetingsSettings,
     enabled: () => true,
   },
   models: {
