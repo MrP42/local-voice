@@ -1,8 +1,12 @@
-# Sprechstift starten und benutzen
+# Local Voice AI starten und benutzen
 
 Kurzanleitung für den stabilisierten Stand vom 17.08.2026.
 Die Voice-AI-Funktionen vom 18.08.2026 (Vorlesen, Stimmen klonen, Übersetzung,
 Stimmwechsler) sind am Ende dieses Dokuments beschrieben.
+
+Seit dem 18.08.2026 heißt die App **Local Voice AI** (vormals „Sprechstift").
+Die Programmdatei heißt aus technischen Gründen weiterhin `sprechstift.exe`,
+und Einstellungen/Verlauf bleiben an ihrem bisherigen Ort erhalten.
 
 ## Starten
 
