@@ -4,6 +4,7 @@ mod recorder;
 mod resampler;
 mod utils;
 mod visualizer;
+pub mod wav_writer;
 
 pub use device::{list_input_devices, list_output_devices, CpalDeviceInfo};
 pub use recorder::{
@@ -12,3 +13,4 @@ pub use recorder::{
 pub use resampler::FrameResampler;
 pub use utils::{read_wav_samples, save_wav_file, verify_wav_file};
 pub use visualizer::AudioVisualiser;
+pub use wav_writer::StreamingWavWriter;
