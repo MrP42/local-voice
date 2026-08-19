@@ -124,6 +124,12 @@ const settingUpdaters: {
   tts_compile: (value) => commands.changeTtsCompileSetting(value as boolean),
   tts_translate_lang: (value) =>
     commands.changeTtsTranslateLangSetting(value as string),
+  tts_volume: (value) => commands.changeTtsVolumeSetting(value as number),
+  tts_speed: (value) => commands.changeTtsSpeedSetting(value as number),
+  tts_export_format: (value) =>
+    commands.changeTtsExportFormatSetting(value as string),
+  tts_context_menu: (value) =>
+    commands.changeTtsContextMenuSetting(value as boolean),
   selected_language: (value) =>
     commands.changeSelectedLanguageSetting(value as string),
   overlay_position: (value) =>

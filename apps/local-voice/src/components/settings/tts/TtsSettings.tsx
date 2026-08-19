@@ -14,6 +14,9 @@ import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
+import { Slider } from "../../ui/Slider";
+import { ReadingCard } from "./ReadingCard";
+import { SummaryCard } from "./SummaryCard";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -36,6 +39,10 @@ export const TtsSettings = () => {
   const [text, setText] = useState("");
   const [startingSeconds, setStartingSeconds] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [speakProgress, setSpeakProgress] = useState<{
+    position: number;
+    total: number;
+  } | null>(null);
   const startingTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -50,8 +57,13 @@ export const TtsSettings = () => {
         setLastError(null);
       }
     });
+    const unProgress = listen<{ position: number; total: number }>(
+      "tts-speak-progress",
+      (e) => setSpeakProgress(e.payload),
+    );
     return () => {
       un.then((f) => f());
+      unProgress.then((f) => f());
     };
   }, []);
 
@@ -84,13 +96,25 @@ export const TtsSettings = () => {
 
   const speak = async () => {
     setLastError(null);
+    setSpeakProgress(null);
     const result = await commands.ttsSpeakText(text);
     if (result.status === "error") setLastError(result.error);
   };
 
-  const stopSpeaking = () => {
+  const pauseSpeaking = () => {
     void commands.ttsCancel();
   };
+
+  const resumeSpeaking = async () => {
+    setLastError(null);
+    const result = await commands.ttsSpeakResume();
+    if (result.status === "error") setLastError(result.error);
+  };
+
+  const canResume =
+    !speaking &&
+    speakProgress !== null &&
+    speakProgress.position < speakProgress.total;
 
   const startServer = async () => {
     setLastError(null);
@@ -148,20 +172,38 @@ export const TtsSettings = () => {
             onChange={(e) => setText(e.target.value)}
             placeholder={t("tts.inputPlaceholder")}
             rows={5}
+            className="w-full"
           />
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center flex-wrap">
             <Button
               onClick={speak}
               disabled={text.trim().length === 0 || starting}
             >
               {t("tts.speak")}
             </Button>
-            <Button variant="secondary" onClick={stopSpeaking} disabled={!speaking}>
-              {t("tts.stop")}
+            <Button variant="secondary" onClick={pauseSpeaking} disabled={!speaking}>
+              {t("tts.pause")}
             </Button>
+            {canResume && (
+              <Button variant="secondary" onClick={resumeSpeaking}>
+                {t("tts.resume")}
+              </Button>
+            )}
+            {speakProgress && (
+              <span className="text-xs text-text/60">
+                {t("tts.sentenceProgress", {
+                  position: speakProgress.position,
+                  total: speakProgress.total,
+                })}
+              </span>
+            )}
           </div>
         </div>
       </SettingsGroup>
+
+      <ReadingCard />
+
+      <SummaryCard />
 
       <VoicesCard />
 
@@ -171,18 +213,59 @@ export const TtsSettings = () => {
 
       <SettingsGroup title={t("tts.settingsTitle")}>
         <ShortcutInput shortcutId="speak_clipboard" grouped={true} />
+        <Slider
+          value={getSetting("tts_volume") ?? 1.0}
+          onChange={(value) => updateSetting("tts_volume", value)}
+          min={0}
+          max={1}
+          step={0.05}
+          formatValue={(value) => `${Math.round(value * 100)}%`}
+          label={t("tts.settings.volume")}
+          description={t("tts.settings.volumeDescription")}
+          grouped={true}
+        />
+        <Slider
+          value={getSetting("tts_speed") ?? 1.0}
+          onChange={(value) => updateSetting("tts_speed", value)}
+          min={0.5}
+          max={2}
+          step={0.05}
+          formatValue={(value) => `${value.toFixed(2)}×`}
+          label={t("tts.settings.speed")}
+          description={t("tts.settings.speedDescription")}
+          grouped={true}
+        />
+        <SettingContainer
+          title={t("tts.settings.exportFormat")}
+          description={t("tts.settings.exportFormatDescription")}
+          grouped={true}
+          layout="horizontal"
+        >
+          <select
+            className="text-sm bg-transparent border border-mid-gray/40 rounded-md px-2 py-1"
+            value={getSetting("tts_export_format") ?? "wav"}
+            onChange={(e) => updateSetting("tts_export_format", e.target.value)}
+          >
+            {/* Formatnamen sind Eigennamen — bewusst nicht übersetzt. */}
+            {/* eslint-disable i18next/no-literal-string */}
+            <option value="wav">WAV</option>
+            <option value="mp3">MP3</option>
+            <option value="opus">Opus</option>
+            {/* eslint-enable i18next/no-literal-string */}
+          </select>
+        </SettingContainer>
         <SettingContainer
           title={t("tts.settings.fishDir")}
           description={t("tts.settings.fishDirDescription")}
           grouped={true}
-          layout="horizontal"
+          layout="stacked"
         >
           <Input
             type="text"
             value={getSetting("tts_fish_dir") ?? ""}
             onChange={(e) => updateSetting("tts_fish_dir", e.target.value)}
             disabled={isUpdating("tts_fish_dir")}
-            className="w-64"
+            className="w-full"
           />
         </SettingContainer>
         <SettingContainer
@@ -250,6 +333,14 @@ export const TtsSettings = () => {
           isUpdating={isUpdating("tts_compile")}
           label={t("tts.settings.compile")}
           description={t("tts.settings.compileDescription")}
+          grouped={true}
+        />
+        <ToggleSwitch
+          checked={getSetting("tts_context_menu") ?? false}
+          onChange={(checked) => updateSetting("tts_context_menu", checked)}
+          isUpdating={isUpdating("tts_context_menu")}
+          label={t("tts.settings.contextMenu")}
+          description={t("tts.settings.contextMenuDescription")}
           grouped={true}
         />
         <SettingContainer

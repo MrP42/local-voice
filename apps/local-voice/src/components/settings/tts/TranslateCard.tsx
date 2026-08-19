@@ -98,6 +98,7 @@ export const TranslateCard = () => {
           onChange={(e) => setInput(e.target.value)}
           placeholder={t("tts.translate.inputPlaceholder")}
           rows={3}
+          className="w-full"
         />
         <div className="flex gap-2 items-center">
           <Button

@@ -83,7 +83,15 @@ export const VoicesCard = () => {
     setError(null);
     const picked = await open({
       multiple: false,
-      filters: [{ name: "WAV", extensions: ["wav"] }],
+      filters: [
+        {
+          name: "Audio/Video",
+          extensions: [
+            "wav", "mp3", "m4a", "aac", "flac", "ogg", "opus",
+            "wma", "mp4", "mov", "mkv", "webm", "avi",
+          ],
+        },
+      ],
     });
     if (typeof picked !== "string") return;
     setTranscript("");
@@ -222,7 +230,7 @@ export const VoicesCard = () => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("tts.voices.namePlaceholder")}
-              className="w-64"
+              className="w-full"
             />
             <Textarea
               value={transcript}
@@ -233,6 +241,7 @@ export const VoicesCard = () => {
                   : t("tts.voices.transcriptImportPlaceholder")
               }
               rows={4}
+              className="w-full"
             />
             <div className="flex gap-2">
               <Button

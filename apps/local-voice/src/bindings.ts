@@ -157,6 +157,38 @@ async changeTtsTranslateLangSetting(value: string) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsVolumeSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_volume_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsSpeedSetting(value: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_speed_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsExportFormatSetting(value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_export_format_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsContextMenuSetting(value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_context_menu_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
@@ -1040,6 +1072,94 @@ async ttsRecordTranslateStop(targetLang: string) : Promise<Result<TranslateOutco
     else return { status: "error", error: e  as any };
 }
 },
+async ttsReadingOpen(path: string) : Promise<Result<ReadingInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_open", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingPlay() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_play") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingPause() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_pause") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingList() : Promise<Result<ReadingInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingReset(key: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_reset", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingRemove(key: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_remove", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsReadingSeek(delta: number) : Promise<Result<ReadingInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_reading_seek", { delta }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsSpeakResume() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_resume") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsExportFormat() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_export_format") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsSummarizeText(text: string, options: SummaryOptions) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_summarize_text", { text, options }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsExtractDocument(path: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_extract_document", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsVoicechangeRecordStart() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_voicechange_record_start") };
@@ -1219,7 +1339,27 @@ tts_compile?: boolean;
  * Zielsprache der Audio-Übersetzung (TP3), als englischer Sprachname
  * für den Übersetzungs-Prompt (z. B. "English", "German").
  */
-tts_translate_lang?: string }
+tts_translate_lang?: string; 
+/**
+ * Wiedergabelautstärke des Vorlesens (0.0–1.0), unabhängig von den
+ * Feedback-Sounds.
+ */
+tts_volume?: number; 
+/**
+ * Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
+ * Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).
+ */
+tts_speed?: number; 
+/**
+ * Ausgabeformat für den Datei-Export ("wav" | "mp3" | "opus") — der
+ * Fish-Server encodiert direkt.
+ */
+tts_export_format?: string; 
+/**
+ * Windows-Explorer-Kontextmenü „Mit Local Voice AI vorlesen" für
+ * Dokumente (txt/md/pdf/docx). Benutzer-Registry, kein Admin nötig.
+ */
+tts_context_menu?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
@@ -1288,6 +1428,18 @@ export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+/**
+ * Fortschritt eines Dokuments — Persistenz-Eintrag und Event-Payload.
+ */
+export type ReadingInfo = { 
+/**
+ * Absoluter Dateipfad = stabile Identität des Dokuments.
+ */
+key: string; title: string; 
+/**
+ * Nächster zu spielender Satz (0-basiert) = Anzahl fertig gehörter Sätze.
+ */
+position: number; total: number; finished: boolean; playing: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
@@ -1324,6 +1476,19 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+export type SummaryOptions = { 
+/**
+ * "kurz" (~150 Wörter) | "mittel" (~400) | "lang" (~900)
+ */
+length: string; 
+/**
+ * "ueberblick" | "ausgewogen" | "detailliert"
+ */
+detail: string; 
+/**
+ * "allgemein" | "fachpublikum" | "management" | "einfache_sprache"
+ */
+audience: string }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.

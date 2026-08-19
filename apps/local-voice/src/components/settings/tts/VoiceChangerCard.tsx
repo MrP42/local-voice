@@ -43,7 +43,15 @@ export const VoiceChangerCard = () => {
     setSaved(null);
     const picked = await open({
       multiple: false,
-      filters: [{ name: "WAV", extensions: ["wav"] }],
+      filters: [
+        {
+          name: "Audio/Video",
+          extensions: [
+            "wav", "mp3", "m4a", "aac", "flac", "ogg", "opus",
+            "wma", "mp4", "mov", "mkv", "webm", "avi",
+          ],
+        },
+      ],
     });
     if (typeof picked !== "string") return;
     setBusy(true);
@@ -58,9 +66,11 @@ export const VoiceChangerCard = () => {
 
   const exportWav = async () => {
     if (!transcript) return;
+    const formatResult = await commands.ttsExportFormat();
+    const format = formatResult.status === "ok" ? formatResult.data : "wav";
     const target = await save({
-      filters: [{ name: "WAV", extensions: ["wav"] }],
-      defaultPath: "stimmwechsler.wav",
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+      defaultPath: `stimmwechsler.${format}`,
     });
     if (typeof target !== "string") return;
     setBusy(true);
