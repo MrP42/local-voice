@@ -15,6 +15,12 @@ const BITS_PER_SAMPLE: u16 = 16;
 const CHANNELS: u16 = 1;
 const BYTES_PER_SAMPLE: u32 = (BITS_PER_SAMPLE / 8) as u32;
 
+/// The classic WAV/RIFF format stores chunk sizes in a `u32`, so a single
+/// file can describe at most `u32::MAX` bytes of header+data. This is the
+/// largest `data` chunk that still leaves the RIFF size (`36 + data_len`)
+/// representable in that `u32` — about 37 hours at 16 kHz mono i16.
+const MAX_DATA_BYTES: u64 = u32::MAX as u64 - 36;
+
 /// Writes a 44-byte canonical PCM WAV header (mono, i16) with the given
 /// data length into `data_len` field, and RIFF size derived from it.
 fn write_header(file: &mut File, sample_rate: u32, data_len: u32) -> io::Result<()> {
@@ -64,7 +70,20 @@ impl StreamingWavWriter {
     }
 
     /// Appends samples (little-endian i16) and advances `frames_written`.
+    ///
+    /// Refuses (without writing anything) if this would push the `data`
+    /// chunk past `MAX_DATA_BYTES`, the RIFF/WAV `u32` size-field limit.
+    /// Callers should end the recording cleanly on this error.
     pub fn append(&mut self, samples: &[i16]) -> io::Result<()> {
+        let additional_bytes = samples.len() as u64 * BYTES_PER_SAMPLE as u64;
+        let current_bytes = self.frames_written * BYTES_PER_SAMPLE as u64;
+        if current_bytes + additional_bytes > MAX_DATA_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "wav size limit reached (RIFF u32)",
+            ));
+        }
+
         let mut buf = Vec::with_capacity(samples.len() * 2);
         for s in samples {
             buf.extend_from_slice(&s.to_le_bytes());
@@ -74,11 +93,23 @@ impl StreamingWavWriter {
         Ok(())
     }
 
+    /// Test-only hook to move the internal frame counter near the RIFF
+    /// size limit without actually writing gigabytes of samples to disk.
+    #[cfg(test)]
+    fn set_frames_for_test(&mut self, frames: u64) {
+        self.frames_written = frames;
+    }
+
     /// Patches the RIFF and data size fields to reflect `frames_written` so
     /// far, then syncs to disk. Seeks back to the end afterwards so
     /// subsequent `append()` calls keep writing at the tail.
     pub fn flush_header(&mut self) -> io::Result<()> {
-        let data_len = (self.frames_written * BYTES_PER_SAMPLE as u64) as u32;
+        let data_len_u64 = self.frames_written * BYTES_PER_SAMPLE as u64;
+        debug_assert!(
+            data_len_u64 <= MAX_DATA_BYTES,
+            "append() must reject writes before frames_written crosses MAX_DATA_BYTES"
+        );
+        let data_len = data_len_u64 as u32;
         self.file.seek(SeekFrom::Start(4))?;
         self.file.write_all(&(36 + data_len).to_le_bytes())?;
         self.file.seek(SeekFrom::Start(40))?;
@@ -132,7 +163,11 @@ pub fn repair_orphan_wav(path: &Path) -> io::Result<Option<u64>> {
         return Ok(None);
     }
 
-    let data_len = (len - HEADER_LEN) as u32;
+    // Clamp rather than refuse: a file that grew past the RIFF u32 limit
+    // (should not happen given append()'s guard, but could via manual
+    // tampering or a foreign writer) is still repairable up to the limit —
+    // that beats leaving it unplayable.
+    let data_len = (len - HEADER_LEN).min(MAX_DATA_BYTES) as u32;
     file.seek(SeekFrom::Start(4))?;
     file.write_all(&(36 + data_len).to_le_bytes())?;
     file.seek(SeekFrom::Start(40))?;
@@ -177,6 +212,23 @@ mod tests {
         assert_eq!(ms, 2000);
         let r = hound::WavReader::open(&p).unwrap();
         assert_eq!(r.len(), 32_000);
+    }
+
+    #[test]
+    fn append_refuses_to_cross_the_riff_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("huge.wav");
+        let mut w = StreamingWavWriter::create(&p, 16_000).unwrap();
+
+        // Put the writer just short of the limit without writing gigabytes.
+        let frames_near_limit = MAX_DATA_BYTES / BYTES_PER_SAMPLE as u64 - 10;
+        w.set_frames_for_test(frames_near_limit);
+
+        // A large chunk that would cross the limit must be refused, and
+        // nothing should be written.
+        let big_chunk = vec![0i16; 1_000];
+        assert!(w.append(&big_chunk).is_err());
+        assert_eq!(w.frames_written(), frames_near_limit);
     }
 
     #[test]
