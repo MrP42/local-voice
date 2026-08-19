@@ -52,6 +52,9 @@ pub struct TtsCore {
     /// Satz-Level-WAV-Cache: unveränderter Text (gleicher Satz, Seed und
     /// Stimme) wird beim erneuten Vorlesen nicht neu synthetisiert.
     wav_cache: Mutex<WavCache>,
+    /// Persistenter Ableger des Caches auf Platte — bereits synthetisierte
+    /// Bücher/Dokumente sind damit auch OHNE laufenden Fish-Server anhörbar.
+    cache_dir: Mutex<Option<std::path::PathBuf>>,
     on_phase_change: Mutex<Option<Box<dyn Fn(TtsStatus) + Send + Sync>>>,
 }
 
@@ -125,8 +128,29 @@ impl TtsCore {
             output_device: Mutex::new(None),
             voice: Mutex::new(None),
             wav_cache: Mutex::new(WavCache::new()),
+            cache_dir: Mutex::new(None),
             on_phase_change: Mutex::new(None),
         }
+    }
+
+    fn disk_cache_path(&self, key: u64) -> Option<std::path::PathBuf> {
+        self.cache_dir
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|dir| dir.join(format!("{key:016x}.wav")))
+    }
+
+    /// Ist dieser Satz (mit aktueller Stimme/Seed) bereits synthetisiert —
+    /// im RAM oder auf Platte?
+    pub fn has_cached(&self, text: &str) -> bool {
+        let seed = *self.seed.lock().unwrap();
+        let voice = self.voice.lock().unwrap().clone();
+        let key = WavCache::key(text, seed, voice.as_deref());
+        if self.wav_cache.lock().unwrap().get(key).is_some() {
+            return true;
+        }
+        self.disk_cache_path(key).is_some_and(|p| p.exists())
     }
 
     fn set_phase(&self, phase: TtsPhase, message: Option<String>) {
@@ -195,7 +219,7 @@ impl TtsCore {
             log::warn!("TTS text truncated to {max_chars} chars");
         }
         let sentences = protocol::split_sentences(&prepared.text);
-        self.speak_sentence_run(sentences, 0, None).await
+        self.speak_sentence_run(sentences, 0, None, None).await
     }
 
     /// Gemeinsamer Sprechpfad für Freitext und Hörbuch: Sätze pipelined
@@ -206,6 +230,7 @@ impl TtsCore {
         &self,
         sentences: Vec<String>,
         start_index: usize,
+        on_playing: Option<Arc<dyn Fn(usize) + Send + Sync>>,
         on_played: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     ) -> Result<usize, String> {
         if sentences.is_empty() {
@@ -231,6 +256,7 @@ impl TtsCore {
                 &sentences,
                 start_index,
                 my_cancel.clone(),
+                on_playing,
                 on_played,
             )
             .await;
@@ -259,6 +285,15 @@ impl TtsCore {
         if let Some(cached) = self.wav_cache.lock().unwrap().get(cache_key) {
             return Ok(cached);
         }
+        // Platten-Cache: macht bereits Vorgelesenes offline abspielbar.
+        if let Some(path) = self.disk_cache_path(cache_key) {
+            if let Ok(bytes) = std::fs::read(&path) {
+                if protocol::looks_like_wav(&bytes) {
+                    self.wav_cache.lock().unwrap().insert(cache_key, bytes.clone());
+                    return Ok(bytes);
+                }
+            }
+        }
         let body = protocol::tts_request_body(text, seed, voice.as_deref());
         let resp = self
             .http
@@ -276,6 +311,11 @@ impl TtsCore {
             return Err("TTS response is not a WAV file".into());
         }
         self.wav_cache.lock().unwrap().insert(cache_key, bytes.clone());
+        if let Some(path) = self.disk_cache_path(cache_key) {
+            if let Err(e) = std::fs::write(&path, &bytes) {
+                log::warn!("could not persist tts cache file: {e}");
+            }
+        }
         Ok(bytes)
     }
 
@@ -292,6 +332,7 @@ impl TtsCore {
         sentences: &[String],
         start_index: usize,
         cancelled: Arc<AtomicBool>,
+        on_playing: Option<Arc<dyn Fn(usize) + Send + Sync>>,
         on_played: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     ) -> Result<usize, String> {
         let max_chars = *self.max_chars.lock().unwrap();
@@ -341,6 +382,10 @@ impl TtsCore {
                     }
                     if cancelled.load(Ordering::Acquire) {
                         break;
+                    }
+                    // Live-Anzeige: dieser Satz beginnt jetzt zu spielen.
+                    if let Some(cb) = on_playing.as_ref() {
+                        cb(offset);
                     }
                     let player = self.player.clone();
                     let device = self.output_device.lock().unwrap().clone();
@@ -442,6 +487,41 @@ pub struct ReadingInfo {
 
 const READING_STORE: &str = "reading_progress.json";
 
+/// Obergrenze des Platten-Caches; darüber fliegen die ältesten Dateien.
+const DISK_CACHE_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// FIFO-Verdrängung nach Änderungszeit — läuft einmal beim App-Start.
+fn prune_disk_cache(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = entries
+        .flatten()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            Some((e.path(), meta.modified().ok()?, meta.len()))
+        })
+        .collect();
+    let total: u64 = files.iter().map(|(_, _, len)| len).sum();
+    if total <= DISK_CACHE_LIMIT_BYTES {
+        return;
+    }
+    files.sort_by_key(|(_, modified, _)| *modified);
+    let mut remaining = total;
+    for (path, _, len) in files {
+        if remaining <= DISK_CACHE_LIMIT_BYTES {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            remaining -= len;
+        }
+    }
+    log::info!("tts cache pruned to {} MB", remaining / (1024 * 1024));
+}
+
 /// Binding-Id des Referenzaufnahme-Flows im AudioRecordingManager.
 const REFERENCE_BINDING: &str = "voice_reference";
 /// Binding-Id des Übersetzungsaufnahme-Flows.
@@ -470,6 +550,23 @@ impl TtsManager {
             speak_session: Mutex::new(None),
         });
         manager.refresh_from_settings();
+
+        // Persistenter Audio-Cache: macht bereits Vorgelesenes offline
+        // (ohne Fish-Server) abspielbar. Begrenzung siehe prune_disk_cache.
+        {
+            use tauri::Manager;
+            let base = crate::portable::data_dir()
+                .cloned()
+                .or_else(|| app.path().app_local_data_dir().ok());
+            if let Some(dir) = base.map(|b| b.join("tts_cache")) {
+                if let Err(e) = std::fs::create_dir_all(&dir) {
+                    log::warn!("tts cache dir unavailable: {e}");
+                } else {
+                    *manager.core.cache_dir.lock().unwrap() = Some(dir.clone());
+                    std::thread::spawn(move || prune_disk_cache(&dir));
+                }
+            }
+        }
 
         // Idle-Watchdog: beendet einen selbst gestarteten Server nach der
         // konfigurierten Leerlaufzeit, damit die 17 GB VRAM wieder frei werden.
@@ -544,12 +641,26 @@ impl TtsManager {
         self.run_speak_session(sentences, position).await
     }
 
+    /// Alles im Cache → gar keinen Server anfassen (Offline-Wiedergabe);
+    /// sonst normal sicherstellen. Vorher refresh, damit Stimme/Seed für die
+    /// Cache-Schlüssel aktuell sind.
+    pub async fn ensure_server_for(&self, sentences: &[String]) -> Result<(), String> {
+        if !sentences.is_empty() && sentences.iter().all(|s| self.core.has_cached(s)) {
+            log::info!("playback served entirely from cache — no server needed");
+            return Ok(());
+        }
+        self.ensure_server().await
+    }
+
     async fn run_speak_session(
         self: &Arc<Self>,
         sentences: Vec<String>,
         start: usize,
     ) -> Result<usize, String> {
         use tauri::Emitter;
+        self.refresh_from_settings();
+        self.ensure_server_for(&sentences[start.min(sentences.len())..])
+            .await?;
         let total = sentences.len() as u32;
         let cb_manager = Arc::clone(self);
         let on_played: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
@@ -561,8 +672,21 @@ impl TtsManager {
                 serde_json::json!({ "position": idx as u32 + 1, "total": total }),
             );
         });
+        // Live-Anzeige des Satzes, der gerade zu hören ist.
+        let now_manager = Arc::clone(self);
+        let now_sentences = sentences.clone();
+        let on_playing: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
+            let _ = now_manager.app.emit(
+                "tts-current-sentence",
+                serde_json::json!({
+                    "context": "speak",
+                    "index": idx as u32,
+                    "text": now_sentences.get(idx).cloned().unwrap_or_default(),
+                }),
+            );
+        });
         self.core
-            .speak_sentence_run(sentences, start, Some(on_played))
+            .speak_sentence_run(sentences, start, Some(on_playing), Some(on_played))
             .await
     }
 
@@ -884,11 +1008,7 @@ impl TtsManager {
     fn speak_in_background(self: &Arc<Self>, text: String) {
         let manager = Arc::clone(self);
         tauri::async_runtime::spawn(async move {
-            manager.refresh_from_settings();
-            if let Err(e) = manager.ensure_server().await {
-                log::error!("respeak: server start failed: {e}");
-                return;
-            }
+            // speak_text sichert Server (bzw. Cache-Offline-Pfad) selbst.
             if let Err(e) = manager.speak_text(&text).await {
                 log::warn!("respeak: speaking failed: {e}");
             }
@@ -1047,10 +1167,29 @@ impl TtsManager {
         tauri::async_runtime::spawn(async move {
             let (key, title) = (task_key, task_title);
             manager.refresh_from_settings();
-            if let Err(e) = manager.ensure_server().await {
+            // Bereits synthetisierte Passagen spielen offline — der Server
+            // startet nur, wenn noch Sätze fehlen.
+            if let Err(e) = manager
+                .ensure_server_for(&sentences[(start as usize).min(sentences.len())..])
+                .await
+            {
                 log::error!("reading: server start failed: {e}");
                 return;
             }
+            // Live-Anzeige des gelesenen Satzes.
+            let now_manager = Arc::clone(&manager);
+            let now_sentences = sentences.clone();
+            let on_playing: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
+                use tauri::Emitter;
+                let _ = now_manager.app.emit(
+                    "tts-current-sentence",
+                    serde_json::json!({
+                        "context": "reading",
+                        "index": idx as u32,
+                        "text": now_sentences.get(idx).cloned().unwrap_or_default(),
+                    }),
+                );
+            });
             let cb_manager = Arc::clone(&manager);
             let cb_key = key.clone();
             let cb_title = title.clone();
@@ -1068,7 +1207,7 @@ impl TtsManager {
             });
             let result = manager
                 .core
-                .speak_sentence_run(sentences, start as usize, Some(on_played))
+                .speak_sentence_run(sentences, start as usize, Some(on_playing), Some(on_played))
                 .await;
             if let Err(e) = result {
                 log::warn!("reading: playback ended with error: {e}");
@@ -1388,6 +1527,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 2, "neuer Text → neuer Request");
+    }
+
+    /// Bereits Vorgelesenes muss OHNE Server abspielbar sein: Der zweite
+    /// Kern (leerer RAM-Cache, unerreichbarer Port) bedient sich vom
+    /// Platten-Cache des ersten.
+    #[tokio::test]
+    async fn cached_audio_plays_without_any_server() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let port = spawn_mock(calls.clone(), bodies).await;
+        let cache_dir = tempfile::tempdir().unwrap();
+
+        let text = "Dieser Satz landet im persistenten Plattencache.";
+        let online = TtsCore::for_test(port);
+        *online.cache_dir.lock().unwrap() = Some(cache_dir.path().to_path_buf());
+        online.ensure_server_core().await.unwrap();
+        online.speak_core(text).await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let offline = TtsCore::for_test(1); // Port 1: kein Server erreichbar
+        *offline.cache_dir.lock().unwrap() = Some(cache_dir.path().to_path_buf());
+        assert!(offline.has_cached(text), "Platten-Cache muss erkannt werden");
+        let played = offline.speak_core(text).await.unwrap();
+        assert!(played > 1024, "Wiedergabe kam vollständig von der Platte");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "kein weiterer Server-Request");
     }
 
     #[tokio::test]

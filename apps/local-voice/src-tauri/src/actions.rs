@@ -1042,11 +1042,7 @@ impl ShortcutAction for SpeakClipboardAction {
                     return;
                 }
             };
-            tts.refresh_from_settings();
-            if let Err(e) = tts.ensure_server().await {
-                error!("speak_clipboard: server start failed: {e}");
-                return;
-            }
+            // speak_text sichert selbst: Cache-Offline-Pfad oder Serverstart.
             if let Err(e) = tts.speak_text(&text).await {
                 // Kein Text im Log — nur der Fehlergrund.
                 warn!("speak_clipboard: {e}");

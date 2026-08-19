@@ -9,8 +9,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[specta::specta]
 pub async fn tts_speak_text(app: AppHandle, text: String) -> Result<(), String> {
     let tts = app.state::<Arc<TtsManager>>().inner().clone();
-    tts.refresh_from_settings();
-    tts.ensure_server().await?;
+    // speak_text sichert selbst: Cache-Offline-Pfad oder Serverstart.
     tts.speak_text(&text).await.map(|_| ())
 }
 
@@ -178,8 +177,6 @@ pub fn tts_reading_seek(app: AppHandle, delta: i32) -> Result<ReadingInfo, Strin
 #[specta::specta]
 pub async fn tts_speak_resume(app: AppHandle) -> Result<(), String> {
     let tts = app.state::<Arc<TtsManager>>().inner().clone();
-    tts.refresh_from_settings();
-    tts.ensure_server().await?;
     tts.speak_resume().await.map(|_| ())
 }
 
@@ -216,6 +213,12 @@ pub async fn tts_summarize_text(
 #[specta::specta]
 pub fn tts_extract_document(path: String) -> Result<String, String> {
     crate::media::extract_document_text(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_extract_url(url: String) -> Result<String, String> {
+    crate::media::extract_url_text(&url).await
 }
 
 #[tauri::command]

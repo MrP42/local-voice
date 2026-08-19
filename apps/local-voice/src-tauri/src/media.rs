@@ -78,6 +78,70 @@ pub fn extract_document_text(path: &Path) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+/// Sichtbaren Text aus HTML ziehen — Artikel-Niveau (kein Browser-Ersatz):
+/// Script/Style/Head raus, Block-Enden werden Zeilenumbrüche, Tags weg,
+/// gängige Entities aufgelöst, Leerraum verdichtet.
+pub fn html_to_text(html: &str) -> String {
+    let no_hidden = regex::Regex::new(r"(?is)<(script|style|noscript|head|svg|nav|footer)\b.*?</(script|style|noscript|head|svg|nav|footer)>")
+        .expect("static regex")
+        .replace_all(html, " ");
+    let with_breaks = regex::Regex::new(r"(?i)<(br\s*/?|/p|/div|/h[1-6]|/li|/tr|/section|/article)[^>]*>")
+        .expect("static regex")
+        .replace_all(&no_hidden, "\n");
+    let stripped = regex::Regex::new("<[^>]+>")
+        .expect("static regex")
+        .replace_all(&with_breaks, " ");
+    let decoded = stripped
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'");
+    // Leerraum verdichten: Zeilen trimmen, leere Mehrfachzeilen zusammenfassen.
+    let mut out: Vec<String> = Vec::new();
+    for line in decoded.lines() {
+        let collapsed = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if collapsed.is_empty() {
+            if out.last().is_some_and(|l| !l.is_empty()) {
+                out.push(String::new());
+            }
+        } else {
+            out.push(collapsed);
+        }
+    }
+    out.join("\n").trim().to_string()
+}
+
+/// Webseite laden und als Fließtext zurückgeben (für die KI-Zusammenfassung).
+pub async fn extract_url_text(url: &str) -> Result<String, String> {
+    let full_url = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else {
+        format!("https://{url}")
+    };
+    let client = reqwest::Client::builder()
+        .user_agent("LocalVoiceAI/0.1 (+local reader)")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(&full_url)
+        .send()
+        .await
+        .map_err(|e| format!("Seite nicht erreichbar: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Seite antwortete mit {}", response.status()));
+    }
+    let html = response.text().await.map_err(|e| e.to_string())?;
+    let text = html_to_text(&html);
+    if text.chars().count() < 200 {
+        return Err("Die Seite lieferte kaum lesbaren Text (evtl. JavaScript-Seite oder Paywall)".into());
+    }
+    Ok(text)
+}
+
 /// Beliebiges Audio/Video über ffmpeg zu Mono-WAV mit gegebener Samplerate.
 pub fn decode_media_to_wav(input: &Path, out_wav: &Path, sample_rate: u32) -> Result<(), String> {
     let mut cmd = std::process::Command::new("ffmpeg");
@@ -167,6 +231,20 @@ mod tests {
         z.write_all("<w:document><w:body><w:p><w:r><w:t>Inhalt aus Word.</w:t></w:r></w:p></w:body></w:document>".as_bytes()).unwrap();
         z.finish().unwrap();
         assert_eq!(extract_document_text(&p).unwrap(), "Inhalt aus Word.");
+    }
+
+    #[test]
+    fn html_becomes_readable_prose_without_script_noise() {
+        let html = r#"<html><head><title>x</title><style>p{color:red}</style></head>
+<body><script>var a=1;</script><h1>Überschrift</h1><p>Erster &amp; wichtigster Absatz.</p>
+<div>Zweiter&nbsp;Absatz.</div><footer>Impressum</footer></body></html>"#;
+        let text = html_to_text(html);
+        assert!(text.contains("Überschrift"));
+        assert!(text.contains("Erster & wichtigster Absatz."));
+        assert!(text.contains("Zweiter Absatz."));
+        assert!(!text.contains("var a"), "Script-Inhalt darf nicht auftauchen");
+        assert!(!text.contains("color:red"));
+        assert!(!text.contains("Impressum"), "Footer wird entfernt");
     }
 
     #[test]

@@ -980,6 +980,7 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_export_format,
             commands::tts::tts_summarize_text,
             commands::tts::tts_extract_document,
+            commands::tts::tts_extract_url,
             commands::tts::tts_voicechange_record_start,
             commands::tts::tts_voicechange_record_stop,
             commands::tts::tts_voicechange_file,
