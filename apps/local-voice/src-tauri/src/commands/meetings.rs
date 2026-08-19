@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::managers::meetings::import::import_media_file;
+use crate::managers::meetings::minutes::generate_minutes;
 use crate::managers::meetings::recorder::MeetingRecorderManager;
 use crate::managers::meetings::store::{Meeting, MeetingDocument, MeetingStore, StoredSegment};
 use crate::managers::transcription::TranscriptionManager;
@@ -122,6 +123,20 @@ pub async fn meetings_delete(
         .soft_delete_meeting(&meeting_id)
         .map(|_paths| ())
         .map_err(|e| e.to_string())
+}
+
+/// Generates the standardized minutes for a finished meeting and stores them
+/// as a new document version. The meeting status stays untouched — a failed
+/// generation leaves a 'ready' meeting 'ready' and only returns the error.
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_generate_minutes(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<MeetingStore>>,
+    meeting_id: String,
+) -> Result<MeetingDocument, String> {
+    let store = Arc::clone(&store);
+    generate_minutes(&app, store, &meeting_id).await
 }
 
 /// Imports a local audio/video file or a VTT/SRT subtitle file as a new

@@ -20,7 +20,7 @@ pub struct SpeakerShare {
 /// M8: one fixed label per channel (0=DirectMic/"Ich", 1=RemoteParty/
 /// "Gegenseite", 2=MixedCapture/"Aufnahme"); anything else falls back to its
 /// channel number rather than panicking on unexpected data.
-fn label_for_channel(channel: u8) -> String {
+pub fn label_for_channel(channel: u8) -> String {
     match channel {
         0 => "Ich".to_string(),
         1 => "Gegenseite".to_string(),
