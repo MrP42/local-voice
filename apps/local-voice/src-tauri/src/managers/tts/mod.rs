@@ -289,7 +289,10 @@ impl TtsCore {
         if let Some(path) = self.disk_cache_path(cache_key) {
             if let Ok(bytes) = std::fs::read(&path) {
                 if protocol::looks_like_wav(&bytes) {
-                    self.wav_cache.lock().unwrap().insert(cache_key, bytes.clone());
+                    self.wav_cache
+                        .lock()
+                        .unwrap()
+                        .insert(cache_key, bytes.clone());
                     return Ok(bytes);
                 }
             }
@@ -310,7 +313,10 @@ impl TtsCore {
         if !protocol::looks_like_wav(&bytes) {
             return Err("TTS response is not a WAV file".into());
         }
-        self.wav_cache.lock().unwrap().insert(cache_key, bytes.clone());
+        self.wav_cache
+            .lock()
+            .unwrap()
+            .insert(cache_key, bytes.clone());
         if let Some(path) = self.disk_cache_path(cache_key) {
             if let Err(e) = std::fs::write(&path, &bytes) {
                 log::warn!("could not persist tts cache file: {e}");
@@ -426,7 +432,10 @@ impl TtsCore {
 
     pub fn cancel_core(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
-        self.cancelled.lock().unwrap().store(true, Ordering::Release);
+        self.cancelled
+            .lock()
+            .unwrap()
+            .store(true, Ordering::Release);
         // Der stornierte Auftrag darf die Phase nicht mehr anfassen (Guard) —
         // also stellt der Abbrecher selbst den Ruhezustand wieder her. Ohne
         // das bleibt die UI auf „Spricht" hängen und der Idle-Stopp greift nie.
@@ -617,8 +626,8 @@ impl TtsManager {
     /// den Satzfortschritt als `tts-speak-progress`-Event.
     pub async fn speak_text(self: &Arc<Self>, raw: &str) -> Result<usize, String> {
         let max_chars = *self.core.max_chars.lock().unwrap();
-        let prepared = protocol::prepare_text(raw, max_chars)
-            .ok_or_else(|| "empty text".to_string())?;
+        let prepared =
+            protocol::prepare_text(raw, max_chars).ok_or_else(|| "empty text".to_string())?;
         let sentences = protocol::split_sentences(&prepared.text);
         *self.speak_session.lock().unwrap() = Some(SpeakSession {
             sentences: sentences.clone(),
@@ -714,11 +723,15 @@ impl TtsManager {
         self.kill_owned_child();
 
         let mut cmd = std::process::Command::new(&python);
-        cmd.args(["tools/api_server.py", "--listen", &format!("127.0.0.1:{port}")])
-            .current_dir(&fish_dir)
-            .env("HF_HUB_DISABLE_TELEMETRY", "1")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
+        cmd.args([
+            "tools/api_server.py",
+            "--listen",
+            &format!("127.0.0.1:{port}"),
+        ])
+        .current_dir(&fish_dir)
+        .env("HF_HUB_DISABLE_TELEMETRY", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
         if settings.tts_compile {
             // 9x schnellere Synthese (RTF ~0,65 statt ~6), kostet ~60 s beim Start.
             cmd.arg("--compile");
@@ -742,10 +755,7 @@ impl TtsManager {
             if self.core.health_ok(port).await {
                 self.core.set_phase(TtsPhase::Ready, None);
                 *self.core.last_used.lock().unwrap() = Instant::now();
-                log::info!(
-                    "fish-speech ready after {} s",
-                    started.elapsed().as_secs()
-                );
+                log::info!("fish-speech ready after {} s", started.elapsed().as_secs());
                 return Ok(());
             }
             // Früher Kindprozess-Tod (falscher Pfad, kaputtes venv) → klarer Fehler.
@@ -955,7 +965,10 @@ impl TtsManager {
         let rm = self
             .app
             .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
-        rm.try_start_recording(VOICECHANGE_BINDING, crate::audio_toolkit::VadPolicy::Offline)
+        rm.try_start_recording(
+            VOICECHANGE_BINDING,
+            crate::audio_toolkit::VadPolicy::Offline,
+        )
     }
 
     /// Stimmwechsler-Aufnahme beenden: transkribieren und in der aktiven
@@ -1456,7 +1469,10 @@ mod tests {
         let core = TtsCore::for_test(port);
         core.ensure_server_core().await.unwrap();
         assert_eq!(core.phase(), TtsPhase::Ready);
-        assert!(!core.owns_server(), "extern erkannt → kein Besitz, kein Kill");
+        assert!(
+            !core.owns_server(),
+            "extern erkannt → kein Besitz, kein Kill"
+        );
     }
 
     #[tokio::test]
@@ -1468,7 +1484,11 @@ mod tests {
         let played = core.speak_core("Hallo Welt").await.unwrap();
         assert!(played > 1024, "WAV-Bytes kamen beim Player an");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(core.phase(), TtsPhase::Ready, "nach dem Sprechen wieder Ready");
+        assert_eq!(
+            core.phase(),
+            TtsPhase::Ready,
+            "nach dem Sprechen wieder Ready"
+        );
     }
 
     #[tokio::test]
@@ -1526,7 +1546,11 @@ mod tests {
         core.speak_core("Ein anderer Satz erzwingt eine neue Synthese.")
             .await
             .unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "neuer Text → neuer Request");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "neuer Text → neuer Request"
+        );
     }
 
     /// Bereits Vorgelesenes muss OHNE Server abspielbar sein: Der zweite
@@ -1548,10 +1572,17 @@ mod tests {
 
         let offline = TtsCore::for_test(1); // Port 1: kein Server erreichbar
         *offline.cache_dir.lock().unwrap() = Some(cache_dir.path().to_path_buf());
-        assert!(offline.has_cached(text), "Platten-Cache muss erkannt werden");
+        assert!(
+            offline.has_cached(text),
+            "Platten-Cache muss erkannt werden"
+        );
         let played = offline.speak_core(text).await.unwrap();
         assert!(played > 1024, "Wiedergabe kam vollständig von der Platte");
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "kein weiterer Server-Request");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "kein weiterer Server-Request"
+        );
     }
 
     #[tokio::test]
@@ -1580,7 +1611,10 @@ mod tests {
         let flag = core.cancelled.lock().unwrap().clone();
         assert!(!flag.load(Ordering::Acquire));
         core.cancel_core();
-        assert!(flag.load(Ordering::Acquire), "cancel muss den laufenden Auftrag treffen");
+        assert!(
+            flag.load(Ordering::Acquire),
+            "cancel muss den laufenden Auftrag treffen"
+        );
     }
 
     /// Regression (19.08.2026): Nach Pause blieb die Phase auf „Spricht"

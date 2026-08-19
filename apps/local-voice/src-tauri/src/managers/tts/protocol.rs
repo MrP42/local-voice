@@ -181,7 +181,10 @@ mod tests {
 
     #[test]
     fn single_or_empty_text_stays_whole() {
-        assert_eq!(split_sentences("Nur ein Satz ohne Ende"), vec!["Nur ein Satz ohne Ende"]);
+        assert_eq!(
+            split_sentences("Nur ein Satz ohne Ende"),
+            vec!["Nur ein Satz ohne Ende"]
+        );
         assert!(split_sentences("   ").is_empty());
     }
 
@@ -195,8 +198,14 @@ mod tests {
         let mut ogg = b"OggS".to_vec();
         ogg.extend_from_slice(&[0u8; 2000]);
         assert!(looks_like_audio(&ogg, "opus"));
-        assert!(!looks_like_audio(&ogg, "wav"), "falsches Magic je Format zählt nicht");
-        assert!(!looks_like_audio(b"OggS", "opus"), "Mini-Antworten sind Fehlerseiten");
+        assert!(
+            !looks_like_audio(&ogg, "wav"),
+            "falsches Magic je Format zählt nicht"
+        );
+        assert!(
+            !looks_like_audio(b"OggS", "opus"),
+            "Mini-Antworten sind Fehlerseiten"
+        );
     }
 
     #[test]

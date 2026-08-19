@@ -100,7 +100,8 @@ pub fn save_voice(
         ));
     }
     let dir = voice_dir(fish_dir, id);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
 
     let spec = hound::WavSpec {
         channels: 1,
@@ -117,7 +118,9 @@ pub fn save_voice(
             .write_sample(clamped)
             .map_err(|e| format!("wav write failed: {e}"))?;
     }
-    writer.finalize().map_err(|e| format!("wav finalize failed: {e}"))?;
+    writer
+        .finalize()
+        .map_err(|e| format!("wav finalize failed: {e}"))?;
 
     write_lab(&dir, transcript)
 }
@@ -137,9 +140,9 @@ pub fn import_voice(
     hound::WavReader::open(source_wav)
         .map_err(|e| format!("not a readable WAV file ({}): {e}", source_wav.display()))?;
     let dir = voice_dir(fish_dir, id);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-    std::fs::copy(source_wav, dir.join("sample.wav"))
-        .map_err(|e| format!("copy failed: {e}"))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+    std::fs::copy(source_wav, dir.join("sample.wav")).map_err(|e| format!("copy failed: {e}"))?;
     write_lab(&dir, transcript)
 }
 
@@ -259,7 +262,10 @@ mod tests {
         assert!(save_voice(dir.path(), "kurz", &short, "text").is_err());
         let ok_len = vec![0.1f32; 4 * 16_000];
         assert!(save_voice(dir.path(), "leer", &ok_len, "   ").is_err());
-        assert!(list_voices(dir.path()).is_empty(), "nichts halb Gespeichertes");
+        assert!(
+            list_voices(dir.path()).is_empty(),
+            "nichts halb Gespeichertes"
+        );
     }
 
     #[test]
@@ -298,7 +304,10 @@ mod tests {
         );
         // Downmix halbiert die Amplitude (ein stummer Kanal).
         let peak = mono.iter().fold(0f32, |m, s| m.max(s.abs()));
-        assert!(peak > 0.05 && peak < 0.2, "Peak {peak} außerhalb des Downmix-Erwartungsbereichs");
+        assert!(
+            peak > 0.05 && peak < 0.2,
+            "Peak {peak} außerhalb des Downmix-Erwartungsbereichs"
+        );
     }
 
     #[test]

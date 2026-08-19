@@ -77,7 +77,11 @@ mod tests {
         assert_eq!(resume_position(17, 100), 17);
         assert_eq!(resume_position(0, 100), 0);
         assert_eq!(resume_position(100, 100), 0, "fertig → von vorn");
-        assert_eq!(resume_position(150, 100), 0, "Dokument wurde kürzer → von vorn");
+        assert_eq!(
+            resume_position(150, 100),
+            0,
+            "Dokument wurde kürzer → von vorn"
+        );
     }
 
     #[test]

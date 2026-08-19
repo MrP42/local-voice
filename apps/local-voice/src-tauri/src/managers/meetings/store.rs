@@ -178,8 +178,9 @@ impl MeetingStore {
 
     fn seed_default_template(&self) -> Result<()> {
         let conn = self.get_connection()?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM meeting_templates", [], |row| row.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM meeting_templates", [], |row| {
+            row.get(0)
+        })?;
         if count > 0 {
             return Ok(());
         }
@@ -481,7 +482,12 @@ impl MeetingStore {
         }
     }
 
-    pub fn update_segment_text(&self, meeting_id: &str, segment_index: u32, text: &str) -> Result<()> {
+    pub fn update_segment_text(
+        &self,
+        meeting_id: &str,
+        segment_index: u32,
+        text: &str,
+    ) -> Result<()> {
         let conn = self.get_connection()?;
         let now = Utc::now().timestamp();
 
@@ -497,7 +503,13 @@ impl MeetingStore {
         let segment = segments
             .iter_mut()
             .find(|s| s.segment_index == segment_index)
-            .ok_or_else(|| anyhow!("Segment {} not found for meeting {}", segment_index, meeting_id))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "Segment {} not found for meeting {}",
+                    segment_index,
+                    meeting_id
+                )
+            })?;
         segment.text = text.to_string();
 
         let updated_json = serde_json::to_string(&segments)?;
@@ -601,7 +613,9 @@ mod tests {
     #[test]
     fn a_meeting_without_consent_timestamp_is_storable_but_marked() {
         let s = store();
-        let m = s.create_meeting("Jour fixe", MeetingSource::Import, None).unwrap();
+        let m = s
+            .create_meeting("Jour fixe", MeetingSource::Import, None)
+            .unwrap();
         assert!(m.consent_confirmed_at.is_none());
         assert_eq!(m.status, "processing");
     }
@@ -609,7 +623,9 @@ mod tests {
     #[test]
     fn live_meetings_start_in_recording_state_with_consent() {
         let s = store();
-        let m = s.create_meeting("Standup", MeetingSource::Live, Some(1_755_600_000)).unwrap();
+        let m = s
+            .create_meeting("Standup", MeetingSource::Live, Some(1_755_600_000))
+            .unwrap();
         assert_eq!(m.status, "recording");
         assert_eq!(m.consent_confirmed_at, Some(1_755_600_000));
     }
@@ -618,10 +634,26 @@ mod tests {
     fn deltas_are_sequenced_and_segments_materialize_in_order() {
         let s = store();
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
-        let d1 = TranscriptDelta { new_segments: vec![StoredSegment {
-            segment_index: 0, text: "Hallo.".into(), start_ms: 0, end_ms: 900, channel: 0, speaker_index: None }] };
-        let d2 = TranscriptDelta { new_segments: vec![StoredSegment {
-            segment_index: 1, text: "Guten Morgen.".into(), start_ms: 950, end_ms: 2100, channel: 1, speaker_index: None }] };
+        let d1 = TranscriptDelta {
+            new_segments: vec![StoredSegment {
+                segment_index: 0,
+                text: "Hallo.".into(),
+                start_ms: 0,
+                end_ms: 900,
+                channel: 0,
+                speaker_index: None,
+            }],
+        };
+        let d2 = TranscriptDelta {
+            new_segments: vec![StoredSegment {
+                segment_index: 1,
+                text: "Guten Morgen.".into(),
+                start_ms: 950,
+                end_ms: 2100,
+                channel: 1,
+                speaker_index: None,
+            }],
+        };
         assert_eq!(s.append_delta(&m.id, &d1).unwrap(), 1);
         assert_eq!(s.append_delta(&m.id, &d2).unwrap(), 2);
         let segs = s.get_segments(&m.id).unwrap();
@@ -634,8 +666,20 @@ mod tests {
     fn segment_text_can_be_corrected() {
         let s = store();
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
-        s.append_delta(&m.id, &TranscriptDelta { new_segments: vec![StoredSegment {
-            segment_index: 0, text: "Falsch erkannt".into(), start_ms: 0, end_ms: 800, channel: 0, speaker_index: None }] }).unwrap();
+        s.append_delta(
+            &m.id,
+            &TranscriptDelta {
+                new_segments: vec![StoredSegment {
+                    segment_index: 0,
+                    text: "Falsch erkannt".into(),
+                    start_ms: 0,
+                    end_ms: 800,
+                    channel: 0,
+                    speaker_index: None,
+                }],
+            },
+        )
+        .unwrap();
         s.update_segment_text(&m.id, 0, "Richtig erkannt").unwrap();
         assert_eq!(s.get_segments(&m.id).unwrap()[0].text, "Richtig erkannt");
     }
@@ -644,9 +688,18 @@ mod tests {
     fn soft_delete_hides_the_meeting_and_returns_audio_paths() {
         let s = store();
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
-        s.set_audio_paths(&m.id, Some("C:/x/mic.wav"), Some("C:/x/system.wav"), Some(60_000)).unwrap();
+        s.set_audio_paths(
+            &m.id,
+            Some("C:/x/mic.wav"),
+            Some("C:/x/system.wav"),
+            Some(60_000),
+        )
+        .unwrap();
         let paths = s.soft_delete_meeting(&m.id).unwrap();
-        assert_eq!(paths, vec!["C:/x/mic.wav".to_string(), "C:/x/system.wav".to_string()]);
+        assert_eq!(
+            paths,
+            vec!["C:/x/mic.wav".to_string(), "C:/x/system.wav".to_string()]
+        );
         assert!(s.list_meetings(0, 50).unwrap().is_empty());
         assert!(s.get_meeting(&m.id).unwrap().is_none());
     }
@@ -658,8 +711,19 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].title, "Standardprotokoll");
         // Alle Spec-Sektionen enthalten:
-        for key in ["summary", "scope", "decisions", "tasks", "next_steps", "follow_ups", "open_questions"] {
-            assert!(t[0].sections_json.contains(key), "Sektion {key} fehlt im Seed");
+        for key in [
+            "summary",
+            "scope",
+            "decisions",
+            "tasks",
+            "next_steps",
+            "follow_ups",
+            "open_questions",
+        ] {
+            assert!(
+                t[0].sections_json.contains(key),
+                "Sektion {key} fehlt im Seed"
+            );
         }
     }
 
@@ -667,10 +731,16 @@ mod tests {
     fn documents_version_instead_of_overwrite() {
         let s = store();
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
-        s.upsert_document(&m.id, "minutes", "markdown@1", "# V1", None).unwrap();
-        s.upsert_document(&m.id, "minutes", "markdown@1", "# V2", None).unwrap();
+        s.upsert_document(&m.id, "minutes", "markdown@1", "# V1", None)
+            .unwrap();
+        s.upsert_document(&m.id, "minutes", "markdown@1", "# V2", None)
+            .unwrap();
         let docs = s.get_documents(&m.id).unwrap();
-        assert_eq!(docs.len(), 2, "Regenerieren erzeugt neue Version statt Überschreiben (Spec M10-Vorgriff)");
+        assert_eq!(
+            docs.len(),
+            2,
+            "Regenerieren erzeugt neue Version statt Überschreiben (Spec M10-Vorgriff)"
+        );
         assert_eq!(docs.iter().map(|d| d.version).max(), Some(2));
     }
 
@@ -680,8 +750,16 @@ mod tests {
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
         s.soft_delete_meeting(&m.id).unwrap();
 
-        let delta = TranscriptDelta { new_segments: vec![StoredSegment {
-            segment_index: 0, text: "Zu spät.".into(), start_ms: 0, end_ms: 500, channel: 0, speaker_index: None }] };
+        let delta = TranscriptDelta {
+            new_segments: vec![StoredSegment {
+                segment_index: 0,
+                text: "Zu spät.".into(),
+                start_ms: 0,
+                end_ms: 500,
+                channel: 0,
+                speaker_index: None,
+            }],
+        };
         assert!(s.append_delta(&m.id, &delta).is_err());
         assert!(s.append_delta(&Ulid::new().to_string(), &delta).is_err());
     }
@@ -692,9 +770,17 @@ mod tests {
         let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
         s.soft_delete_meeting(&m.id).unwrap();
 
-        assert!(s.upsert_document(&m.id, "minutes", "markdown@1", "# V1", None).is_err());
         assert!(s
-            .upsert_document(&Ulid::new().to_string(), "minutes", "markdown@1", "# V1", None)
+            .upsert_document(&m.id, "minutes", "markdown@1", "# V1", None)
+            .is_err());
+        assert!(s
+            .upsert_document(
+                &Ulid::new().to_string(),
+                "minutes",
+                "markdown@1",
+                "# V1",
+                None
+            )
             .is_err());
     }
 }

@@ -1431,8 +1431,14 @@ mod tests {
         use super::vad_threshold_for_sensitivity as t;
 
         assert!((t(0.5) - 0.3).abs() < 0.001);
-        assert!(t(0.0) > t(0.5), "low sensitivity must demand a louder voice");
-        assert!(t(1.0) < t(0.5), "high sensitivity must accept a quieter one");
+        assert!(
+            t(0.0) > t(0.5),
+            "low sensitivity must demand a louder voice"
+        );
+        assert!(
+            t(1.0) < t(0.5),
+            "high sensitivity must accept a quieter one"
+        );
         // Out-of-range input clamps rather than producing a nonsense threshold.
         assert_eq!(t(-1.0), t(0.0));
         assert_eq!(t(2.0), t(1.0));

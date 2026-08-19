@@ -168,9 +168,14 @@ mod tests {
     async fn translate_without_configured_model_fails_with_guidance() {
         let mut settings = get_default_settings();
         settings.post_process_provider_id = "custom".into();
-        settings.post_process_models.insert("custom".into(), "".into());
+        settings
+            .post_process_models
+            .insert("custom".into(), "".into());
         let err = translate(&settings, "Hello", "German").await.unwrap_err();
         assert!(err.contains("kein Modell konfiguriert"), "war: {err}");
-        assert!(err.contains("Ollama"), "Fehlermeldung nennt den lokalen Weg");
+        assert!(
+            err.contains("Ollama"),
+            "Fehlermeldung nennt den lokalen Weg"
+        );
     }
 }

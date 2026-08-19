@@ -40,7 +40,8 @@ pub fn docx_xml_to_text(xml: &str) -> String {
 }
 
 fn extract_docx(path: &Path) -> Result<String, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("not a DOCX (zip) file: {e}"))?;
     let mut doc = archive
@@ -85,9 +86,10 @@ pub fn html_to_text(html: &str) -> String {
     let no_hidden = regex::Regex::new(r"(?is)<(script|style|noscript|head|svg|nav|footer)\b.*?</(script|style|noscript|head|svg|nav|footer)>")
         .expect("static regex")
         .replace_all(html, " ");
-    let with_breaks = regex::Regex::new(r"(?i)<(br\s*/?|/p|/div|/h[1-6]|/li|/tr|/section|/article)[^>]*>")
-        .expect("static regex")
-        .replace_all(&no_hidden, "\n");
+    let with_breaks =
+        regex::Regex::new(r"(?i)<(br\s*/?|/p|/div|/h[1-6]|/li|/tr|/section|/article)[^>]*>")
+            .expect("static regex")
+            .replace_all(&no_hidden, "\n");
     let stripped = regex::Regex::new("<[^>]+>")
         .expect("static regex")
         .replace_all(&with_breaks, " ");
@@ -137,7 +139,9 @@ pub async fn extract_url_text(url: &str) -> Result<String, String> {
     let html = response.text().await.map_err(|e| e.to_string())?;
     let text = html_to_text(&html);
     if text.chars().count() < 200 {
-        return Err("Die Seite lieferte kaum lesbaren Text (evtl. JavaScript-Seite oder Paywall)".into());
+        return Err(
+            "Die Seite lieferte kaum lesbaren Text (evtl. JavaScript-Seite oder Paywall)".into(),
+        );
     }
     Ok(text)
 }
@@ -167,7 +171,10 @@ pub fn decode_media_to_wav(input: &Path, out_wav: &Path, sample_rate: u32) -> Re
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let tail: String = stderr.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
-        return Err(format!("ffmpeg konnte {} nicht dekodieren: {tail}", input.display()));
+        return Err(format!(
+            "ffmpeg konnte {} nicht dekodieren: {tail}",
+            input.display()
+        ));
     }
     if !out_wav.exists() {
         return Err("ffmpeg lieferte keine Ausgabedatei".into());
@@ -242,7 +249,10 @@ mod tests {
         assert!(text.contains("Überschrift"));
         assert!(text.contains("Erster & wichtigster Absatz."));
         assert!(text.contains("Zweiter Absatz."));
-        assert!(!text.contains("var a"), "Script-Inhalt darf nicht auftauchen");
+        assert!(
+            !text.contains("var a"),
+            "Script-Inhalt darf nicht auftauchen"
+        );
         assert!(!text.contains("color:red"));
         assert!(!text.contains("Impressum"), "Footer wird entfernt");
     }
@@ -252,7 +262,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("x.exe");
         std::fs::write(&exe, b"MZ").unwrap();
-        assert!(extract_document_text(&exe).unwrap_err().contains("txt, md, pdf, docx"));
+        assert!(extract_document_text(&exe)
+            .unwrap_err()
+            .contains("txt, md, pdf, docx"));
         let empty = dir.path().join("leer.txt");
         std::fs::write(&empty, b"   \n").unwrap();
         assert!(extract_document_text(&empty).is_err());
@@ -262,7 +274,11 @@ mod tests {
     /// vorhanden, der Test deckt den echten Dekodierpfad ab).
     #[test]
     fn media_files_decode_to_mono_16k_wav_via_ffmpeg() {
-        if std::process::Command::new("ffmpeg").arg("-version").output().is_err() {
+        if std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_err()
+        {
             eprintln!("ffmpeg fehlt — Test übersprungen");
             return;
         }
@@ -277,7 +293,8 @@ mod tests {
         };
         let mut w = hound::WavWriter::create(&src, spec).unwrap();
         for i in 0..44_100u32 {
-            w.write_sample(((i as f32 * 0.0627).sin() * 12000.0) as i16).unwrap();
+            w.write_sample(((i as f32 * 0.0627).sin() * 12000.0) as i16)
+                .unwrap();
         }
         w.finalize().unwrap();
         let mp3 = dir.path().join("ton.mp3");

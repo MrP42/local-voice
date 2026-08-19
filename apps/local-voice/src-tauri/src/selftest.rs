@@ -91,7 +91,26 @@ pub enum DiffKind {
 pub fn normalize_word(word: &str) -> String {
     word.to_lowercase()
         .chars()
-        .filter(|c| !matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | '"' | '\'' | '„' | '“' | '»' | '«' | '(' | ')' | '[' | ']'))
+        .filter(|c| {
+            !matches!(
+                c,
+                '.' | ','
+                    | ';'
+                    | ':'
+                    | '!'
+                    | '?'
+                    | '"'
+                    | '\''
+                    | '„'
+                    | '“'
+                    | '»'
+                    | '«'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+            )
+        })
         .collect::<String>()
         .replace('ä', "ae")
         .replace('ö', "oe")
@@ -106,7 +125,10 @@ fn words(text: &str) -> Vec<&str> {
 /// Word-level alignment by edit distance, which is what word error rate is
 /// defined on. A greedy diff would report one inserted word as "everything
 /// after it is wrong".
-pub fn compare(reference: &str, recognised: &str) -> (f64, usize, usize, usize, usize, Vec<WordDiff>) {
+pub fn compare(
+    reference: &str,
+    recognised: &str,
+) -> (f64, usize, usize, usize, usize, Vec<WordDiff>) {
     let reference_words = words(reference);
     let hypothesis_words = words(recognised);
     let reference_norm: Vec<String> = reference_words.iter().map(|w| normalize_word(w)).collect();
@@ -188,7 +210,14 @@ pub fn compare(reference: &str, recognised: &str) -> (f64, usize, usize, usize, 
     // Insertions alone can push the error rate above 1, hence the floor.
     let errors = substitutions + deletions + insertions;
     let accuracy = (1.0 - errors as f64 / n as f64).max(0.0);
-    (accuracy, correct, substitutions, deletions, insertions, diff)
+    (
+        accuracy,
+        correct,
+        substitutions,
+        deletions,
+        insertions,
+        diff,
+    )
 }
 
 /// Median gap between successive commit timestamps — the honest answer to
@@ -198,7 +227,10 @@ pub fn median_gap(times_ms: &[u64]) -> Option<u64> {
     if times_ms.len() < 2 {
         return None;
     }
-    let mut gaps: Vec<u64> = times_ms.windows(2).map(|w| w[1].saturating_sub(w[0])).collect();
+    let mut gaps: Vec<u64> = times_ms
+        .windows(2)
+        .map(|w| w[1].saturating_sub(w[0]))
+        .collect();
     gaps.sort_unstable();
     Some(gaps[gaps.len() / 2])
 }
@@ -238,8 +270,10 @@ mod tests {
 
     #[test]
     fn identical_text_scores_perfectly() {
-        let (accuracy, correct, subs, dels, ins, _) =
-            compare("Der Termin ist am dritten Februar.", "Der Termin ist am dritten Februar.");
+        let (accuracy, correct, subs, dels, ins, _) = compare(
+            "Der Termin ist am dritten Februar.",
+            "Der Termin ist am dritten Februar.",
+        );
         assert_eq!(accuracy, 1.0);
         assert_eq!(correct, 6);
         assert_eq!((subs, dels, ins), (0, 0, 0));
@@ -257,8 +291,10 @@ mod tests {
     /// "Spracherkennung. Der Termin".
     #[test]
     fn damaged_streaming_output_is_scored_as_damaged() {
-        let (accuracy, _, subs, dels, _, _) =
-            compare("der lokalen Spracherkennung. Der Termin ist", "der lokalen Spracherken Termin ist");
+        let (accuracy, _, subs, dels, _, _) = compare(
+            "der lokalen Spracherkennung. Der Termin ist",
+            "der lokalen Spracherken Termin ist",
+        );
         assert!(accuracy < 1.0, "damage must not score as perfect");
         assert!(subs + dels > 0);
     }

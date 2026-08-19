@@ -148,7 +148,10 @@ pub fn tts_reading_open(app: AppHandle, path: String) -> Result<ReadingInfo, Str
 #[tauri::command]
 #[specta::specta]
 pub fn tts_reading_play(app: AppHandle) -> Result<(), String> {
-    app.state::<Arc<TtsManager>>().inner().clone().reading_play()
+    app.state::<Arc<TtsManager>>()
+        .inner()
+        .clone()
+        .reading_play()
 }
 
 #[tauri::command]
