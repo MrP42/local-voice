@@ -30,7 +30,7 @@ param(
                  'silence', 'unfocused', 'rapid')]
     [string]$Scenario = 'all',
 
-    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\sprechstift.exe",
+    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\local-voice-ai.exe",
 
     [string]$ArtifactDir = "$PSScriptRoot\..\..\..\docs\m2-evidence"
 )
@@ -86,10 +86,10 @@ function Start-Notepad {
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 900
 
-    Get-ChildItem $env:TEMP -Filter 'sprechstift-m2-*.txt' -ErrorAction SilentlyContinue |
+    Get-ChildItem $env:TEMP -Filter 'local-voice-ai-m2-*.txt' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
     $script:ScratchSeq = ($script:ScratchSeq | ForEach-Object { $_ }) + 1
-    $scratch = Join-Path $env:TEMP ("sprechstift-m2-{0}-{1}.txt" -f $PID, $script:ScratchSeq)
+    $scratch = Join-Path $env:TEMP ("local-voice-ai-m2-{0}-{1}.txt" -f $PID, $script:ScratchSeq)
     Set-Content -Path $scratch -Value '' -Encoding UTF8 -NoNewline
     Start-Process notepad -ArgumentList $scratch | Out-Null
 
@@ -191,8 +191,8 @@ function Invoke-Dictation {
 $FixtureDir = "$PSScriptRoot\..\src-tauri\tests\fixtures"
 New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
 
-$app = Get-Process sprechstift -ErrorAction SilentlyContinue
-if (-not $app) { throw "sprechstift is not running - start it before running this harness" }
+$app = Get-Process local-voice-ai -ErrorAction SilentlyContinue
+if (-not $app) { throw "local-voice-ai is not running - start it before running this harness" }
 Write-Host "App PID $($app.Id); harness starting" -ForegroundColor Cyan
 
 $cases = @(
@@ -239,7 +239,7 @@ if ($Scenario -in @('all','rapid')) {
     # hammer the hotkey: start/stop/start/stop with no settle time
     1..4 | ForEach-Object { Send-Hotkey; Start-Sleep -Milliseconds 220 }
     Start-Sleep -Seconds 20
-    $alive = $null -ne (Get-Process sprechstift -ErrorAction SilentlyContinue)
+    $alive = $null -ne (Get-Process local-voice-ai -ErrorAction SilentlyContinue)
     New-Result 'rapid' $alive "app still alive after 4 rapid toggles: $alive"
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }
@@ -253,7 +253,7 @@ if ($Scenario -in @('all','unfocused')) {
     Start-Sleep -Milliseconds 700
     Invoke-Dictation -Fixture "$FixtureDir\de_test_01.wav"
     $other = Get-NotepadText -Proc $calc
-    $alive = $null -ne (Get-Process sprechstift -ErrorAction SilentlyContinue)
+    $alive = $null -ne (Get-Process local-voice-ai -ErrorAction SilentlyContinue)
     New-Result 'unfocused' $alive "text went to the focused window instead; app alive: $alive" $other
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 }

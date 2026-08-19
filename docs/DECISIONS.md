@@ -155,3 +155,20 @@ außerdem die **einzige** Overlay-Form, die auch bei `overlay_style: none` gezei
 Wer die Aufnahmeanzeige abschaltet, will keine Statusanzeige — nicht aber den Hinweis
 verlieren, dass sein Text nicht angekommen ist. Der Toast bleibt als Zweitkanal für den
 Fall, dass das Hauptfenster offen ist.
+
+## D11 — Rebranding zu „Local Voice AI" mit vollem internen Rename und Datenmigration
+**Datum:** 2026-08-19 · **Status:** entschieden
+
+Mit dem Ausbau zur lokalen Sprach-KI (M4-M7: Vorlesen, Stimmen klonen, Übersetzung,
+Stimmwechsler) beschreibt der Name „Sprechstift" (Diktierstift) das Produkt nicht mehr.
+Umbenannt wurde vollständig: productName, Fenstertitel, Wortmarke und Icons
+(Wellenform + KI-Funke), Cargo-Paket `local-voice-ai`, Lib `local_voice_ai_lib`,
+Binärdatei `local-voice-ai.exe`, Identifier `de.wolffappliedai.localvoiceai`,
+CSS-Präfix `lva-`, Harness-Skripte und Doku.
+
+Der Identifier-Wechsel verschiebt die Tauri-Datenpfade (Settings, Verlauf, mehrere GB
+Modelle). Deshalb zieht `appdata_migration.rs` beim Start einmalig die alten Ordner
+(Roaming + Local) auf den neuen Namen um — nur wenn der neue noch nicht existiert;
+vorhandene neue Daten gewinnen immer (OBSERVED: Unit-Test mit Tempdir, beide Fälle).
+Historische Evidence-Dokumente (m2-m7) behalten die alten Namen, weil sie reale
+Kommandos von damals protokollieren.

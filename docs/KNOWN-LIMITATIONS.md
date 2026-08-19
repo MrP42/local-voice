@@ -159,14 +159,14 @@ Nicht davon erfasst und weiterhin im Klartext gespeichert — bewusst, weil es d
 Kernfunktion ist:
 
 - `history.db` (Verlaufsdatenbank, Transkripte im Klartext)
-- die WAV-Aufnahmen unter `%APPDATA%\de.wolffappliedai.sprechstift\recordings`
+- die WAV-Aufnahmen unter `%APPDATA%\de.wolffappliedai.localvoiceai\recordings`
 
 Beides ist die vom Nutzer gewollte Verlaufsfunktion und unterliegt der
 Aufbewahrungseinstellung, nicht dem Logging.
 
 **Die alte Logdatei wurde nicht automatisch gelöscht.** Wer die Altlast entfernen
 will, löscht sie von Hand:
-`%LOCALAPPDATA%\de.wolffappliedai.sprechstift\logs\handy.log`
+`%LOCALAPPDATA%\de.wolffappliedai.localvoiceai\logs\handy.log`
 
 ## Noch nicht implementiert (Stand 2026-08-17)
 

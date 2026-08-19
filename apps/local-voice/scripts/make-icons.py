@@ -1,116 +1,122 @@
-"""Generate the Sprechstift app and tray icons.
+"""Generiert alle Local-Voice-AI-Icons: Wellenform + KI-Funke.
 
-The mark is a pen nib with two speech arcs off its tip — dictation as writing.
-Drawn on a Signalgelb tile with an ink glyph, which is the design system's
-recommendation for a static app icon: it stays legible on light and dark task
-bars alike, whereas a yellow glyph needs a dark ground to be visible at all
-(design-system_wolffappliedai, references/logo.md, "Solo-W").
-
-Tray icons are the inverse — a bare ink or white glyph with no tile — because
-Windows draws them on the taskbar's own background.
-
-Run: py -3 apps/local-voice/scripts/make-icons.py
+App-Icons: Signalgelb (#FFDD00) auf dunkler WAI-Kachel (#111418, runde Ecken).
+Tray-Icons: freistehende Glyphe ohne Kachel — weiß (dunkles Theme) bzw. Ink
+(helles Theme); Aufnahme rot, Transkription gelb.
 """
 
-from pathlib import Path
 from PIL import Image, ImageDraw
 
-WAI_YELLOW = (255, 221, 0, 255)
+YELLOW = (255, 221, 0, 255)
 INK = (17, 20, 24, 255)
-WHITE = (255, 255, 255, 255)
+WHITE = (245, 246, 248, 255)
+RED = (229, 72, 77, 255)
 
-ROOT = Path(__file__).resolve().parents[1]
-ICONS = ROOT / "src-tauri" / "icons"
-RESOURCES = ROOT / "src-tauri" / "resources"
+# Design im 32er-Raster (wie das SVG in LocalVoiceAiLogo.tsx).
+BARS = [(7, 5), (11.5, 11), (16, 16), (20.5, 11), (25, 5)]  # (x, hoehe)
+BAR_W = 2.4
+CY = 17.0  # Balken-Mittellinie
+DOT = (25.0, 8.2, 1.7)  # x, y, r
 
-# Icon geometry on a 128-unit grid, scaled per output size. The pen occupies
-# the left two thirds, the arcs the right third, and everything stays inside a
-# 14-unit margin so nothing clips at the rounded corners.
-NIB = [(60, 30), (78, 48), (38, 88), (24, 93), (29, 79)]
-NIB_SLIT = [(60, 30), (78, 48)]
-# (centre-relative radius, stroke weight); centred on the pen tip's far side.
-WAVE_CENTRE = (74, 66)
-WAVES = [(0.16, 1.0), (0.27, 1.0)]
+SS = 16  # Supersampling
 
 
-def draw_mark(size: int, glyph, tile=None, pad_ratio: float = 0.0) -> Image.Image:
-    """Render the pen mark at `size` px. `tile=None` leaves the ground clear."""
-    ss = 8  # supersample, then downscale — keeps the diagonals clean
-    s = size * ss
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+def draw_glyph(d, scale, color, offset=0.0):
+    for x, h in BARS:
+        x0 = (x - BAR_W / 2 + offset) * scale
+        x1 = (x + BAR_W / 2 + offset) * scale
+        y0 = (CY - h / 2 + offset) * scale
+        y1 = (CY + h / 2 + offset) * scale
+        d.rounded_rectangle([x0, y0, x1, y1], radius=(BAR_W / 2) * scale, fill=color)
+    dx, dy, r = DOT
+    d.ellipse(
+        [
+            (dx - r + offset) * scale,
+            (dy - r + offset) * scale,
+            (dx + r + offset) * scale,
+            (dy + r + offset) * scale,
+        ],
+        fill=color,
+    )
+
+
+def tile_icon(size):
+    big = size * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-
-    if tile is not None:
-        radius = int(s * 0.22)
-        d.rounded_rectangle([0, 0, s - 1, s - 1], radius=radius, fill=tile)
-
-    k = s / 128.0
-    inset = size * pad_ratio * ss
-
-    def p(pt):
-        x, y = pt
-        return (inset + x * k * (1 - 2 * pad_ratio),
-                inset + y * k * (1 - 2 * pad_ratio))
-
-    d.polygon([p(pt) for pt in NIB], fill=glyph)
-    # The slit down the nib, cut back out so the pen reads as a nib not a blob.
-    d.line([p(NIB_SLIT[0]), p(NIB_SLIT[1])],
-           fill=tile if tile is not None else (0, 0, 0, 0),
-           width=max(1, int(s * 0.018)))
-
-    # Speech arcs off the writing tip.
-    cx, cy = p((96, 74))
-    for rel_r, width_scale in WAVES:
-        r = s * rel_r * (1 - 2 * pad_ratio)
-        d.arc([cx - r, cy - r, cx + r, cy + r], start=-58, end=58,
-              fill=glyph, width=max(1, int(s * 0.021 * width_scale / 1.9)))
-
+    scale = big / 32
+    d.rounded_rectangle([0, 0, big - 1, big - 1], radius=7 * scale, fill=INK)
+    draw_glyph(d, scale, YELLOW)
     return img.resize((size, size), Image.LANCZOS)
 
 
-def main() -> None:
-    ICONS.mkdir(parents=True, exist_ok=True)
-
-    # App icon: ink glyph on the yellow tile.
-    app_sizes = {
-        "32x32.png": 32, "64x64.png": 64, "128x128.png": 128,
-        "128x128@2x.png": 256, "icon.png": 512, "logo.png": 512,
-        "StoreLogo.png": 50, "Square30x30Logo.png": 30,
-        "Square44x44Logo.png": 44, "Square71x71Logo.png": 71,
-        "Square89x89Logo.png": 89, "Square107x107Logo.png": 107,
-        "Square142x142Logo.png": 142, "Square150x150Logo.png": 150,
-        "Square284x284Logo.png": 284, "Square310x310Logo.png": 310,
-    }
-    for name, size in app_sizes.items():
-        draw_mark(size, glyph=INK, tile=WAI_YELLOW).save(ICONS / name)
-    print(f"{len(app_sizes)} app icons")
-
-    ico = ICONS / "icon.ico"
-    base = draw_mark(256, glyph=INK, tile=WAI_YELLOW)
-    base.save(ico, sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    print("icon.ico")
-
-    # Tray icons carry no tile — Windows draws them on the taskbar's own
-    # background. tray.rs picks by theme: the plain names are the light glyphs
-    # used on a dark taskbar, the `_dark` ones are the ink glyphs for a light
-    # one, and the `Colored` set is the Linux fallback. Recording is yellow in
-    # every theme so the "we are listening" state is unmistakable.
-    tray = {
-        "tray_idle.png": WHITE,
-        "tray_recording.png": WAI_YELLOW,
-        "tray_transcribing.png": WHITE,
-        "tray_idle_dark.png": INK,
-        "tray_recording_dark.png": WAI_YELLOW,
-        "tray_transcribing_dark.png": INK,
-        "handy.png": WAI_YELLOW,
-        "recording.png": WAI_YELLOW,
-        "transcribing.png": WAI_YELLOW,
-    }
-    RESOURCES.mkdir(parents=True, exist_ok=True)
-    for name, colour in tray.items():
-        draw_mark(64, glyph=colour, tile=None, pad_ratio=0.06).save(RESOURCES / name)
-    print(f"{len(tray)} tray icons")
+def tray_icon(size, color):
+    big = size * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    # Glyphe fuellt die Flaeche staerker (kein Kachelrand): 32er-Design auf
+    # 26er-Innenflaeche skalieren, zentriert.
+    scale = big / 32 * (32 / 27)
+    off = (big - 32 * scale) / (2 * scale)
+    draw_glyph(d, scale, color, offset=off)
+    return img.resize((size, size), Image.LANCZOS)
 
 
-if __name__ == "__main__":
-    main()
+def save(img, path):
+    img.save(path)
+    print("wrote", path, img.size)
+
+
+# --- App-Icons (icons/) -----------------------------------------------------
+app_sizes = {
+    "icons/32x32.png": 32,
+    "icons/64x64.png": 64,
+    "icons/128x128.png": 128,
+    "icons/128x128@2x.png": 256,
+    "icons/icon.png": 512,
+    "icons/logo.png": 512,
+    "icons/Square30x30Logo.png": 30,
+    "icons/Square44x44Logo.png": 44,
+    "icons/Square71x71Logo.png": 71,
+    "icons/Square89x89Logo.png": 89,
+    "icons/Square107x107Logo.png": 107,
+    "icons/Square142x142Logo.png": 142,
+    "icons/Square150x150Logo.png": 150,
+    "icons/Square284x284Logo.png": 284,
+    "icons/Square310x310Logo.png": 310,
+    "icons/StoreLogo.png": 50,
+}
+for path, size in app_sizes.items():
+    save(tile_icon(size), path)
+
+# Multi-Size-ICO fuer Explorer/Taskleiste.
+ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+base = tile_icon(256)
+base.save("icons/icon.ico", sizes=[(s, s) for s in ico_sizes])
+print("wrote icons/icon.ico", ico_sizes)
+
+# --- Tray-Icons (resources/) ------------------------------------------------
+save(tray_icon(64, WHITE), "resources/tray_idle.png")
+save(tray_icon(64, INK), "resources/tray_idle_dark.png")
+save(tray_icon(64, RED), "resources/tray_recording.png")
+save(tray_icon(64, RED), "resources/tray_recording_dark.png")
+save(tray_icon(64, YELLOW), "resources/tray_transcribing.png")
+save(tray_icon(64, YELLOW), "resources/tray_transcribing_dark.png")
+
+# Farbige Linux-Varianten: Glyphe auf Kachel.
+save(tile_icon(64), "resources/handy.png")
+
+
+def tile_icon_colored(size, color):
+    big = size * SS
+    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    scale = big / 32
+    d.rounded_rectangle([0, 0, big - 1, big - 1], radius=7 * scale, fill=INK)
+    draw_glyph(d, scale, color)
+    return img.resize((size, size), Image.LANCZOS)
+
+
+save(tile_icon_colored(64, RED), "resources/recording.png")
+save(tile_icon_colored(64, YELLOW), "resources/transcribing.png")
+print("done")

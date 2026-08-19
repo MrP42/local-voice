@@ -44,7 +44,7 @@ Regex für Ablehnungsformulierungen; Messung des `https://`-Präfixes statt der 
 Nachvollziehbarkeit). Beide wurden korrigiert, statt das schmeichelhaftere Ergebnis stehen zu
 lassen.
 
-## Phase 3 — Anwendung „Sprechstift"
+## Phase 3 — Anwendung „Local Voice AI" (bis 18.08.2026 „Sprechstift")
 
 | Meilenstein | Status |
 |---|---|
@@ -139,7 +139,7 @@ echte Log nach einem echten Diktat** auf die gesprochenen Wörter.
 
 Der Binary-Nachweis bleibt als zusätzliche Prüfung bestehen:
 
-| Formatzeichenkette | in `sprechstift.exe` |
+| Formatzeichenkette | in `local-voice-ai.exe` |
 |---|---|
 | `STREAMDIAG committed(len={})={:?}` | **nein** |
 | `STREAMDIAG delta(len={})={:?}` | **nein** |
@@ -212,8 +212,8 @@ schuld** — das Log zeigte nach dem Start keine einzige Zeile mehr, die Hotkeys
 an. Ursache war Falle 3. Nachweis am Artefakt:
 
 ```
-sprechstift.exe enthält "localhost:1420"        -> ja   (falsch)
-sprechstift.exe enthält "index-<hash>.js"       -> nein (falsch)
+local-voice-ai.exe enthält "localhost:1420"        -> ja   (falsch)
+local-voice-ai.exe enthält "index-<hash>.js"       -> nein (falsch)
 Fenstertitel laut UI Automation                 -> "localhost – Netzwerkfehler"
 ```
 

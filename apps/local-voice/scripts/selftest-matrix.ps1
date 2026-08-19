@@ -22,7 +22,7 @@
 param(
     [string]$Model,
     [switch]$Stream,
-    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\sprechstift.exe",
+    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\local-voice-ai.exe",
     [string]$FixtureDir = "$PSScriptRoot\..\src-tauri\tests\fixtures",
     [string]$ArtifactDir = "$PSScriptRoot\..\..\..\docs\m3-evidence"
 )
@@ -57,7 +57,7 @@ foreach ($case in $CASES) {
         continue
     }
 
-    $resultFile = Join-Path $env:TEMP ("sprechstift-selftest-{0}.json" -f [guid]::NewGuid())
+    $resultFile = Join-Path $env:TEMP ("local-voice-ai-selftest-{0}.json" -f [guid]::NewGuid())
 
     # Two Windows quirks make this more awkward than it looks:
     #  * the release binary targets the GUI subsystem, so `& exe` returns

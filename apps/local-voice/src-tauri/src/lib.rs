@@ -1,4 +1,5 @@
 mod actions;
+mod appdata_migration;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -819,6 +820,10 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
 pub fn run(cli_args: CliArgs) {
     // Detect portable mode before anything else
     portable::init();
+
+    // Rebranding-Umzug der App-Daten (Settings, Verlauf, Modelle) — muss vor
+    // dem ersten Store-Zugriff laufen und ist idempotent.
+    appdata_migration::migrate_legacy_app_data();
 
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset

@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Local Voice AI",
-  "mainBinaryName": "sprechstift",
+  "mainBinaryName": "local-voice-ai",
   "version": "0.1.0",
-  "identifier": "de.wolffappliedai.sprechstift",
+  "identifier": "de.wolffappliedai.localvoiceai",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",

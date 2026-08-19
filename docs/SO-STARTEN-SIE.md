@@ -5,15 +5,16 @@ Die Voice-AI-Funktionen vom 18.08.2026 (Vorlesen, Stimmen klonen, Übersetzung,
 Stimmwechsler) sind am Ende dieses Dokuments beschrieben.
 
 Seit dem 18.08.2026 heißt die App **Local Voice AI** (vormals „Sprechstift").
-Die Programmdatei heißt aus technischen Gründen weiterhin `sprechstift.exe`,
-und Einstellungen/Verlauf bleiben an ihrem bisherigen Ort erhalten.
+Seit dem 19.08.2026 heißt auch die Programmdatei `local-voice-ai.exe`, und der
+Datenordner wurde umbenannt — **Einstellungen, Verlauf und Modelle zieht die App
+beim ersten Start automatisch um**, es geht nichts verloren.
 
 ## Starten
 
 Doppelklick auf:
 
 ```
-C:\Users\wolff\local-voice-project\apps\local-voice\src-tauri\target\release\sprechstift.exe
+C:\Users\wolff\local-voice-project\apps\local-voice\src-tauri\target\release\local-voice-ai.exe
 ```
 
 Das Fenster erscheint, danach genügt das Symbol im Infobereich. **Das Fenster darf
@@ -50,7 +51,7 @@ nicht. Zusätzlich steht jedes Diktat im Verlauf im Hauptfenster.
 Tastendrücke nicht an ein Programm niedrigerer Rechtestufe aus, solange ein solches
 Fenster im Vordergrund ist (z. B. der Task-Manager). Es passiert dann schlicht nichts —
 die Aufnahmeanzeige bleibt aus, und Sie merken es. Wer dort diktieren will, muss
-Sprechstift selbst als Administrator starten.
+Local Voice AI selbst als Administrator starten.
 
 Wechselt der Fokus erst **nach** dem Beenden der Aufnahme in ein solches Fenster,
 greift der oben beschriebene Weg über die Zwischenablage.
@@ -97,11 +98,11 @@ Umschalten der Modelle im Hauptfenster unter „Modelle".
 Protokoll (enthält **keine** Diktatinhalte):
 
 ```
-%LOCALAPPDATA%\de.wolffappliedai.sprechstift\logs\handy.log
+%LOCALAPPDATA%\de.wolffappliedai.localvoiceai\logs\handy.log
 ```
 
 Die Sicherung Ihrer vorherigen Einstellungen liegt unter
-`%APPDATA%\de.wolffappliedai.sprechstift\settings_store.json.vor-stabilisierung-2026-08-17.bak`.
+`%APPDATA%\de.wolffappliedai.localvoiceai\settings_store.json.vor-stabilisierung-2026-08-17.bak`.
 
 Die alte Protokolldatei von vor der Bereinigung enthält noch vollständige Diktate im
 Klartext und heißt `handy.log.vor-m3-2026-08-17`. Sie darf gelöscht werden (Issue #6).

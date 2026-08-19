@@ -70,7 +70,7 @@ Nachweis am Artefakt:
 
 ```powershell
 $t = [System.Text.Encoding]::ASCII.GetString(
-       [System.IO.File]::ReadAllBytes("src-tauri\target\release\sprechstift.exe"))
+       [System.IO.File]::ReadAllBytes("src-tauri\target\release\local-voice-ai.exe"))
 $t.Contains("localhost:1420")     # darf NICHT True sein
 $t.Contains("index-<hash>.js")    # ein Asset aus dist\assets\ - muss True sein
 ```
@@ -106,7 +106,7 @@ cd ..
 
 # 2) Lauffähiges Release-Binary - NICHT cargo build, siehe Stolperstein 3.
 #    Baut das Frontend selbst (beforeBuildCommand) und bettet es ein.
-npx tauri build --no-bundle   # -> src-tauri\target\release\sprechstift.exe
+npx tauri build --no-bundle   # -> src-tauri\target\release\local-voice-ai.exe
 ```
 
 `--no-bundle` überspringt den Installer; für ein Auslieferungspaket entfällt
@@ -123,7 +123,7 @@ in die Transkription ein, ohne Mikrofon, ohne Fenster, ohne irgendwo Text
 einzufügen:
 
 ```powershell
-$exe = "apps\local-voice\src-tauri\target\release\sprechstift.exe"
+$exe = "apps\local-voice\src-tauri\target\release\local-voice-ai.exe"
 $fx  = "apps\local-voice\src-tauri\tests\fixtures"
 
 # Batch-Pfad, mit Bewertung gegen den Sollsatz
@@ -186,7 +186,7 @@ Die App muss dafür **laufen**; das Skript steuert sie über den echten Hotkey.
 
 ```powershell
 # aus dem Repository-Wurzelverzeichnis, mit pwsh (nicht 5.1)
-.\apps\local-voice\src-tauri\target\release\sprechstift.exe
+.\apps\local-voice\src-tauri\target\release\local-voice-ai.exe
 pwsh -File apps\local-voice\scripts\m3-verify.ps1
 pwsh -File apps\local-voice\scripts\m3-verify.ps1 -Scenario endurance -Runs 100
 ```

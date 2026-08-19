@@ -38,7 +38,7 @@ param(
 
     [int]$Runs = 100,
 
-    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\sprechstift.exe",
+    [string]$AppExe = "$PSScriptRoot\..\src-tauri\target\release\local-voice-ai.exe",
 
     [string]$ArtifactDir = "$PSScriptRoot\..\..\..\docs\m3-evidence"
 )
@@ -75,7 +75,7 @@ foreach ($c in 'a'..'z') { $VkByName[$c] = [byte][char]::ToUpper($c) }
 foreach ($d in 0..9)     { $VkByName["$d"] = 0x30 + $d }
 
 function Get-HotkeyVKeys {
-    $store = Join-Path $env:APPDATA 'de.wolffappliedai.sprechstift\settings_store.json'
+    $store = Join-Path $env:APPDATA 'de.wolffappliedai.localvoiceai\settings_store.json'
     if (-not (Test-Path $store)) { throw "settings store not found: $store" }
     $binding = (Get-Content $store -Raw | ConvertFrom-Json).settings.bindings.transcribe.current_binding
     $keys = @()
@@ -108,10 +108,10 @@ function Start-Notepad {
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 900
 
-    Get-ChildItem $env:TEMP -Filter 'sprechstift-m3-*.txt' -ErrorAction SilentlyContinue |
+    Get-ChildItem $env:TEMP -Filter 'local-voice-ai-m3-*.txt' -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
     $script:ScratchSeq++
-    $scratch = Join-Path $env:TEMP ("sprechstift-m3-{0}-{1}.txt" -f $PID, $script:ScratchSeq)
+    $scratch = Join-Path $env:TEMP ("local-voice-ai-m3-{0}-{1}.txt" -f $PID, $script:ScratchSeq)
     Set-Content -Path $scratch -Value '' -Encoding UTF8 -NoNewline
     Start-Process notepad -ArgumentList $scratch | Out-Null
 
@@ -231,8 +231,8 @@ function Invoke-Dictation {
 $FixtureDir = "$PSScriptRoot\..\src-tauri\tests\fixtures"
 New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
 
-$app = Get-Process sprechstift -ErrorAction SilentlyContinue
-if (-not $app) { throw "sprechstift is not running - start it before running this harness" }
+$app = Get-Process local-voice-ai -ErrorAction SilentlyContinue
+if (-not $app) { throw "local-voice-ai is not running - start it before running this harness" }
 Write-Host "App PID $($app.Id); harness starting" -ForegroundColor Cyan
 
 # Preflight: does the app react to the hotkey at all?
@@ -243,7 +243,7 @@ Write-Host "App PID $($app.Id); harness starting" -ForegroundColor Cyan
 # Measured against the log, because that is the only channel that proves the
 # app itself saw the key.
 function Assert-HotkeyReaches-App {
-    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.sprechstift\logs\handy.log'
+    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.localvoiceai\logs\handy.log'
     if (-not (Test-Path $log)) {
         Write-Host "preflight: no log file yet, skipping hotkey check" -ForegroundColor DarkGray
         return
@@ -251,7 +251,7 @@ function Assert-HotkeyReaches-App {
     # The evidence is a growing log, so the app has to be logging at debug
     # level for this check to mean anything. At info level a reaction may
     # legitimately produce no line, and aborting then would be a false alarm.
-    $store = Join-Path $env:APPDATA 'de.wolffappliedai.sprechstift\settings_store.json'
+    $store = Join-Path $env:APPDATA 'de.wolffappliedai.localvoiceai\settings_store.json'
     $level = (Get-Content $store -Raw | ConvertFrom-Json).settings.log_level
     if ($level -notin @('debug', 'trace')) {
         Write-Host "preflight: log_level is '$level', hotkey check not conclusive - skipping" -ForegroundColor DarkGray
@@ -337,7 +337,7 @@ if ($Scenario -in @('all','rapid')) {
     $np = Start-Notepad
     1..4 | ForEach-Object { Send-Hotkey; Start-Sleep -Milliseconds 220 }
     Start-Sleep -Seconds 20
-    $alive = $null -ne (Get-Process sprechstift -ErrorAction SilentlyContinue)
+    $alive = $null -ne (Get-Process local-voice-ai -ErrorAction SilentlyContinue)
     $txt = (Get-NotepadText -Proc $np) ?? ''
     New-Result 'rapid' $alive "app alive after 4 rapid toggles: $alive; text '$($txt.Trim())'" $txt
     Get-Process Notepad -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -389,7 +389,7 @@ if ($Scenario -in @('all','no-edit-field')) {
     Start-Sleep -Milliseconds 800
     Invoke-Dictation -Fixture "$FixtureDir\de_short_01.wav" -NoWait | Out-Null
     Start-Sleep -Seconds 12
-    $alive = $null -ne (Get-Process sprechstift -ErrorAction SilentlyContinue)
+    $alive = $null -ne (Get-Process local-voice-ai -ErrorAction SilentlyContinue)
     $clip = Get-ClipboardTextSafe
     New-Result 'no-edit-field' $alive ("app alive: {0}; clipboard '{1}'" -f $alive, $(if ($clip) { $clip.Trim() } else { '' })) $clip
 }
@@ -449,7 +449,7 @@ if ($Scenario -in @('all','log-privacy')) {
     # `info!("Transcription result: {}", ...)` entirely, and 47 verbatim
     # dictations sat in the log of the endurance run. Only measurement catches
     # a log statement nobody thought to look for.
-    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.sprechstift\logs\handy.log'
+    $log = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.localvoiceai\logs\handy.log'
     $np = Start-Notepad
     $run = Invoke-Dictation -Fixture "$FixtureDir\de_short_01.wav" -Target $np
     $spoken = ($run.Text) ?? ''
@@ -478,7 +478,7 @@ if ($Scenario -eq 'streaming') {
     # Live injection: the point is that text is in the document BEFORE the
     # recording is stopped. Needs stream_injection plus a streaming-capable
     # model (Nemotron Streaming 3.5); Parakeet V3 never opens a stream.
-    $store = Join-Path $env:APPDATA 'de.wolffappliedai.sprechstift\settings_store.json'
+    $store = Join-Path $env:APPDATA 'de.wolffappliedai.localvoiceai\settings_store.json'
     $cfg = (Get-Content $store -Raw | ConvertFrom-Json).settings
     if (-not $cfg.stream_injection) {
         New-Result 'streaming' $true 'SKIPPED - stream_injection is off'

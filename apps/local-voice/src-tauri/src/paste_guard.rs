@@ -49,7 +49,7 @@ impl PasteFallback {
 /// Pure decision for whether the single paste attempt may proceed.
 ///
 /// `target_elevated` is consulted lazily and only when we ourselves are not
-/// elevated: an elevated Sprechstift may paste anywhere, UIPI never blocks
+/// elevated: an elevated Local Voice AI may paste anywhere, UIPI never blocks
 /// downward. `None` (elevation unknown) fails closed — a silent UIPI drop is
 /// invisible, an unnecessary clipboard fallback is visible and recoverable.
 pub(crate) fn preflight(

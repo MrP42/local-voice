@@ -21,7 +21,7 @@ use transcribe_rs::onnx::{
 fn model_dir() -> Option<PathBuf> {
     let base = std::env::var("APPDATA").ok()?;
     let dir = PathBuf::from(base)
-        .join("de.wolffappliedai.sprechstift")
+        .join("de.wolffappliedai.localvoiceai")
         .join("models")
         .join("parakeet-tdt-0.6b-v3-int8");
     dir.is_dir().then_some(dir)

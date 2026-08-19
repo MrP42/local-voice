@@ -9,10 +9,6 @@ import React from "react";
  * light background it gets the same 0.5px ink outline the WAI mark uses,
  * because yellow type on light alone is too low in contrast.
  *
- * The CSS class names keep the historical `sprechstift-` prefix on purpose:
- * they are internal styling hooks in App.css, and renaming them would churn
- * the stylesheet without any visible effect.
- *
  * This replaces the upstream Handy mark on purpose: Handy's code is MIT, its
  * name and logo are not (see docs/DECISIONS.md D2).
  */
@@ -29,19 +25,19 @@ const LocalVoiceAiLogo = ({
 }) => {
   return (
     <span
-      className={`sprechstift-logo ${className ?? ""}`}
+      className={`lva-logo ${className ?? ""}`}
       style={width ? { width } : undefined}
     >
       <LocalVoiceAiMark height={height ?? 26} />
-      <span className="sprechstift-logo__text">
+      <span className="lva-logo__text">
         {/* Markenname und Endorsement sind Eigennamen — bewusst nicht übersetzt. */}
         {/* eslint-disable i18next/no-literal-string */}
-        <span className="sprechstift-logo__name">
+        <span className="lva-logo__name">
           Local&nbsp;
-          <span className="sprechstift-logo__accent">Voice&nbsp;AI</span>
+          <span className="lva-logo__accent">Voice&nbsp;AI</span>
         </span>
         {showEndorsement && (
-          <small className="sprechstift-logo__endorsement">
+          <small className="lva-logo__endorsement">
             Ingenieurbüro Wolff
           </small>
         )}
@@ -74,44 +70,44 @@ export const LocalVoiceAiMark = ({
       height={size}
       viewBox="0 0 32 32"
       fill="none"
-      className={`sprechstift-mark ${className ?? ""}`}
+      className={`lva-mark ${className ?? ""}`}
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
-      <rect className="sprechstift-mark__tile" width="32" height="32" rx="7" />
+      <rect className="lva-mark__tile" width="32" height="32" rx="7" />
       {/* Five waveform bars — the voice. */}
       <path
-        className="sprechstift-mark__wave"
+        className="lva-mark__wave"
         d="M7 14.5v5"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       <path
-        className="sprechstift-mark__wave"
+        className="lva-mark__wave"
         d="M11.5 11.5v11"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       <path
-        className="sprechstift-mark__wave"
+        className="lva-mark__wave"
         d="M16 9v16"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       <path
-        className="sprechstift-mark__wave"
+        className="lva-mark__wave"
         d="M20.5 11.5v11"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       <path
-        className="sprechstift-mark__wave"
+        className="lva-mark__wave"
         d="M25 14.5v5"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       {/* The AI spark above the loudest bar. */}
-      <circle className="sprechstift-mark__dot" cx="25" cy="8.2" r="1.7" />
+      <circle className="lva-mark__dot" cx="25" cy="8.2" r="1.7" />
     </svg>
   );
 };
