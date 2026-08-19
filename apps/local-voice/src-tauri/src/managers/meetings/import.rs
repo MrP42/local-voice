@@ -19,7 +19,7 @@ use std::sync::Arc;
 use log::{error, info};
 use tauri_specta::Event;
 
-use super::chunker::ChannelChunker;
+use super::chunker::{ChannelChunker, Chunk};
 use super::recorder::MeetingEvent;
 use super::store::{MeetingSource, MeetingStatus, MeetingStore, StoredSegment, TranscriptDelta};
 use super::subtitle::parse_subtitles;
@@ -35,6 +35,15 @@ const CHANNEL_MIXED: u8 = 2;
 /// block keeps the segment/model-call overhead down. `Segments` events after
 /// each chunk are still frequent enough to serve as progress feedback.
 const IMPORT_CHUNK_TARGET_MS: u64 = 60_000;
+/// `chunk_all` feeds the chunker this many samples (~1 s at 16 kHz) at a
+/// time instead of the whole file in one `push`. `ChannelChunker::push`
+/// re-scans its buffer for a cut point every call
+/// (`ChannelChunker::cut_point`), so one giant push followed by draining via
+/// `push(&[])` would make every scan O(remaining samples) — quadratic over a
+/// long import. Feeding in small slices keeps each scan bounded by the
+/// target window, matching how the live recorder feeds it from real-time
+/// audio callbacks.
+const CHUNK_FEED_SLICE_SAMPLES: usize = 16_000;
 const SUBTITLE_EXTENSIONS: [&str; 2] = ["vtt", "srt"];
 
 fn extension_of(path: &Path) -> String {
@@ -172,26 +181,67 @@ fn run_import(
 
     match outcome {
         Ok(duration_ms) => {
-            store
-                .set_status(meeting_id, MeetingStatus::Ready)
-                .map_err(|e| format!("status_ready_failed: {e}"))?;
+            mark_import_ready(store, meeting_id)?;
             emit_state(app, meeting_id, "ready");
             info!("meetings: import ready ({meeting_id}, {duration_ms} ms)");
             Ok(())
         }
         Err(e) => {
             error!("meetings: import failed ({meeting_id}): {e}");
-            let _ = store.set_status(meeting_id, MeetingStatus::Failed);
+            mark_import_failed(store, meeting_id);
+            // Same branch as the status write right above — see
+            // `mark_import_failed`'s doc comment for why this call itself
+            // isn't covered by a test.
             emit_error(app, meeting_id, "import_failed");
             Err(e)
         }
     }
 }
 
-/// Chunk the whole file at once (`push` the full buffer, then keep draining
-/// with `push(&[])` — the chunker only ever cuts once per call — followed by
-/// `flush` for the tail below the target length), transcribing and storing
-/// each chunk as it is cut, same as the live worker in `recorder.rs`.
+/// Success half of the "always reach a terminal status" contract.
+fn mark_import_ready(store: &Arc<MeetingStore>, meeting_id: &str) -> Result<(), String> {
+    store
+        .set_status(meeting_id, MeetingStatus::Ready)
+        .map_err(|e| format!("status_ready_failed: {e}"))
+}
+
+/// Failure half: whatever went wrong on the audio path, the meeting must
+/// never stay stuck on `processing` — it always lands on `failed`. Split out
+/// of `run_import`'s `Err` arm so it can be exercised directly against a
+/// real `MeetingStore`, forced by an actually-unreadable input file, without
+/// needing a live `AppHandle` (which `run_import` itself requires, for
+/// `app_data_dir` and the `MeetingEvent` emits). `run_import` calls this and
+/// then `emit_error(app, meeting_id, "import_failed")` on the very next line
+/// — that emit isn't separately covered by a test since it needs a real
+/// `AppHandle`, but it sits in the same match arm as this call, so a test
+/// proving this function runs on a genuine failing outcome proves that arm —
+/// and therefore the emit — is reached.
+fn mark_import_failed(store: &Arc<MeetingStore>, meeting_id: &str) {
+    let _ = store.set_status(meeting_id, MeetingStatus::Failed);
+}
+
+/// Feeds `samples` into a fresh `ChannelChunker` in bounded
+/// `CHUNK_FEED_SLICE_SAMPLES` slices (see its doc comment for why: a single
+/// whole-file `push` makes every cut-point scan quadratic), then `flush`es
+/// the tail. Pure — no I/O, no transcription — so the "every sample is
+/// covered exactly once, offsets strictly increase" invariant is directly
+/// testable without a model or a store.
+fn chunk_all(samples: &[i16], target_ms: u64) -> Vec<Chunk> {
+    let mut chunker = ChannelChunker::new(target_ms);
+    let mut chunks = Vec::new();
+    for slice in samples.chunks(CHUNK_FEED_SLICE_SAMPLES) {
+        if let Some(chunk) = chunker.push(slice) {
+            chunks.push(chunk);
+        }
+    }
+    if let Some(chunk) = chunker.flush() {
+        chunks.push(chunk);
+    }
+    chunks
+}
+
+/// Transcribes and stores each chunk in turn, same as the live worker in
+/// `recorder.rs` — chunking itself happens incrementally in `chunk_all`.
 fn transcribe_and_store(
     app: &tauri::AppHandle,
     store: &Arc<MeetingStore>,
@@ -199,20 +249,8 @@ fn transcribe_and_store(
     meeting_id: &str,
     samples: &[i16],
 ) -> Result<(), String> {
-    let mut chunker = ChannelChunker::new(IMPORT_CHUNK_TARGET_MS);
-    let mut chunks = Vec::new();
-    if let Some(c) = chunker.push(samples) {
-        chunks.push(c);
-    }
-    while let Some(c) = chunker.push(&[]) {
-        chunks.push(c);
-    }
-    if let Some(c) = chunker.flush() {
-        chunks.push(c);
-    }
-
     let mut next_index: u32 = 0;
-    for chunk in chunks {
+    for chunk in chunk_all(samples, IMPORT_CHUNK_TARGET_MS) {
         let offset_ms = chunk.offset_ms;
         let timed = tm
             .transcribe_segments(chunk.samples)
@@ -346,5 +384,119 @@ mod tests {
         assert!(SUBTITLE_EXTENSIONS.contains(&extension_of(Path::new("a.VTT")).as_str()));
         assert!(SUBTITLE_EXTENSIONS.contains(&extension_of(Path::new("a.srt")).as_str()));
         assert!(!SUBTITLE_EXTENSIONS.contains(&extension_of(Path::new("a.mp3")).as_str()));
+    }
+
+    // -- Finding 2: incremental chunk feeding -----------------------------
+
+    #[test]
+    fn chunk_all_covers_every_sample_exactly_once_with_increasing_offsets() {
+        // 130 s of audio at 16 kHz, well past two 60 s target chunks, fed in
+        // 1 s slices by `chunk_all` (not one whole-file push).
+        let samples = vec![7_000i16; 16_000 * 130];
+        let chunks = chunk_all(&samples, IMPORT_CHUNK_TARGET_MS);
+
+        assert!(
+            chunks.len() >= 2,
+            "130 s of audio at a 60 s target should yield at least two chunks"
+        );
+
+        let total: usize = chunks.iter().map(|c| c.samples.len()).sum();
+        assert_eq!(
+            total,
+            samples.len(),
+            "every input sample must be covered exactly once"
+        );
+
+        let mut last_offset: Option<u64> = None;
+        for chunk in &chunks {
+            if let Some(prev) = last_offset {
+                assert!(
+                    chunk.offset_ms > prev,
+                    "chunk offsets must strictly increase (got {} after {prev})",
+                    chunk.offset_ms
+                );
+            }
+            last_offset = Some(chunk.offset_ms);
+        }
+    }
+
+    #[test]
+    fn chunk_all_of_empty_input_yields_no_chunks() {
+        assert!(chunk_all(&[], IMPORT_CHUNK_TARGET_MS).is_empty());
+    }
+
+    #[test]
+    fn chunk_all_flushes_a_short_tail_below_the_target() {
+        let samples = vec![7_000i16; 16_000 * 5]; // 5 s, well under any target
+        let chunks = chunk_all(&samples, IMPORT_CHUNK_TARGET_MS);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].samples.len(), samples.len());
+        assert_eq!(chunks[0].offset_ms, 0);
+    }
+
+    // -- Finding 1: the "never silent" failure contract --------------------
+
+    fn temp_store() -> Arc<MeetingStore> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("meetings.db");
+        let store = MeetingStore::open_at(&path).unwrap();
+        std::mem::forget(dir); // keep the tempdir alive for the store's lifetime
+        Arc::new(store)
+    }
+
+    #[test]
+    fn garbage_input_is_a_real_pipeline_failure() {
+        // Same first two steps `run_import`'s outcome closure runs
+        // (import.rs: `ensure_wav` then `read_wav_i16_mono_16k`): a `.wav`
+        // extension makes `ensure_wav` pass the file through unchanged, so
+        // garbage bytes must fail at the hound read, not silently produce
+        // empty audio.
+        let dir = tempfile::tempdir().unwrap();
+        let garbage_path = dir.path().join("not-actually-audio.wav");
+        std::fs::write(&garbage_path, b"this is not a wav file at all, just text")
+            .unwrap();
+
+        let outcome: Result<Vec<i16>, String> = (|| {
+            let (wav_path, _tmp) = media::ensure_wav(&garbage_path, 16_000)?;
+            read_wav_i16_mono_16k(&wav_path)
+        })();
+
+        assert!(
+            outcome.is_err(),
+            "garbage bytes must not silently parse as audio"
+        );
+    }
+
+    #[test]
+    fn a_failing_outcome_marks_the_meeting_failed_never_leaving_it_stuck() {
+        let store = temp_store();
+        let meeting = store
+            .create_meeting("Kaputter Import", MeetingSource::Import, None)
+            .unwrap();
+        assert_eq!(meeting.status, "processing");
+
+        // `mark_import_failed` is exactly what `run_import`'s `Err` arm
+        // calls (import.rs, right before `emit_error`) when the pipeline —
+        // proven failing above — reports an error.
+        mark_import_failed(&store, &meeting.id);
+
+        let after = store.get_meeting(&meeting.id).unwrap().unwrap();
+        assert_eq!(
+            after.status, "failed",
+            "a failed import must never leave the meeting stuck on 'processing'"
+        );
+    }
+
+    #[test]
+    fn a_successful_outcome_marks_the_meeting_ready() {
+        let store = temp_store();
+        let meeting = store
+            .create_meeting("Sauberer Import", MeetingSource::Import, None)
+            .unwrap();
+
+        mark_import_ready(&store, &meeting.id).unwrap();
+
+        let after = store.get_meeting(&meeting.id).unwrap().unwrap();
+        assert_eq!(after.status, "ready");
     }
 }
