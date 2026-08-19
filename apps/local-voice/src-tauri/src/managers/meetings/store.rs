@@ -103,6 +103,20 @@ pub struct Meeting {
     pub deleted_at: Option<i64>,
 }
 
+impl Meeting {
+    /// The meeting's own audio files, mic and system in that order, skipping
+    /// whichever side is unset. Shared by every caller that needs to collect
+    /// this meeting's WAVs for deletion (retention purge, minutes' inline
+    /// purge) so the two-field collection lives in exactly one place.
+    pub fn audio_paths(&self) -> Vec<String> {
+        [&self.mic_audio_path, &self.system_audio_path]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct StoredSegment {
     pub segment_index: u32,
@@ -129,6 +143,10 @@ pub struct MeetingDocument {
     pub created_at: i64,
 }
 
+// M9/M10 will let users pick a pinned template when generating minutes; the
+// `meeting_templates` table and its read path exist already so that later
+// milestone doesn't need a migration, but nothing calls `list_templates` yet.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct MeetingTemplate {
     pub id: String,
@@ -637,6 +655,8 @@ impl MeetingStore {
         Ok(docs)
     }
 
+    /// Not called yet — see the `#[allow(dead_code)]` note on `MeetingTemplate`.
+    #[allow(dead_code)]
     pub fn list_templates(&self) -> Result<Vec<MeetingTemplate>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(

@@ -10,7 +10,7 @@
 
 use log::warn;
 
-use super::store::MeetingStore;
+use super::store::{Meeting, MeetingStore};
 
 /// How long a meeting's audio survives after the meeting ends.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
@@ -45,58 +45,141 @@ pub fn retention_until(
     }
 }
 
+/// Outcome of one attempted file deletion. `removed` is true only when this
+/// call actually unlinked the file (for the "files actually deleted"
+/// counters). `cleared` is true when the DB path may safely be nulled —
+/// either `removed`, or the file was already gone (`NotFound`, e.g. a
+/// previous sweep that died between deleting the file and clearing the
+/// path). Any other error (permission denied, file still open, ...) leaves
+/// `cleared` false so the caller keeps both the path and the retention
+/// marker for a retry.
+struct DeleteOutcome {
+    path: String,
+    removed: bool,
+    cleared: bool,
+}
+
+fn delete_audio_file(path: &str) -> DeleteOutcome {
+    let (removed, cleared) = match std::fs::remove_file(path) {
+        Ok(()) => (true, true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (false, true),
+        Err(e) => {
+            // Path only, never file content — D9 log privacy.
+            warn!("meetings: could not delete audio file {path}: {e}");
+            (false, false)
+        }
+    };
+    DeleteOutcome {
+        path: path.to_string(),
+        removed,
+        cleared,
+    }
+}
+
+/// Pure decision logic: given a meeting's current mic/system paths and the
+/// delete outcome for each path that was attempted, decides which of the two
+/// DB columns may be cleared. A path that was never attempted (already
+/// `None`) counts as cleared (there is nothing to keep). Exposed separately
+/// from the filesystem I/O so the retry-on-failure behaviour is unit
+/// testable without depending on a platform-specific way to make a file
+/// undeletable.
+fn paths_to_clear(
+    mic: Option<&str>,
+    system: Option<&str>,
+    outcomes: &[DeleteOutcome],
+) -> (bool, bool) {
+    let was_cleared = |candidate: &str| {
+        outcomes
+            .iter()
+            .find(|o| o.path == candidate)
+            .map(|o| o.cleared)
+            .unwrap_or(true)
+    };
+    (
+        mic.map(was_cleared).unwrap_or(true),
+        system.map(was_cleared).unwrap_or(true),
+    )
+}
+
+/// Hard-deletes one meeting's own audio files and updates its DB state
+/// honestly: a path (and, if both are gone, the retention marker) is only
+/// cleared once its file is actually gone (removed now, or already
+/// `NotFound`). If deletion fails for another reason (locked file,
+/// permissions, ...) the path AND the retention marker are kept so the next
+/// sweep retries instead of silently losing the pointer to audio that is
+/// still on disk. Returns the number of files actually removed. Shared by
+/// `purge_due_audio` (the startup/periodic sweep) and the `AfterMinutes`
+/// fast path right after a protocol is generated (`minutes::generate_minutes`).
+pub fn purge_meeting_audio(store: &MeetingStore, meeting: &Meeting) -> u32 {
+    let paths = meeting.audio_paths();
+    let outcomes: Vec<DeleteOutcome> = paths.iter().map(|p| delete_audio_file(p)).collect();
+    let deleted = outcomes.iter().filter(|o| o.removed).count() as u32;
+
+    let (clear_mic, clear_system) = paths_to_clear(
+        meeting.mic_audio_path.as_deref(),
+        meeting.system_audio_path.as_deref(),
+        &outcomes,
+    );
+    let new_mic = if clear_mic {
+        None
+    } else {
+        meeting.mic_audio_path.as_deref()
+    };
+    let new_system = if clear_system {
+        None
+    } else {
+        meeting.system_audio_path.as_deref()
+    };
+    if let Err(e) = store.set_audio_paths(&meeting.id, new_mic, new_system, meeting.duration_ms) {
+        warn!(
+            "meetings: purge could not update audio paths for {}: {e}",
+            meeting.id
+        );
+    }
+
+    if clear_mic && clear_system {
+        if let Err(e) = store.set_retention_until(&meeting.id, None) {
+            warn!(
+                "meetings: purge could not clear retention marker for {}: {e}",
+                meeting.id
+            );
+        }
+    } else {
+        warn!(
+            "meetings: purge kept {} due for retry — at least one audio file could not be deleted",
+            meeting.id
+        );
+    }
+
+    deleted
+}
+
 /// Hard-deletes every audio file whose meeting is due (`audio_retention_until
-/// <= now_unix`) and nulls the paths + retention marker in the store so a
-/// meeting is only ever swept once. Returns the number of files actually
-/// deleted. Missing files (already gone) are not an error — the store state
-/// is still cleared so the meeting stops showing up as due.
+/// <= now_unix`). See `purge_meeting_audio` for the per-meeting honesty
+/// guarantee. Returns the number of files actually removed across all due
+/// meetings.
 pub fn purge_due_audio(store: &MeetingStore, now_unix: i64) -> anyhow::Result<u32> {
     let due = store.meetings_with_due_audio(now_unix)?;
     let mut deleted = 0u32;
-
     for meeting in due {
-        let mut paths = Vec::new();
-        if let Some(mic) = &meeting.mic_audio_path {
-            paths.push(mic.clone());
-        }
-        if let Some(system) = &meeting.system_audio_path {
-            paths.push(system.clone());
-        }
-
-        deleted += delete_audio_files(&paths);
-
-        if let Err(e) = store.set_audio_paths(&meeting.id, None, None, meeting.duration_ms) {
-            warn!(
-                "meetings: retention purge could not clear audio paths for {}: {e}",
-                meeting.id
-            );
-        }
-        if let Err(e) = store.set_retention_until(&meeting.id, None) {
-            warn!(
-                "meetings: retention purge could not clear retention marker for {}: {e}",
-                meeting.id
-            );
-        }
+        deleted += purge_meeting_audio(store, &meeting);
     }
-
     Ok(deleted)
 }
 
-/// Hard-deletes the given audio files from disk. Used both by
-/// `purge_due_audio` and directly by the soft-delete cascade (`meetings_delete`),
-/// which already has the paths from `soft_delete_meeting`'s return value.
-/// A file that is already missing is not an error — deleting is idempotent.
-/// Returns the number of files actually removed.
+/// Hard-deletes the given audio files from disk unconditionally. Used by the
+/// soft-delete cascade (`meetings_delete`), which already nulled the DB
+/// paths as part of `soft_delete_meeting`'s own transaction and so has no
+/// path state left to keep on a failed deletion — unlike `purge_due_audio`,
+/// there is nothing here to retry from. A file that is already missing is
+/// not an error — deleting is idempotent. Returns the number of files
+/// actually removed.
 pub fn delete_audio_files(paths: &[String]) -> u32 {
-    let mut deleted = 0u32;
-    for path in paths {
-        match std::fs::remove_file(path) {
-            Ok(()) => deleted += 1,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => warn!("meetings: could not delete audio file {path}: {e}"),
-        }
-    }
-    deleted
+    paths
+        .iter()
+        .map(|p| delete_audio_file(p))
+        .filter(|o| o.removed)
+        .count() as u32
 }
 
 #[cfg(test)]
@@ -200,6 +283,105 @@ mod tests {
         let stored = s.get_meeting(&meeting.id).unwrap().unwrap();
         assert_eq!(stored.mic_audio_path, None);
         assert_eq!(stored.system_audio_path, None);
+    }
+
+    // -- Review finding #2: purge must not claim deletion that didn't happen --
+
+    #[test]
+    fn paths_to_clear_keeps_a_path_whose_deletion_failed() {
+        let outcomes = vec![
+            DeleteOutcome {
+                path: "mic.wav".into(),
+                removed: false,
+                cleared: false, // e.g. locked / permission denied
+            },
+            DeleteOutcome {
+                path: "system.wav".into(),
+                removed: true,
+                cleared: true,
+            },
+        ];
+        let (clear_mic, clear_system) =
+            paths_to_clear(Some("mic.wav"), Some("system.wav"), &outcomes);
+        assert!(!clear_mic, "an undeletable file must keep its DB path");
+        assert!(clear_system, "a successfully deleted file clears its path");
+    }
+
+    #[test]
+    fn paths_to_clear_clears_a_path_that_was_already_gone() {
+        let outcomes = vec![DeleteOutcome {
+            path: "mic.wav".into(),
+            removed: false, // NotFound: nothing to unlink
+            cleared: true,  // but nothing left to keep a pointer to either
+        }];
+        let (clear_mic, clear_system) = paths_to_clear(Some("mic.wav"), None, &outcomes);
+        assert!(clear_mic, "NotFound clears the path just like a real delete");
+        assert!(clear_system, "a path that was never set is trivially clear");
+    }
+
+    #[test]
+    fn purge_clears_the_path_when_the_file_is_already_gone() {
+        let (s, dir) = store();
+        let meeting = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+
+        // Points at a file that was never written / already removed by hand.
+        let missing_path = dir.path().join("missing.wav");
+        s.set_audio_paths(&meeting.id, missing_path.to_str(), None, Some(1_000))
+            .unwrap();
+        s.set_retention_until(&meeting.id, Some(500)).unwrap();
+
+        let deleted = purge_due_audio(&s, 1_000).unwrap();
+        assert_eq!(deleted, 0, "nothing was actually unlinked");
+
+        let stored = s.get_meeting(&meeting.id).unwrap().unwrap();
+        assert_eq!(
+            stored.mic_audio_path, None,
+            "a NotFound file still clears its path — there's nothing to retry"
+        );
+        assert_eq!(stored.audio_retention_until, None);
+    }
+
+    /// Deterministic simulation of an undeletable file. Two more obvious
+    /// approaches were tried and rejected here because Rust's std on Windows
+    /// works around them (both let the delete through, which would make
+    /// this test flake on a false negative): a plain open read handle
+    /// (`std::fs::File` opens with `FILE_SHARE_DELETE`, so `DeleteFileW`
+    /// succeeds while a reader holds it), and a read-only attribute
+    /// (`std::fs::remove_file` clears `FILE_ATTRIBUTE_READONLY` and retries
+    /// before giving up, to match Unix `unlink` semantics). What reliably
+    /// fails on every platform: `remove_file` refuses a path that is a
+    /// directory rather than a file, with neither `Ok` nor `NotFound` — a
+    /// stand-in for "a file that exists at the stored path but cannot be
+    /// removed by `remove_file`".
+    #[test]
+    fn purge_keeps_path_and_marker_when_the_file_cannot_be_deleted() {
+        let (s, dir) = store();
+        let meeting = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+
+        // A directory at the audio path: `remove_file` errors on it (neither
+        // `Ok` nor `NotFound`) on every platform, deterministically.
+        let mic_path = dir.path().join("mic.wav");
+        std::fs::create_dir(&mic_path).unwrap();
+
+        s.set_audio_paths(&meeting.id, mic_path.to_str(), None, Some(1_000))
+            .unwrap();
+        s.set_retention_until(&meeting.id, Some(500)).unwrap();
+
+        let deleted = purge_due_audio(&s, 1_000).unwrap();
+
+        assert_eq!(deleted, 0, "the locked file could not be removed");
+        assert!(mic_path.exists(), "file must survive an undeletable purge");
+
+        let stored = s.get_meeting(&meeting.id).unwrap().unwrap();
+        assert_eq!(
+            stored.mic_audio_path.as_deref(),
+            mic_path.to_str(),
+            "path must be kept so a real orphan isn't created"
+        );
+        assert!(
+            stored.audio_retention_until.is_some(),
+            "retention marker must survive so the next sweep retries"
+        );
     }
 
     #[test]

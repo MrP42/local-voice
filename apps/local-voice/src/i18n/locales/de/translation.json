@@ -848,6 +848,11 @@
       "deltaStoreFailed": "Das Transkript konnte nicht gespeichert werden. Die Aufnahme läuft weiter.",
       "chunkTranscriptionFailed": "Ein Abschnitt konnte nicht transkribiert werden. Die Aufnahme läuft weiter.",
       "loopbackStartTimeout": "System-Audio konnte nicht gestartet werden — die Aufnahme läuft nur mit dem Mikrofon weiter.",
+      "loopbackStartFailed": "System-Audio ist beim Start fehlgeschlagen — die Aufnahme läuft nur mit dem Mikrofon weiter.",
+      "micStreamError": "Der Mikrofon-Stream hat während der Aufnahme einen Fehler gemeldet — es können Teile der Aufnahme fehlen.",
+      "importFailed": "Die Datei konnte nicht importiert werden.",
+      "alreadyRecording": "Es läuft bereits eine Aufnahme.",
+      "notRecording": "Es läuft aktuell keine Aufnahme.",
       "deleteFailed": "Löschen fehlgeschlagen. Bitte erneut versuchen."
     },
     "retention": {

@@ -579,6 +579,20 @@ pub async fn generate_minutes_with_settings(
         .get_meeting(meeting_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting {meeting_id} nicht gefunden"))?;
+    // Guard against a live recording: under the (default) `AfterMinutes`
+    // retention policy, the caller purges audio right after this returns
+    // (see `generate_minutes` below) — deleting a WAV the recorder still has
+    // open, then nulling its path, is exactly how `recover_orphans` loses
+    // audio for good after a crash. `failed` is allowed through so a
+    // meeting stuck in that terminal state can still get minutes from
+    // whatever transcript it captured before failing.
+    if meeting.status != "ready" && meeting.status != "failed" {
+        return Err(format!(
+            "meeting_not_finished: cannot generate minutes while status is '{}' \
+             (recording must finish first)",
+            meeting.status
+        ));
+    }
     let segments = sorted_segments(&store.get_segments(meeting_id).map_err(|e| e.to_string())?);
     if segments.is_empty() {
         return Err("Kein Transkript vorhanden — Protokoll nicht möglich".into());
@@ -646,20 +660,11 @@ pub async fn generate_minutes(
     }
     if until.is_some_and(|due| due <= now) {
         if let Some(meeting) = meeting {
-            let mut paths = Vec::new();
-            if let Some(mic) = &meeting.mic_audio_path {
-                paths.push(mic.clone());
-            }
-            if let Some(system) = &meeting.system_audio_path {
-                paths.push(system.clone());
-            }
-            super::retention::delete_audio_files(&paths);
-            if let Err(e) = store.set_audio_paths(meeting_id, None, None, meeting.duration_ms) {
-                log::warn!("meetings: audio paths not cleared after minutes purge: {e}");
-            }
-            if let Err(e) = store.set_retention_until(meeting_id, None) {
-                log::warn!("meetings: retention marker not cleared after minutes purge: {e}");
-            }
+            // `purge_meeting_audio` only clears a path (and the retention
+            // marker) once its file is actually gone — a locked/undeletable
+            // WAV keeps its path so the meeting isn't left pointing at
+            // audio that a later `recover_orphans` could never find again.
+            super::retention::purge_meeting_audio(&store, &meeting);
         }
     }
 
@@ -897,7 +902,7 @@ mod tests {
 
     // -- Integration gegen einen Mock-LLM ---------------------------------
 
-    use crate::managers::meetings::store::{MeetingSource, TranscriptDelta};
+    use crate::managers::meetings::store::{MeetingSource, MeetingStatus, TranscriptDelta};
     use crate::settings::get_default_settings;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -1030,6 +1035,12 @@ mod tests {
                 },
             )
             .unwrap();
+        // Mirrors the real flow: the recorder moves a meeting to `ready`
+        // once it stops. The status guard (review finding #1) now refuses
+        // minutes for a meeting still `recording`.
+        store
+            .set_status(&meeting.id, MeetingStatus::Ready)
+            .unwrap();
 
         let document = generate_minutes_with_settings(&settings, Arc::clone(&store), &meeting.id)
             .await
@@ -1065,5 +1076,40 @@ mod tests {
             .unwrap();
         assert!(metadata.contains("test-model"), "war: {metadata}");
         assert!(metadata.contains("custom"), "war: {metadata}");
+    }
+
+    /// Review finding #1: generating minutes for a meeting that is still
+    /// `recording` must be rejected outright — under the default
+    /// `AfterMinutes` policy, letting it through would purge audio the
+    /// recorder still has the file handle open on.
+    #[tokio::test]
+    async fn generate_minutes_refuses_a_meeting_that_is_still_recording() {
+        // No LLM mock is spun up: a real call would prove the guard didn't
+        // fire before doing any (expensive, network-touching) work.
+        let settings = get_default_settings();
+        let (store, _db_path) = temp_store();
+        let meeting = store
+            .create_meeting("Live jour fixe", MeetingSource::Live, Some(1_755_600_000))
+            .unwrap();
+        assert_eq!(meeting.status, "recording", "MeetingSource::Live starts recording");
+
+        let result =
+            generate_minutes_with_settings(&settings, Arc::clone(&store), &meeting.id).await;
+
+        let err = result.expect_err("must not generate minutes for a live recording");
+        assert!(
+            err.starts_with("meeting_not_finished"),
+            "war: {err}"
+        );
+
+        assert!(
+            store.get_documents(&meeting.id).unwrap().is_empty(),
+            "no minutes document may have been created"
+        );
+        let stored = store.get_meeting(&meeting.id).unwrap().unwrap();
+        assert_eq!(
+            stored.audio_retention_until, None,
+            "no purge may have run — retention marker must be untouched"
+        );
     }
 }
