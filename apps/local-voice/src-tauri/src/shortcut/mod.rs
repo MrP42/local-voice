@@ -572,6 +572,15 @@ pub fn change_selected_language_setting(app: AppHandle, language: String) -> Res
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_meeting_language_setting(app: AppHandle, language: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.meeting_language = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_tts_fish_dir_setting(app: AppHandle, value: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.tts_fish_dir = value;

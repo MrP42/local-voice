@@ -4,6 +4,7 @@ import { RecorderCard } from "./RecorderCard";
 import { LiveTranscript } from "./LiveTranscript";
 import { MeetingList } from "./MeetingList";
 import { MeetingDetail } from "./MeetingDetail";
+import { MeetingLanguageSetting } from "./MeetingLanguageSetting";
 import { MeetingRetentionSetting } from "./MeetingRetentionSetting";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 
@@ -28,6 +29,7 @@ export const MeetingsSettings: React.FC = () => {
       <LiveTranscript />
       <MeetingList onSelect={setSelected} />
       <SettingsGroup>
+        <MeetingLanguageSetting />
         <MeetingRetentionSetting />
       </SettingsGroup>
     </div>

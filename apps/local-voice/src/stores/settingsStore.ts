@@ -184,6 +184,7 @@ const settingUpdaters: {
     commands.changeExtraRecordingBufferSetting(value as number),
   meeting_audio_retention: (value) =>
     commands.changeMeetingAudioRetentionSetting(value as MeetingAudioRetention),
+  meeting_language: (value) => commands.changeMeetingLanguageSetting(value as string),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

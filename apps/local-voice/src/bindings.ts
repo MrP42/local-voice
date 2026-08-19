@@ -550,6 +550,14 @@ async changeMeetingAudioRetentionSetting(retention: MeetingAudioRetention) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async changeMeetingLanguageSetting(language: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_language_setting", { language }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Start key recording mode
  */
@@ -1502,7 +1510,16 @@ tts_context_menu?: boolean;
  * aufbewahrt werden, bevor sie hart gelöscht werden. Default: sobald ein
  * Protokoll existiert (Spec Default-Verhalten).
  */
-meeting_audio_retention?: MeetingAudioRetention }
+meeting_audio_retention?: MeetingAudioRetention; 
+/**
+ * M8 Meetings: eigene Sprachabsicht der Meeting-Transkription ("auto" oder
+ * ein Sprachcode). Bewusst getrennt vom Diktat (`selected_language`), und
+ * Meetings übersetzen NIE — die Diktat-Einstellung `translate_to_english`
+ * darf hier nicht durchgreifen (Abnahme-Auflage M8: ein deutsches
+ * Protokoll, das wegen einer Diktat-Einstellung englisch erscheint, ist
+ * ein Defekt).
+ */
+meeting_language?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

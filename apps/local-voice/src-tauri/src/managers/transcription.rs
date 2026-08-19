@@ -1856,8 +1856,14 @@ impl TranscriptionManager {
         let active_model = self
             .get_current_model()
             .unwrap_or_else(|| settings.selected_model.clone());
-        let validated_language =
-            effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
+        // Meetings use their own language intent and never translate — see
+        // meeting_transcription_prefs() for the ruling behind this.
+        let (meeting_language, meeting_translate) = meeting_transcription_prefs(&settings);
+        let validated_language = effective_language_for_intent(
+            &meeting_language,
+            self.model_manager.as_ref(),
+            &active_model,
+        );
         // Mirrors transcribe()'s identically-named locals below (see the
         // capability probe further down): the initial `false` is only ever
         // read as a debug!-log input immediately after being overwritten in
@@ -1927,7 +1933,7 @@ impl TranscriptionManager {
                             };
 
                             let run_plan = transcribe_cpp_run_plan(
-                                settings.translate_to_english,
+                                meeting_translate,
                                 &validated_language,
                                 &model_languages,
                                 model_supports_translate,
@@ -2000,7 +2006,7 @@ impl TranscriptionManager {
                             };
                             let options = TranscribeOptions {
                                 language: lang,
-                                translate: settings.translate_to_english,
+                                translate: meeting_translate,
                                 ..Default::default()
                             };
                             canary_engine
@@ -2245,21 +2251,41 @@ fn normalize_cjk_language(language: &str) -> &str {
     }
 }
 
-/// Resolve the persisted language intent into the language a specific model can
-/// use without writing the coerced value back to settings.
+/// Resolve the persisted dictation language intent into the language a specific
+/// model can use without writing the coerced value back to settings.
 fn effective_language_for_model(
     settings: &AppSettings,
     model_manager: &ModelManager,
     model_id: &str,
 ) -> String {
+    effective_language_for_intent(&settings.selected_language, model_manager, model_id)
+}
+
+/// Same coercion for an explicit language intent (used by the meetings path,
+/// which carries its own `meeting_language` instead of the dictation setting).
+fn effective_language_for_intent(
+    language_intent: &str,
+    model_manager: &ModelManager,
+    model_id: &str,
+) -> String {
     match model_manager.get_model_info(model_id) {
         Some(info) => crate::managers::model::effective_language(
-            &settings.selected_language,
+            language_intent,
             &info.supported_languages,
             info.supports_language_detection,
         ),
-        None => settings.selected_language.clone(),
+        None => language_intent.to_string(),
     }
+}
+
+/// Meeting transcription preferences: meetings carry their OWN language intent
+/// (`meeting_language`) and NEVER translate. The dictation-side
+/// `translate_to_english` must not leak into meeting transcripts — a German
+/// meeting protocol silently coming out in English because of a dictation
+/// setting is a defect, not a feature (M8 acceptance ruling, 2026-08-19).
+/// An explicit per-meeting translation option, if ever wanted, is UI scope.
+fn meeting_transcription_prefs(settings: &AppSettings) -> (String, bool) {
+    (settings.meeting_language.clone(), false)
 }
 
 struct TranscribeCppRunPlan {
@@ -2707,6 +2733,29 @@ mod tests {
             text: "  ".into(),
         }];
         assert!(segments_from_result("", Some(ws), 1_000).is_empty());
+    }
+
+    #[test]
+    fn meetings_never_translate_even_when_dictation_translation_is_on() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.translate_to_english = true;
+        settings.selected_language = "en".into();
+        settings.meeting_language = "de".into();
+        let (language, translate) = meeting_transcription_prefs(&settings);
+        assert_eq!(language, "de", "Meetings nutzen ihre eigene Sprachabsicht");
+        assert!(
+            !translate,
+            "Diktat-Uebersetzung darf nie in Meeting-Transkripte durchgreifen"
+        );
+    }
+
+    #[test]
+    fn meeting_language_defaults_to_auto_independent_of_dictation() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.selected_language = "fr".into();
+        let (language, translate) = meeting_transcription_prefs(&settings);
+        assert_eq!(language, "auto");
+        assert!(!translate);
     }
 
     #[test]

@@ -559,6 +559,18 @@ pub struct AppSettings {
     /// Protokoll existiert (Spec Default-Verhalten).
     #[serde(default = "default_meeting_audio_retention")]
     pub meeting_audio_retention: crate::managers::meetings::retention::MeetingAudioRetention,
+    /// M8 Meetings: eigene Sprachabsicht der Meeting-Transkription ("auto" oder
+    /// ein Sprachcode). Bewusst getrennt vom Diktat (`selected_language`), und
+    /// Meetings übersetzen NIE — die Diktat-Einstellung `translate_to_english`
+    /// darf hier nicht durchgreifen (Abnahme-Auflage M8: ein deutsches
+    /// Protokoll, das wegen einer Diktat-Einstellung englisch erscheint, ist
+    /// ein Defekt).
+    #[serde(default = "default_meeting_language")]
+    pub meeting_language: String,
+}
+
+fn default_meeting_language() -> String {
+    "auto".to_string()
 }
 
 fn default_meeting_audio_retention(
@@ -1165,6 +1177,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_export_format: default_tts_export_format(),
         tts_context_menu: false,
         meeting_audio_retention: default_meeting_audio_retention(),
+        meeting_language: default_meeting_language(),
     }
 }
 

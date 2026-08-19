@@ -901,6 +901,11 @@
       "generating": "Protokoll wird erzeugt…",
       "exportSaved": "Gespeichert unter {{path}}",
       "exportError": "Export fehlgeschlagen"
+    },
+    "language": {
+      "title": "Transkriptionssprache",
+      "description": "Sprache der Meeting-Transkription — unabhängig von der Diktat-Einstellung. Meetings werden nie übersetzt.",
+      "auto": "Automatisch erkennen"
     }
   }
 }

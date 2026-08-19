@@ -722,6 +722,11 @@
       "generating": "Generating minutes…",
       "exportSaved": "Saved to {{path}}",
       "exportError": "Export failed"
+    },
+    "language": {
+      "title": "Transcription language",
+      "description": "Language for meeting transcription — independent of the dictation setting. Meetings are never translated.",
+      "auto": "Detect automatically"
     }
   }
 }
