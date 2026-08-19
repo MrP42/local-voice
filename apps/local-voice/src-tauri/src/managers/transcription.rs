@@ -1858,6 +1858,15 @@ impl TranscriptionManager {
             .unwrap_or_else(|| settings.selected_model.clone());
         let validated_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
+        // Mirrors transcribe()'s identically-named locals below (see the
+        // capability probe further down): the initial `false` is only ever
+        // read as a debug!-log input immediately after being overwritten in
+        // the TranscribeCpp probe, same pre-existing pattern as transcribe();
+        // suppressed here so the fix doesn't add a second copy of that
+        // warning.
+        #[allow(unused_assignments)]
+        let mut model_takes_initial_prompt = false;
+        let mut model_is_whisper = false;
 
         // Perform transcription with the appropriate engine.
         // We use catch_unwind to prevent engine panics from poisoning the mutex,
@@ -1880,11 +1889,58 @@ impl TranscriptionManager {
             // Release the lock before transcribing — no mutex held during the engine call
             drop(engine_guard);
 
+            // Probe live transcribe-cpp capabilities once, same as transcribe() above —
+            // language/translate/custom-word wiring below depends on them.
+            let mut model_supports_translate = false;
+            let mut model_languages: Vec<String> = Vec::new();
+            if let LoadedEngine::TranscribeCpp(session) = &engine {
+                let model = session.model();
+                let caps = model.capabilities();
+                model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
+                model_is_whisper = model.arch() == "whisper";
+                model_supports_translate = caps.supports_translate;
+                model_languages = caps.languages;
+                debug!(
+                    "transcribe-cpp model '{}' on '{}': initial_prompt={}, translate={}, languages={:?}",
+                    settings.selected_model,
+                    model.backend(),
+                    model_takes_initial_prompt,
+                    model_supports_translate,
+                    model_languages
+                );
+            }
+
             let transcribe_result =
                 catch_unwind(AssertUnwindSafe(|| -> Result<Vec<TimedSegment>> {
                     match &mut engine {
                         LoadedEngine::TranscribeCpp(session) => {
-                            let run_options = RunOptions::default();
+                            // Custom words become the initial prompt ONLY for models
+                            // that accept one (whisper family), exactly like transcribe().
+                            let family = if settings.custom_words.is_empty() || !model_is_whisper
+                            {
+                                None
+                            } else {
+                                Some(RunExtension::Whisper(WhisperRunOptions {
+                                    initial_prompt: Some(settings.custom_words.join(", ")),
+                                    ..Default::default()
+                                }))
+                            };
+
+                            let run_plan = transcribe_cpp_run_plan(
+                                settings.translate_to_english,
+                                &validated_language,
+                                &model_languages,
+                                model_supports_translate,
+                            );
+
+                            let run_options = RunOptions {
+                                task: run_plan.task,
+                                language: run_plan.language,
+                                target_language: run_plan.target_language,
+                                family,
+                                ..Default::default()
+                            };
+
                             session
                                 .run(&audio, &run_options)
                                 .map(|t| segments_from_result(&t.text, None, audio_ms))
