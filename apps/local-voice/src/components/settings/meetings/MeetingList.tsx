@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { commands, events, type Meeting } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
@@ -11,6 +12,28 @@ import { Trash2 } from "lucide-react";
 import { translateMeetingError } from "./meetingErrors";
 
 const PAGE_SIZE = 25;
+
+// One list for the picker filter AND the drag-and-drop filter — they must
+// never diverge (same import pipeline behind both).
+const IMPORT_EXTENSIONS = [
+  "wav",
+  "mp3",
+  "m4a",
+  "mp4",
+  "mkv",
+  "mov",
+  "flac",
+  "ogg",
+  "vtt",
+  "srt",
+];
+
+const hasImportExtension = (path: string) => {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return IMPORT_EXTENSIONS.includes(ext);
+};
+
+const baseName = (path: string) => path.split(/[\/]/).pop() ?? path;
 
 const statusBadgeVariant = (
   status: string,
@@ -44,9 +67,10 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
   const [hasMore, setHasMore] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importConsentPath, setImportConsentPath] = useState<string | null>(
-    null,
-  );
+  const [importConsentPaths, setImportConsentPaths] = useState<
+    string[] | null
+  >(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -133,23 +157,51 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
     // live recording — the file's mere existence is not proof that everyone
     // in it agreed to being recorded. The command is only ever called with
     // `consentConfirmed: true` after this dialog is explicitly confirmed.
-    setImportConsentPath(picked);
+    setImportConsentPaths([picked]);
   };
 
+  // Drag-and-drop lands in the exact same consent-gated pipeline as the
+  // picker button — dropping a file must not shortcut the Spec-A1 dialog.
+  useEffect(() => {
+    const un = getCurrentWebview().onDragDropEvent((event) => {
+      const kind = event.payload.type;
+      if (kind === "enter" || kind === "over") {
+        setIsDragOver(true);
+        return;
+      }
+      setIsDragOver(false);
+      if (kind !== "drop") return;
+      const accepted = event.payload.paths.filter(hasImportExtension);
+      if (accepted.length === 0) {
+        setImportError(t("meetings.errors.unsupportedFile"));
+        return;
+      }
+      setImportError(null);
+      setImportConsentPaths(accepted);
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, [t]);
+
   const confirmImport = async () => {
-    const path = importConsentPath;
-    if (!path) return;
-    setImportConsentPath(null);
+    const paths = importConsentPaths;
+    if (!paths || paths.length === 0) return;
+    setImportConsentPaths(null);
     setImporting(true);
-    const result = await commands.meetingsImportFile(path, true);
-    setImporting(false);
-    if (result.status === "error") {
-      setImportError(translateMeetingError(result.error, t));
-      return;
+    let lastError: string | null = null;
+    for (const path of paths) {
+      const result = await commands.meetingsImportFile(path, true);
+      if (result.status === "error") {
+        lastError = translateMeetingError(result.error, t);
+      }
+      // Refresh after every file so long batches show progress in the list.
+      // (The synchronous VTT/SRT path emits no state events — the command
+      // return is its only signal.)
+      void loadPage(0);
     }
-    // The import command's own return is the completion signal (no state
-    // events fire for the synchronous VTT/SRT path) — refresh explicitly.
-    void loadPage(0);
+    setImporting(false);
+    if (lastError) setImportError(lastError);
   };
 
   const confirmDelete = async () => {
@@ -167,7 +219,13 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
 
   return (
     <SettingsGroup title={t("meetings.list.title")}>
-      <div className="px-4 py-3 space-y-3">
+      <div
+        className={`px-4 py-3 space-y-3 rounded-md transition-colors ${
+          isDragOver
+            ? "outline-2 outline-dashed outline-logo-primary bg-logo-primary/5"
+            : ""
+        }`}
+      >
         <div className="flex justify-between items-center gap-2">
           <p className="text-sm text-text/70">{t("meetings.list.title")}</p>
           <Button
@@ -179,6 +237,11 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
             {t("meetings.list.import")}
           </Button>
         </div>
+        {isDragOver && (
+          <p className="text-sm text-logo-primary font-medium text-center">
+            {t("meetings.list.dropHint")}
+          </p>
+        )}
         {importError && <Alert variant="error">{importError}</Alert>}
         {deleteError && <Alert variant="error">{deleteError}</Alert>}
 
@@ -264,9 +327,9 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
       </Dialog>
 
       <Dialog
-        open={importConsentPath !== null}
+        open={importConsentPaths !== null}
         onOpenChange={(open) => {
-          if (!open) setImportConsentPath(null);
+          if (!open) setImportConsentPaths(null);
         }}
         title={t("meetings.consent.title")}
         closeLabel={t("meetings.consent.cancel")}
@@ -274,7 +337,7 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
           <>
             <Button
               variant="secondary"
-              onClick={() => setImportConsentPath(null)}
+              onClick={() => setImportConsentPaths(null)}
             >
               {t("meetings.consent.cancel")}
             </Button>
@@ -287,6 +350,15 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
         <p className="text-sm text-text/80 whitespace-pre-wrap">
           {t("meetings.consent.importBody")}
         </p>
+        {importConsentPaths && (
+          <ul className="mt-2 text-xs text-text/60 space-y-0.5">
+            {importConsentPaths.map((p) => (
+              <li key={p} className="truncate">
+                {baseName(p)}
+              </li>
+            ))}
+          </ul>
+        )}
       </Dialog>
     </SettingsGroup>
   );

@@ -158,6 +158,12 @@ fn run_import(
     path: &Path,
 ) -> Result<(), String> {
     let outcome = (|| -> Result<u64, String> {
+        // Kick the model load FIRST (non-blocking) so it warms up while ffmpeg
+        // decodes; `transcribe_segments` then waits on the load condvar instead
+        // of failing with "Model is not loaded" — the live recorder does the
+        // same in start() (recorder.rs). Without this, any import after the
+        // idle unload (default 5 min) failed immediately.
+        tm.initiate_model_load();
         let (wav_path, _tmp_guard) = media::ensure_wav(path, 16_000)?;
         let samples = read_wav_i16_mono_16k(&wav_path)?;
 
@@ -204,7 +210,10 @@ fn run_import(
             mark_import_failed(store, meeting_id);
             // Same branch as the status write right above — see
             // `mark_import_failed`'s doc comment for why this call itself
-            // isn't covered by a test.
+            // isn't covered by a test. The state event keeps the list's
+            // status badge honest (it refreshes on state events; without
+            // this, a failed import kept showing "processing" until reload).
+            emit_state(app, meeting_id, "failed");
             emit_error(app, meeting_id, "import_failed");
             Err(e)
         }

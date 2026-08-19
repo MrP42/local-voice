@@ -853,7 +853,8 @@
       "importFailed": "The file could not be imported.",
       "alreadyRecording": "A recording is already running.",
       "notRecording": "No recording is currently running.",
-      "deleteFailed": "Deletion failed. Please try again."
+      "deleteFailed": "Deletion failed. Please try again.",
+      "unsupportedFile": "This file format is not supported (allowed: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt)."
     },
     "retention": {
       "title": "Audio file retention",
@@ -876,7 +877,8 @@
       "deleteConfirmTitle": "Delete meeting?",
       "deleteConfirm": "The meeting, its transcript and minutes will be permanently deleted.",
       "deleteButton": "Delete",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "dropHint": "Drop files here to import them"
     },
     "detail": {
       "transcriptTab": "Transcript",
@@ -906,6 +908,21 @@
       "title": "Transcription language",
       "description": "Language for meeting transcription — independent of the dictation setting. Meetings are never translated.",
       "auto": "Detect automatically"
+    },
+    "meta": {
+      "status": "Status",
+      "source": "Source",
+      "started": "Started",
+      "duration": "Duration",
+      "consent": "Consent confirmed",
+      "retentionUntil": "Audio deleted on",
+      "segments": "Segments",
+      "audioImport": "Recording",
+      "sourceKind": {
+        "live": "Live recording",
+        "import": "File import",
+        "subtitle": "Subtitle import"
+      }
     }
   }
 }

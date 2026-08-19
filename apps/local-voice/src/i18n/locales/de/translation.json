@@ -853,7 +853,8 @@
       "importFailed": "Die Datei konnte nicht importiert werden.",
       "alreadyRecording": "Es läuft bereits eine Aufnahme.",
       "notRecording": "Es läuft aktuell keine Aufnahme.",
-      "deleteFailed": "Löschen fehlgeschlagen. Bitte erneut versuchen."
+      "deleteFailed": "Löschen fehlgeschlagen. Bitte erneut versuchen.",
+      "unsupportedFile": "Dieses Dateiformat wird nicht unterstützt (erlaubt: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt)."
     },
     "retention": {
       "title": "Aufbewahrung der Audiodatei",
@@ -876,7 +877,8 @@
       "deleteConfirmTitle": "Besprechung löschen?",
       "deleteConfirm": "Die Besprechung samt Transkript und Protokoll wird unwiderruflich gelöscht.",
       "deleteButton": "Löschen",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "dropHint": "Dateien hier ablegen, um sie zu importieren"
     },
     "detail": {
       "transcriptTab": "Transkript",
@@ -906,6 +908,21 @@
       "title": "Transkriptionssprache",
       "description": "Sprache der Meeting-Transkription — unabhängig von der Diktat-Einstellung. Meetings werden nie übersetzt.",
       "auto": "Automatisch erkennen"
+    },
+    "meta": {
+      "status": "Status",
+      "source": "Quelle",
+      "started": "Beginn",
+      "duration": "Dauer",
+      "consent": "Einwilligung bestätigt",
+      "retentionUntil": "Audio wird gelöscht am",
+      "segments": "Segmente",
+      "audioImport": "Aufzeichnung",
+      "sourceKind": {
+        "live": "Live-Aufnahme",
+        "import": "Datei-Import",
+        "subtitle": "Untertitel-Import"
+      }
     }
   }
 }

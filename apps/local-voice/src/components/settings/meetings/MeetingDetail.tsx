@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pencil, ArrowLeft } from "lucide-react";
-import { commands, type StoredSegment } from "@/bindings";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { commands, type Meeting, type StoredSegment } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
 import { Textarea } from "../../ui/Textarea";
+import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
+import Badge from "../../ui/Badge";
 import { MinutesView } from "./MinutesView";
 
 const formatMmSs = (ms: number) => {
@@ -27,18 +30,20 @@ const channelLabelKey = (channel: number) => {
 
 type Tab = "transcript" | "minutes";
 
+const fileBaseName = (path: string) => path.split(/[\/]/).pop() ?? path;
+
 interface MeetingDetailProps {
-  meetingId: string;
-  meetingTitle: string;
+  meeting: Meeting;
   onBack: () => void;
 }
 
 export const MeetingDetail: React.FC<MeetingDetailProps> = ({
-  meetingId,
-  meetingTitle,
+  meeting,
   onBack,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const meetingId = meeting.id;
+  const meetingTitle = meeting.title;
   const [tab, setTab] = useState<Tab>("transcript");
   const [segments, setSegments] = useState<StoredSegment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +109,101 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           </button>
         </div>
         <h3 className="text-base font-semibold truncate">{meetingTitle}</h3>
+
+        {(meeting.mic_audio_path || meeting.system_audio_path) && (
+          <AudioPlayerGroup>
+            {meeting.mic_audio_path && (
+              <div className="space-y-1">
+                <p className="text-xs text-text/60">
+                  {meeting.source === "import"
+                    ? t("meetings.meta.audioImport")
+                    : t("meetings.live.me")}
+                  {" · "}
+                  {fileBaseName(meeting.mic_audio_path)}
+                </p>
+                <AudioPlayer
+                  src={convertFileSrc(meeting.mic_audio_path, "asset")}
+                  className="w-full"
+                />
+              </div>
+            )}
+            {meeting.system_audio_path && (
+              <div className="space-y-1">
+                <p className="text-xs text-text/60">
+                  {t("meetings.live.remote")}
+                  {" · "}
+                  {fileBaseName(meeting.system_audio_path)}
+                </p>
+                <AudioPlayer
+                  src={convertFileSrc(meeting.system_audio_path, "asset")}
+                  className="w-full"
+                />
+              </div>
+            )}
+          </AudioPlayerGroup>
+        )}
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm border border-mid-gray/20 rounded-md px-3 py-2">
+          <span className="text-text/60">{t("meetings.meta.status")}</span>
+          <span>
+            <Badge
+              variant={meeting.status === "ready" ? "success" : "secondary"}
+            >
+              {t(`meetings.status.${meeting.status}`, {
+                defaultValue: meeting.status,
+              })}
+            </Badge>
+          </span>
+          <span className="text-text/60">{t("meetings.meta.source")}</span>
+          <span>
+            {t(`meetings.meta.sourceKind.${meeting.source}`, {
+              defaultValue: meeting.source,
+            })}
+          </span>
+          <span className="text-text/60">{t("meetings.meta.started")}</span>
+          <span>
+            {new Intl.DateTimeFormat(i18n.language, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(
+              new Date((meeting.started_at ?? meeting.created_at) * 1000),
+            )}
+          </span>
+          {meeting.duration_ms !== null && (
+            <>
+              <span className="text-text/60">
+                {t("meetings.meta.duration")}
+              </span>
+              <span>{formatMmSs(meeting.duration_ms)}</span>
+            </>
+          )}
+          {meeting.consent_confirmed_at !== null && (
+            <>
+              <span className="text-text/60">{t("meetings.meta.consent")}</span>
+              <span>
+                {new Intl.DateTimeFormat(i18n.language, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(meeting.consent_confirmed_at * 1000))}
+              </span>
+            </>
+          )}
+          {meeting.audio_retention_until !== null && (
+            <>
+              <span className="text-text/60">
+                {t("meetings.meta.retentionUntil")}
+              </span>
+              <span>
+                {new Intl.DateTimeFormat(i18n.language, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(meeting.audio_retention_until * 1000))}
+              </span>
+            </>
+          )}
+          <span className="text-text/60">{t("meetings.meta.segments")}</span>
+          <span>{segments.length}</span>
+        </div>
 
         <div className="flex gap-1 border-b border-mid-gray/20">
           <button

@@ -14,11 +14,7 @@ export const MeetingsSettings: React.FC = () => {
   if (selected) {
     return (
       <div className="max-w-3xl w-full mx-auto space-y-6">
-        <MeetingDetail
-          meetingId={selected.id}
-          meetingTitle={selected.title}
-          onBack={() => setSelected(null)}
-        />
+        <MeetingDetail meeting={selected} onBack={() => setSelected(null)} />
       </div>
     );
   }
