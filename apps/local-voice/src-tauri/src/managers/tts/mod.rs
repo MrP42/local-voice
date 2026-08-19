@@ -225,10 +225,21 @@ impl TtsCore {
         let seed = *self.seed.lock().unwrap();
         self.set_phase(TtsPhase::Speaking, None);
         let result = self
-            .fetch_and_play_pipelined(port, seed, &sentences, start_index, my_cancel, on_played)
+            .fetch_and_play_pipelined(
+                port,
+                seed,
+                &sentences,
+                start_index,
+                my_cancel.clone(),
+                on_played,
+            )
             .await;
-        // Nur der jüngste Auftrag darf den Endzustand setzen.
-        if self.generation.load(Ordering::Acquire) == my_generation {
+        // Nur der jüngste, NICHT stornierte Auftrag darf den Endzustand
+        // setzen — nach einem Abbruch gehört die Phase dem Abbrecher
+        // (cancel_core → Ready, stop_server → Stopped).
+        if self.generation.load(Ordering::Acquire) == my_generation
+            && !my_cancel.load(Ordering::Acquire)
+        {
             match &result {
                 Ok(_) => self.set_phase(TtsPhase::Ready, None),
                 Err(e) => self.set_phase(TtsPhase::Error, Some(e.clone())),
@@ -371,6 +382,13 @@ impl TtsCore {
     pub fn cancel_core(&self) {
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.cancelled.lock().unwrap().store(true, Ordering::Release);
+        // Der stornierte Auftrag darf die Phase nicht mehr anfassen (Guard) —
+        // also stellt der Abbrecher selbst den Ruhezustand wieder her. Ohne
+        // das bleibt die UI auf „Spricht" hängen und der Idle-Stopp greift nie.
+        if self.phase() == TtsPhase::Speaking {
+            self.set_phase(TtsPhase::Ready, None);
+        }
+        *self.last_used.lock().unwrap() = Instant::now();
     }
 
     #[cfg(test)]
@@ -1399,5 +1417,19 @@ mod tests {
         assert!(!flag.load(Ordering::Acquire));
         core.cancel_core();
         assert!(flag.load(Ordering::Acquire), "cancel muss den laufenden Auftrag treffen");
+    }
+
+    /// Regression (19.08.2026): Nach Pause blieb die Phase auf „Spricht"
+    /// hängen — Server-Stopp wirkte blockiert und der Idle-Stopp griff nie.
+    #[tokio::test]
+    async fn cancel_returns_a_speaking_phase_to_ready() {
+        let core = TtsCore::for_test(1);
+        core.set_phase(TtsPhase::Speaking, None);
+        core.cancel_core();
+        assert_eq!(core.phase(), TtsPhase::Ready);
+        // In anderen Phasen (z. B. Starting) mischt sich cancel nicht ein.
+        core.set_phase(TtsPhase::Starting, None);
+        core.cancel_core();
+        assert_eq!(core.phase(), TtsPhase::Starting);
     }
 }
