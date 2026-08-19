@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { commands, type ReadingInfo } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -41,29 +42,53 @@ export const ReadingCard = () => {
     };
   }, [refreshLibrary]);
 
-  const openDocument = async (path?: string) => {
-    setError(null);
-    let file = path;
-    if (!file) {
-      const picked = await open({
-        multiple: false,
-        filters: [
-          { name: "Dokumente", extensions: ["txt", "md", "pdf", "docx"] },
-        ],
-      });
-      if (typeof picked !== "string") return;
-      file = picked;
-    }
-    setBusy(true);
-    const result = await commands.ttsReadingOpen(file);
-    setBusy(false);
-    if (result.status === "error") {
-      setError(result.error);
-      return;
-    }
-    setCurrent(result.data);
-    await refreshLibrary();
-  };
+  const openDocument = useCallback(
+    async (path?: string) => {
+      setError(null);
+      let file = path;
+      if (!file) {
+        const picked = await open({
+          multiple: false,
+          filters: [
+            { name: "Dokumente", extensions: ["txt", "md", "pdf", "docx"] },
+          ],
+        });
+        if (typeof picked !== "string") return;
+        file = picked;
+      }
+      setBusy(true);
+      const result = await commands.ttsReadingOpen(file);
+      setBusy(false);
+      if (result.status === "error") {
+        setError(result.error);
+        return;
+      }
+      setCurrent(result.data);
+      await refreshLibrary();
+    },
+    [refreshLibrary],
+  );
+
+  // Drag & Drop: ein Dokument aufs Fenster ziehen lädt es in die Bibliothek.
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    const un = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter") {
+        setDragging(true);
+      } else if (event.payload.type === "leave") {
+        setDragging(false);
+      } else if (event.payload.type === "drop") {
+        setDragging(false);
+        const doc = event.payload.paths.find((p) =>
+          /\.(txt|md|pdf|docx)$/i.test(p),
+        );
+        if (doc) void openDocument(doc);
+      }
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, [openDocument]);
 
   const play = async () => {
     setError(null);
@@ -91,8 +116,13 @@ export const ReadingCard = () => {
 
   return (
     <SettingsGroup title={t("tts.reading.title")}>
-      <div className="px-4 py-3 space-y-3">
+      <div
+        className={`px-4 py-3 space-y-3 rounded-lg transition-colors ${
+          dragging ? "bg-logo-primary/10 outline-2 outline-dashed outline-logo-primary" : ""
+        }`}
+      >
         <p className="text-sm text-text/70">{t("tts.reading.description")}</p>
+        <p className="text-xs text-text/50">{t("tts.reading.dropHint")}</p>
         {error && <p className="text-sm text-red-500 break-words">{error}</p>}
 
         <div className="flex gap-2 items-center">

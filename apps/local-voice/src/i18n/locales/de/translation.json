@@ -33,6 +33,7 @@
       "title": "Bücher & Dokumente",
       "description": "Ganze Dokumente vorlesen lassen (TXT, MD, PDF, DOCX). Der Fortschritt wird je Dokument gespeichert — jederzeit fortsetzen, auch wenn zwischendurch etwas anderes lief.",
       "open": "Dokument öffnen…",
+      "dropHint": "Tipp: Datei einfach ins Fenster ziehen.",
       "openEntry": "Öffnen",
       "play": "Abspielen",
       "resume": "Fortsetzen",

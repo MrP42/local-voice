@@ -33,6 +33,7 @@
       "title": "Books & Documents",
       "description": "Read entire documents aloud (TXT, MD, PDF, DOCX). Progress is saved per document — resume any time, even after listening to something else.",
       "open": "Open document…",
+      "dropHint": "Tip: drag a file into the window to add it.",
       "openEntry": "Open",
       "play": "Play",
       "resume": "Resume",
