@@ -626,6 +626,36 @@ pub fn change_tts_compile_setting(app: AppHandle, value: bool) -> Result<(), Str
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_tts_volume_setting(app: AppHandle, value: f32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_volume = value.clamp(0.0, 1.0);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_speed_setting(app: AppHandle, value: f32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_speed = value.clamp(0.5, 2.0);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_export_format_setting(app: AppHandle, value: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    if !["wav", "mp3", "opus"].contains(&value.as_str()) {
+        return Err(format!("unsupported export format '{value}'"));
+    }
+    settings.tts_export_format = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_tts_translate_lang_setting(app: AppHandle, value: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.tts_translate_lang = value;

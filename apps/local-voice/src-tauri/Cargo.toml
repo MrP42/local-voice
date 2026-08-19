@@ -84,6 +84,9 @@ tauri-plugin-dialog = "2.6"
 hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downloads", features = [
   "tokio",
 ] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+pdf-extract = "0.12.0"
+tempfile = "3"
 
 [features]
 # GPU acceleration for the Whisper/GGUF backend on Windows x86_64. Opt-in because

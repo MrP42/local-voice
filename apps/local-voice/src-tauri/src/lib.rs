@@ -12,6 +12,7 @@ mod helpers;
 mod input;
 mod llm_client;
 mod managers;
+mod media;
 mod overlay;
 mod paste_guard;
 pub mod selftest;
@@ -850,6 +851,9 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_tts_voice_setting,
             shortcut::change_tts_compile_setting,
             shortcut::change_tts_translate_lang_setting,
+            shortcut::change_tts_volume_setting,
+            shortcut::change_tts_speed_setting,
+            shortcut::change_tts_export_format_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
@@ -961,6 +965,15 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_translate_speak,
             commands::tts::tts_record_translate_start,
             commands::tts::tts_record_translate_stop,
+            commands::tts::tts_reading_open,
+            commands::tts::tts_reading_play,
+            commands::tts::tts_reading_pause,
+            commands::tts::tts_reading_list,
+            commands::tts::tts_reading_reset,
+            commands::tts::tts_reading_remove,
+            commands::tts::tts_reading_seek,
+            commands::tts::tts_speak_resume,
+            commands::tts::tts_export_format,
             commands::tts::tts_voicechange_record_start,
             commands::tts::tts_voicechange_record_stop,
             commands::tts::tts_voicechange_file,

@@ -1,6 +1,6 @@
 //! Tauri-Commands des Vorlesen-Bereichs (TP1).
 
-use crate::managers::tts::{TtsManager, TtsStatus};
+use crate::managers::tts::{ReadingInfo, TtsManager, TtsStatus};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -138,6 +138,67 @@ pub async fn tts_record_translate_stop(
         transcript,
         translation,
     })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_open(app: AppHandle, path: String) -> Result<ReadingInfo, String> {
+    app.state::<Arc<TtsManager>>().reading_open(&path)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_play(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().inner().clone().reading_play()
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_pause(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().reading_pause();
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_list(app: AppHandle) -> Result<Vec<ReadingInfo>, String> {
+    Ok(app.state::<Arc<TtsManager>>().reading_list())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_seek(app: AppHandle, delta: i32) -> Result<ReadingInfo, String> {
+    app.state::<Arc<TtsManager>>()
+        .inner()
+        .clone()
+        .reading_seek(delta)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_speak_resume(app: AppHandle) -> Result<(), String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.refresh_from_settings();
+    tts.ensure_server().await?;
+    tts.speak_resume().await.map(|_| ())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_reset(app: AppHandle, key: String) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().reading_reset(&key)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_reading_remove(app: AppHandle, key: String) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().reading_remove(&key)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_export_format(app: AppHandle) -> Result<String, String> {
+    Ok(app.state::<Arc<TtsManager>>().export_format())
 }
 
 #[tauri::command]

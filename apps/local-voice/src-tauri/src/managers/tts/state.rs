@@ -33,6 +33,16 @@ pub fn start_hint_after(elapsed_secs: u64) -> Option<&'static str> {
     (elapsed_secs >= 120).then_some("vram")
 }
 
+/// Startsatz beim Fortsetzen eines Hörbuchs: gespeicherte Position, außer das
+/// Dokument war fertig (oder der Text wurde kürzer) — dann von vorn.
+pub fn resume_position(saved: u32, total: u32) -> u32 {
+    if saved >= total {
+        0
+    } else {
+        saved
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,6 +70,14 @@ mod tests {
             !should_idle_stop(u64::MAX, 0, true, TtsPhase::Ready),
             "0 heißt: nie stoppen"
         );
+    }
+
+    #[test]
+    fn resuming_continues_mid_document_and_restarts_finished_ones() {
+        assert_eq!(resume_position(17, 100), 17);
+        assert_eq!(resume_position(0, 100), 0);
+        assert_eq!(resume_position(100, 100), 0, "fertig → von vorn");
+        assert_eq!(resume_position(150, 100), 0, "Dokument wurde kürzer → von vorn");
     }
 
     #[test]

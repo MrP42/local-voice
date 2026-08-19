@@ -11,6 +11,7 @@ pub trait Player: Send + Sync {
         wav: Vec<u8>,
         device: Option<String>,
         volume: f32,
+        speed: f32,
         cancelled: Arc<AtomicBool>,
     ) -> Result<(), String>;
 }
@@ -23,6 +24,7 @@ impl Player for RodioPlayer {
         wav: Vec<u8>,
         device: Option<String>,
         volume: f32,
+        speed: f32,
         cancelled: Arc<AtomicBool>,
     ) -> Result<(), String> {
         use rodio::OutputStreamBuilder;
@@ -49,6 +51,9 @@ impl Player for RodioPlayer {
         let sink =
             rodio::play(stream.mixer(), std::io::Cursor::new(wav)).map_err(|e| e.to_string())?;
         sink.set_volume(volume);
+        // Tempo per Resampling; verändert die Tonhöhe mit — der zulässige
+        // Bereich (0,5–2,0) ist deshalb bewusst eng gehalten.
+        sink.set_speed(speed.clamp(0.5, 2.0));
         // Abbrechbar warten statt sleep_until_end: cancel() wirkt in <=50 ms.
         while !sink.empty() {
             if cancelled.load(Ordering::Acquire) {
@@ -72,6 +77,7 @@ impl Player for CountingPlayer {
         wav: Vec<u8>,
         _device: Option<String>,
         _volume: f32,
+        _speed: f32,
         _cancelled: Arc<AtomicBool>,
     ) -> Result<(), String> {
         *self.0.lock().unwrap() = wav.len();

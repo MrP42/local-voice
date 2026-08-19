@@ -37,9 +37,20 @@ pub fn prepare_text(raw: &str, max_chars: u32) -> Option<PreparedText> {
 /// die geklonte Stimme und `use_memory_cache` lässt den Server das
 /// Referenz-Encoding zwischen Requests wiederverwenden.
 pub fn tts_request_body(text: &str, seed: i64, reference_id: Option<&str>) -> serde_json::Value {
+    tts_request_body_in_format(text, seed, reference_id, "wav")
+}
+
+/// Wie `tts_request_body`, aber mit wählbarem Ausgabeformat — der Fish-Server
+/// encodiert wav/mp3/opus direkt (Datei-Export).
+pub fn tts_request_body_in_format(
+    text: &str,
+    seed: i64,
+    reference_id: Option<&str>,
+    format: &str,
+) -> serde_json::Value {
     let mut body = serde_json::json!({
         "text": text,
-        "format": "wav",
+        "format": format,
         "seed": seed,
         "streaming": false,
     });
@@ -48,6 +59,20 @@ pub fn tts_request_body(text: &str, seed: i64, reference_id: Option<&str>) -> se
         body["use_memory_cache"] = serde_json::json!("on");
     }
     body
+}
+
+/// Formatbewusste Plausibilitätsprüfung der Serverantwort: Magic-Bytes plus
+/// nennenswerte Nutzlast, damit HTML-Fehlerseiten nie als Audio durchgehen.
+pub fn looks_like_audio(bytes: &[u8], format: &str) -> bool {
+    if bytes.len() <= 1024 {
+        return false;
+    }
+    match format {
+        "wav" => bytes.starts_with(b"RIFF"),
+        "mp3" => bytes.starts_with(b"ID3") || bytes.starts_with(&[0xFF]),
+        "opus" => bytes.starts_with(b"OggS"),
+        _ => false,
+    }
 }
 
 /// RIFF-Magic plus nennenswerte Nutzlast (>1 KiB): filtert HTML-Fehlerseiten
@@ -158,6 +183,20 @@ mod tests {
     fn single_or_empty_text_stays_whole() {
         assert_eq!(split_sentences("Nur ein Satz ohne Ende"), vec!["Nur ein Satz ohne Ende"]);
         assert!(split_sentences("   ").is_empty());
+    }
+
+    #[test]
+    fn export_formats_reach_the_server_and_are_validated_by_magic() {
+        let b = tts_request_body_in_format("Hallo", 42, None, "mp3");
+        assert_eq!(b["format"], "mp3");
+        let mut mp3 = b"ID3".to_vec();
+        mp3.extend_from_slice(&[0u8; 2000]);
+        assert!(looks_like_audio(&mp3, "mp3"));
+        let mut ogg = b"OggS".to_vec();
+        ogg.extend_from_slice(&[0u8; 2000]);
+        assert!(looks_like_audio(&ogg, "opus"));
+        assert!(!looks_like_audio(&ogg, "wav"), "falsches Magic je Format zählt nicht");
+        assert!(!looks_like_audio(b"OggS", "opus"), "Mini-Antworten sind Fehlerseiten");
     }
 
     #[test]

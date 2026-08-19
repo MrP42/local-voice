@@ -538,10 +538,34 @@ pub struct AppSettings {
     /// für den Übersetzungs-Prompt (z. B. "English", "German").
     #[serde(default = "default_tts_translate_lang")]
     pub tts_translate_lang: String,
+    /// Wiedergabelautstärke des Vorlesens (0.0–1.0), unabhängig von den
+    /// Feedback-Sounds.
+    #[serde(default = "default_tts_volume")]
+    pub tts_volume: f32,
+    /// Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
+    /// Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).
+    #[serde(default = "default_tts_speed")]
+    pub tts_speed: f32,
+    /// Ausgabeformat für den Datei-Export ("wav" | "mp3" | "opus") — der
+    /// Fish-Server encodiert direkt.
+    #[serde(default = "default_tts_export_format")]
+    pub tts_export_format: String,
 }
 
 fn default_tts_translate_lang() -> String {
     "English".to_string()
+}
+
+fn default_tts_volume() -> f32 {
+    1.0
+}
+
+fn default_tts_speed() -> f32 {
+    1.0
+}
+
+fn default_tts_export_format() -> String {
+    "wav".to_string()
 }
 
 fn default_tts_compile() -> bool {
@@ -1122,6 +1146,9 @@ pub fn get_default_settings() -> AppSettings {
         tts_voice: None,
         tts_compile: default_tts_compile(),
         tts_translate_lang: default_tts_translate_lang(),
+        tts_volume: default_tts_volume(),
+        tts_speed: default_tts_speed(),
+        tts_export_format: default_tts_export_format(),
     }
 }
 

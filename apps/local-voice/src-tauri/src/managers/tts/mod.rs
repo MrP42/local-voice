@@ -44,10 +44,66 @@ pub struct TtsCore {
     seed: Mutex<i64>,
     max_chars: Mutex<u32>,
     volume: Mutex<f32>,
+    speed: Mutex<f32>,
+    export_format: Mutex<String>,
     output_device: Mutex<Option<String>>,
     /// Aktive Referenzstimme (reference_id) oder None = Seed-Standardstimme.
     voice: Mutex<Option<String>>,
+    /// Satz-Level-WAV-Cache: unveränderter Text (gleicher Satz, Seed und
+    /// Stimme) wird beim erneuten Vorlesen nicht neu synthetisiert.
+    wav_cache: Mutex<WavCache>,
     on_phase_change: Mutex<Option<Box<dyn Fn(TtsStatus) + Send + Sync>>>,
+}
+
+/// Prozess-lebenszeitiger Audio-Cache mit Byte-Limit und FIFO-Verdrängung —
+/// bewusst simpel: Wiederholungen (gleicher Text, Resume, Zurückspringen im
+/// Hörbuch) treffen ihn, Speicher bleibt begrenzt.
+struct WavCache {
+    map: std::collections::HashMap<u64, Vec<u8>>,
+    order: std::collections::VecDeque<u64>,
+    bytes: usize,
+}
+
+const WAV_CACHE_LIMIT_BYTES: usize = 200 * 1024 * 1024;
+
+impl WavCache {
+    fn new() -> Self {
+        Self {
+            map: std::collections::HashMap::new(),
+            order: std::collections::VecDeque::new(),
+            bytes: 0,
+        }
+    }
+
+    fn key(text: &str, seed: i64, voice: Option<&str>) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut h);
+        seed.hash(&mut h);
+        voice.hash(&mut h);
+        h.finish()
+    }
+
+    fn get(&self, key: u64) -> Option<Vec<u8>> {
+        self.map.get(&key).cloned()
+    }
+
+    fn insert(&mut self, key: u64, wav: Vec<u8>) {
+        if wav.len() > WAV_CACHE_LIMIT_BYTES || self.map.contains_key(&key) {
+            return;
+        }
+        while self.bytes + wav.len() > WAV_CACHE_LIMIT_BYTES {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(evicted) = self.map.remove(&oldest) {
+                self.bytes -= evicted.len();
+            }
+        }
+        self.bytes += wav.len();
+        self.order.push_back(key);
+        self.map.insert(key, wav);
+    }
 }
 
 impl TtsCore {
@@ -64,8 +120,11 @@ impl TtsCore {
             seed: Mutex::new(42),
             max_chars: Mutex::new(5000),
             volume: Mutex::new(1.0),
+            speed: Mutex::new(1.0),
+            export_format: Mutex::new("wav".to_string()),
             output_device: Mutex::new(None),
             voice: Mutex::new(None),
+            wav_cache: Mutex::new(WavCache::new()),
             on_phase_change: Mutex::new(None),
         }
     }
@@ -135,7 +194,23 @@ impl TtsCore {
         if prepared.truncated {
             log::warn!("TTS text truncated to {max_chars} chars");
         }
+        let sentences = protocol::split_sentences(&prepared.text);
+        self.speak_sentence_run(sentences, 0, None).await
+    }
 
+    /// Gemeinsamer Sprechpfad für Freitext und Hörbuch: Sätze pipelined
+    /// sprechen, ab `start_index`, mit optionalem Callback nach jedem
+    /// VOLLSTÄNDIG abgespielten Satz (absoluter Index) — die Basis für die
+    /// persistente Fortschrittsanzeige.
+    pub async fn speak_sentence_run(
+        &self,
+        sentences: Vec<String>,
+        start_index: usize,
+        on_played: Option<Arc<dyn Fn(usize) + Send + Sync>>,
+    ) -> Result<usize, String> {
+        if sentences.is_empty() {
+            return Err("empty text".into());
+        }
         // Letzter gewinnt: laufenden Auftrag stornieren, eigenes Flag setzen.
         let my_generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let my_cancel = Arc::new(AtomicBool::new(false));
@@ -150,7 +225,7 @@ impl TtsCore {
         let seed = *self.seed.lock().unwrap();
         self.set_phase(TtsPhase::Speaking, None);
         let result = self
-            .fetch_and_play_pipelined(port, seed, &prepared.text, my_cancel)
+            .fetch_and_play_pipelined(port, seed, &sentences, start_index, my_cancel, on_played)
             .await;
         // Nur der jüngste Auftrag darf den Endzustand setzen.
         if self.generation.load(Ordering::Acquire) == my_generation {
@@ -168,6 +243,11 @@ impl TtsCore {
     async fn fetch_wav(&self, port: u16, seed: i64, text: &str) -> Result<Vec<u8>, String> {
         let url = format!("{}/v1/tts", protocol::base_url(port));
         let voice = self.voice.lock().unwrap().clone();
+        // Unveränderter Satz + gleiche Stimme/Seed → aus dem Cache, ohne Server.
+        let cache_key = WavCache::key(text, seed, voice.as_deref());
+        if let Some(cached) = self.wav_cache.lock().unwrap().get(cache_key) {
+            return Ok(cached);
+        }
         let body = protocol::tts_request_body(text, seed, voice.as_deref());
         let resp = self
             .http
@@ -184,36 +264,60 @@ impl TtsCore {
         if !protocol::looks_like_wav(&bytes) {
             return Err("TTS response is not a WAV file".into());
         }
+        self.wav_cache.lock().unwrap().insert(cache_key, bytes.clone());
         Ok(bytes)
     }
 
     /// Satz-Pipeline: Satz N wird abgespielt, während Satz N+1 bereits beim
     /// Server liegt. Die gefühlte Latenz ist damit die Synthese des ersten
     /// Satzes; bei RTF < 1 (compile) bleibt die Wiedergabe lückenlos.
+    /// `on_played` feuert nach jedem vollständig abgespielten Satz mit dessen
+    /// absolutem Index — bei Abbruch mitten im Satz feuert es NICHT (der Satz
+    /// wird beim Fortsetzen erneut gehört, wie bei einem Hörbuch üblich).
     async fn fetch_and_play_pipelined(
         &self,
         port: u16,
         seed: i64,
-        text: &str,
+        sentences: &[String],
+        start_index: usize,
         cancelled: Arc<AtomicBool>,
+        on_played: Option<Arc<dyn Fn(usize) + Send + Sync>>,
     ) -> Result<usize, String> {
-        let sentences = protocol::split_sentences(text);
-        let mut previous_playback: Option<tauri::async_runtime::JoinHandle<Result<(), String>>> =
-            None;
+        let max_chars = *self.max_chars.lock().unwrap();
+        let mut previous_playback: Option<(
+            usize,
+            tauri::async_runtime::JoinHandle<Result<(), String>>,
+        )> = None;
         let mut total_bytes = 0usize;
         let mut failure: Option<String> = None;
 
-        for sentence in &sentences {
+        let notify = |idx: usize, was_cancelled: bool| {
+            if was_cancelled {
+                return;
+            }
+            if let Some(cb) = on_played.as_ref() {
+                cb(idx);
+            }
+        };
+
+        for (offset, sentence) in sentences.iter().enumerate().skip(start_index) {
             if cancelled.load(Ordering::Acquire) {
                 break;
             }
-            match self.fetch_wav(port, seed, sentence).await {
+            // Einzelne Sätze absichern (leere überspringen, Monster kappen).
+            let Some(prepared) = protocol::prepare_text(sentence, max_chars) else {
+                notify(offset, cancelled.load(Ordering::Acquire));
+                continue;
+            };
+            match self.fetch_wav(port, seed, &prepared.text).await {
                 Ok(bytes) => {
                     total_bytes += bytes.len();
                     // Vorherigen Satz zu Ende spielen lassen (Reihenfolge!).
-                    if let Some(handle) = previous_playback.take() {
+                    if let Some((done_idx, handle)) = previous_playback.take() {
                         match handle.await {
-                            Ok(Ok(())) => {}
+                            Ok(Ok(())) => {
+                                notify(done_idx, cancelled.load(Ordering::Acquire));
+                            }
                             Ok(Err(e)) => {
                                 failure = Some(e);
                                 break;
@@ -230,10 +334,14 @@ impl TtsCore {
                     let player = self.player.clone();
                     let device = self.output_device.lock().unwrap().clone();
                     let volume = *self.volume.lock().unwrap();
+                    let speed = *self.speed.lock().unwrap();
                     let cancel_flag = cancelled.clone();
-                    previous_playback = Some(tauri::async_runtime::spawn_blocking(move || {
-                        player.play(bytes, device, volume, cancel_flag)
-                    }));
+                    previous_playback = Some((
+                        offset,
+                        tauri::async_runtime::spawn_blocking(move || {
+                            player.play(bytes, device, volume, speed, cancel_flag)
+                        }),
+                    ));
                 }
                 Err(e) => {
                     failure = Some(e);
@@ -241,9 +349,11 @@ impl TtsCore {
                 }
             }
         }
-        if let Some(handle) = previous_playback {
+        if let Some((done_idx, handle)) = previous_playback {
             match handle.await {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    notify(done_idx, cancelled.load(Ordering::Acquire));
+                }
                 Ok(Err(e)) => {
                     failure.get_or_insert(e);
                 }
@@ -280,7 +390,39 @@ pub struct TtsManager {
     /// Letzte Referenzaufnahme (16 kHz mono), wartet zwischen Stopp und
     /// Speichern auf Namen + bestätigtes Transkript.
     pending_reference: Mutex<Option<Vec<f32>>>,
+    /// Geöffnetes Hörbuch/Dokument (Sätze + Identität); die Position lebt im
+    /// persistenten Fortschritts-Store.
+    reading: Mutex<Option<ReadingSession>>,
+    /// Letzter Freitext-Sprechauftrag (Sätze + Position) — Basis für
+    /// Pause/Weiter im Vorlesen-Feld, bewusst nicht persistiert.
+    speak_session: Mutex<Option<SpeakSession>>,
 }
+
+struct SpeakSession {
+    sentences: Vec<String>,
+    position: usize,
+}
+
+struct ReadingSession {
+    key: String,
+    title: String,
+    sentences: Vec<String>,
+}
+
+/// Fortschritt eines Dokuments — Persistenz-Eintrag und Event-Payload.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct ReadingInfo {
+    /// Absoluter Dateipfad = stabile Identität des Dokuments.
+    pub key: String,
+    pub title: String,
+    /// Nächster zu spielender Satz (0-basiert) = Anzahl fertig gehörter Sätze.
+    pub position: u32,
+    pub total: u32,
+    pub finished: bool,
+    pub playing: bool,
+}
+
+const READING_STORE: &str = "reading_progress.json";
 
 /// Binding-Id des Referenzaufnahme-Flows im AudioRecordingManager.
 const REFERENCE_BINDING: &str = "voice_reference";
@@ -306,6 +448,8 @@ impl TtsManager {
             app: app.clone(),
             child: Mutex::new(None),
             pending_reference: Mutex::new(None),
+            reading: Mutex::new(None),
+            speak_session: Mutex::new(None),
         });
         manager.refresh_from_settings();
 
@@ -339,7 +483,9 @@ impl TtsManager {
         *self.core.port.lock().unwrap() = settings.tts_port;
         *self.core.seed.lock().unwrap() = settings.tts_seed;
         *self.core.max_chars.lock().unwrap() = settings.tts_max_chars;
-        *self.core.volume.lock().unwrap() = settings.audio_feedback_volume;
+        *self.core.volume.lock().unwrap() = settings.tts_volume;
+        *self.core.speed.lock().unwrap() = settings.tts_speed;
+        *self.core.export_format.lock().unwrap() = settings.tts_export_format;
         *self.core.output_device.lock().unwrap() = settings.selected_output_device;
         *self.core.voice.lock().unwrap() = settings.tts_voice;
     }
@@ -352,8 +498,54 @@ impl TtsManager {
         self.core.cancel_core();
     }
 
-    pub async fn speak_text(&self, raw: &str) -> Result<usize, String> {
-        self.core.speak_core(raw).await
+    /// Freitext sprechen: legt eine Pause/Weiter-fähige Session an und meldet
+    /// den Satzfortschritt als `tts-speak-progress`-Event.
+    pub async fn speak_text(self: &Arc<Self>, raw: &str) -> Result<usize, String> {
+        let max_chars = *self.core.max_chars.lock().unwrap();
+        let prepared = protocol::prepare_text(raw, max_chars)
+            .ok_or_else(|| "empty text".to_string())?;
+        let sentences = protocol::split_sentences(&prepared.text);
+        *self.speak_session.lock().unwrap() = Some(SpeakSession {
+            sentences: sentences.clone(),
+            position: 0,
+        });
+        self.run_speak_session(sentences, 0).await
+    }
+
+    /// Pausiertes Freitext-Vorlesen ab dem letzten vollständig gehörten Satz
+    /// fortsetzen.
+    pub async fn speak_resume(self: &Arc<Self>) -> Result<usize, String> {
+        let (sentences, position) = {
+            let guard = self.speak_session.lock().unwrap();
+            let session = guard.as_ref().ok_or("nichts zum Fortsetzen")?;
+            if session.position >= session.sentences.len() {
+                return Err("bereits zu Ende gelesen".into());
+            }
+            (session.sentences.clone(), session.position)
+        };
+        self.run_speak_session(sentences, position).await
+    }
+
+    async fn run_speak_session(
+        self: &Arc<Self>,
+        sentences: Vec<String>,
+        start: usize,
+    ) -> Result<usize, String> {
+        use tauri::Emitter;
+        let total = sentences.len() as u32;
+        let cb_manager = Arc::clone(self);
+        let on_played: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
+            if let Some(session) = cb_manager.speak_session.lock().unwrap().as_mut() {
+                session.position = idx + 1;
+            }
+            let _ = cb_manager.app.emit(
+                "tts-speak-progress",
+                serde_json::json!({ "position": idx as u32 + 1, "total": total }),
+            );
+        });
+        self.core
+            .speak_sentence_run(sentences, start, Some(on_played))
+            .await
     }
 
     /// Server sicherstellen: adoptieren, sonst spawnen und Health pollen.
@@ -531,11 +723,14 @@ impl TtsManager {
         use tauri::Manager;
         let id = voices::sanitize_voice_id(name)
             .ok_or_else(|| "Name ergibt keine gültige Stimm-Id".to_string())?;
-        let source = std::path::Path::new(wav_path);
+        // Nicht-WAV-Quellen (mp3, m4a, mp4, …) über ffmpeg in hochwertiges
+        // Mono-WAV wandeln; WAV geht unverändert durch.
+        let (source, _tmp_guard) =
+            crate::media::ensure_wav(std::path::Path::new(wav_path), 44_100)?;
         let transcript = match transcript.filter(|t| !t.trim().is_empty()) {
             Some(t) => t,
             None => {
-                let samples = voices::load_wav_mono_16k(source)?;
+                let samples = voices::load_wav_mono_16k(&source)?;
                 let tm = self
                     .app
                     .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
@@ -545,7 +740,7 @@ impl TtsManager {
                 })?
             }
         };
-        voices::import_voice(&self.fish_dir(), &id, source, &transcript)?;
+        voices::import_voice(&self.fish_dir(), &id, &source, &transcript)?;
         Ok((id, transcript))
     }
 
@@ -646,11 +841,14 @@ impl TtsManager {
         Ok(transcript)
     }
 
-    /// Stimmwechsler für eine WAV-Datei: transkribieren und in der aktiven
-    /// Stimme nachsprechen. Rückgabe: das Transkript.
+    /// Stimmwechsler für eine Audio-/Videodatei (WAV direkt, alles andere
+    /// über ffmpeg): transkribieren und in der aktiven Stimme nachsprechen.
+    /// Rückgabe: das Transkript.
     pub async fn respeak_file(self: &Arc<Self>, wav_path: &str) -> Result<String, String> {
         use tauri::Manager;
-        let samples = voices::load_wav_mono_16k(std::path::Path::new(wav_path))?;
+        let (wav_source, _tmp_guard) =
+            crate::media::ensure_wav(std::path::Path::new(wav_path), 16_000)?;
+        let samples = voices::load_wav_mono_16k(&wav_source)?;
         let tm = self
             .app
             .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
@@ -679,8 +877,9 @@ impl TtsManager {
         });
     }
 
-    /// Text in der aktiven Stimme als WAV-Datei synthetisieren (ein Request,
-    /// ohne Playback) — der Datei-Export des Stimmwechslers.
+    /// Text in der aktiven Stimme als Audiodatei synthetisieren (ein Request,
+    /// ohne Playback) — der Datei-Export. Format aus `tts_export_format`
+    /// (wav/mp3/opus, der Fish-Server encodiert direkt).
     pub async fn synthesize_to_file(&self, text: &str, out_path: &str) -> Result<usize, String> {
         self.refresh_from_settings();
         self.ensure_server().await?;
@@ -690,10 +889,264 @@ impl TtsManager {
         };
         let port = *self.core.port.lock().unwrap();
         let seed = *self.core.seed.lock().unwrap();
-        let wav = self.core.fetch_wav(port, seed, &prepared.text).await?;
-        std::fs::write(out_path, &wav).map_err(|e| format!("could not write {out_path}: {e}"))?;
+        let voice = self.core.voice.lock().unwrap().clone();
+        let format = self.core.export_format.lock().unwrap().clone();
+        let url = format!("{}/v1/tts", protocol::base_url(port));
+        let body =
+            protocol::tts_request_body_in_format(&prepared.text, seed, voice.as_deref(), &format);
+        let resp = self
+            .core
+            .http
+            .post(url)
+            .json(&body)
+            .timeout(TTS_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| format!("TTS request failed: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("TTS server answered {}", resp.status()));
+        }
+        let audio = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        if !protocol::looks_like_audio(&audio, &format) {
+            return Err(format!("TTS response is not valid {format} audio"));
+        }
+        std::fs::write(out_path, &audio).map_err(|e| format!("could not write {out_path}: {e}"))?;
         *self.core.last_used.lock().unwrap() = Instant::now();
-        Ok(wav.len())
+        Ok(audio.len())
+    }
+
+    /// Aktuell konfiguriertes Export-Format ("wav" | "mp3" | "opus") — für
+    /// den Save-Dialog des Frontends.
+    pub fn export_format(&self) -> String {
+        crate::settings::get_settings(&self.app).tts_export_format
+    }
+
+    // ------------------------------------------------------------------
+    // Hörbuch / Dokument-Vorlesen mit persistentem Fortschritt
+    // ------------------------------------------------------------------
+
+    fn reading_store(&self) -> Option<std::sync::Arc<tauri_plugin_store::Store<tauri::Wry>>> {
+        use tauri_plugin_store::StoreExt;
+        self.app
+            .store(crate::portable::store_path(READING_STORE))
+            .map_err(|e| log::warn!("reading store unavailable: {e}"))
+            .ok()
+    }
+
+    fn stored_reading(&self, key: &str) -> Option<ReadingInfo> {
+        let value = self.reading_store()?.get(key)?;
+        Some(ReadingInfo {
+            key: key.to_string(),
+            title: value["title"].as_str().unwrap_or(key).to_string(),
+            position: value["position"].as_u64().unwrap_or(0) as u32,
+            total: value["total"].as_u64().unwrap_or(0) as u32,
+            finished: value["finished"].as_bool().unwrap_or(false),
+            playing: false,
+        })
+    }
+
+    fn persist_reading(&self, key: &str, title: &str, position: u32, total: u32) {
+        if let Some(store) = self.reading_store() {
+            store.set(
+                key.to_string(),
+                serde_json::json!({
+                    "title": title,
+                    "position": position,
+                    "total": total,
+                    "finished": position >= total && total > 0,
+                    "updated": chrono::Utc::now().to_rfc3339(),
+                }),
+            );
+        }
+    }
+
+    fn emit_reading(&self, info: &ReadingInfo) {
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit("tts-reading-progress", info.clone()) {
+            log::warn!("Could not emit tts-reading-progress: {e}");
+        }
+    }
+
+    /// Dokument öffnen (txt/md/pdf/docx): Text extrahieren, in Sätze teilen,
+    /// gespeicherten Fortschritt übernehmen. Der Eintrag erscheint sofort in
+    /// der Bibliotheksliste.
+    pub fn reading_open(&self, path: &str) -> Result<ReadingInfo, String> {
+        let p = std::path::Path::new(path);
+        let text = crate::media::extract_document_text(p)?;
+        let sentences = protocol::split_sentences(&text);
+        let total = sentences.len() as u32;
+        if total == 0 {
+            return Err("Das Dokument enthält keine vorlesbaren Sätze".into());
+        }
+        let title = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path)
+            .to_string();
+        let position = self
+            .stored_reading(path)
+            .map(|info| state::resume_position(info.position, total))
+            .unwrap_or(0);
+        *self.reading.lock().unwrap() = Some(ReadingSession {
+            key: path.to_string(),
+            title: title.clone(),
+            sentences,
+        });
+        self.persist_reading(path, &title, position, total);
+        let info = ReadingInfo {
+            key: path.to_string(),
+            title,
+            position,
+            total,
+            finished: false,
+            playing: false,
+        };
+        self.emit_reading(&info);
+        Ok(info)
+    }
+
+    /// Wiedergabe des geöffneten Dokuments ab der gespeicherten Position.
+    /// Kehrt sofort zurück; Fortschritt kommt als `tts-reading-progress`.
+    pub fn reading_play(self: &Arc<Self>) -> Result<(), String> {
+        let (key, title, sentences) = {
+            let guard = self.reading.lock().unwrap();
+            let session = guard.as_ref().ok_or("kein Dokument geöffnet")?;
+            (
+                session.key.clone(),
+                session.title.clone(),
+                session.sentences.clone(),
+            )
+        };
+        let total = sentences.len() as u32;
+        let start = self
+            .stored_reading(&key)
+            .map(|info| state::resume_position(info.position, total))
+            .unwrap_or(0);
+
+        let manager = Arc::clone(self);
+        let task_key = key.clone();
+        let task_title = title.clone();
+        tauri::async_runtime::spawn(async move {
+            let (key, title) = (task_key, task_title);
+            manager.refresh_from_settings();
+            if let Err(e) = manager.ensure_server().await {
+                log::error!("reading: server start failed: {e}");
+                return;
+            }
+            let cb_manager = Arc::clone(&manager);
+            let cb_key = key.clone();
+            let cb_title = title.clone();
+            let on_played: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
+                let position = idx as u32 + 1;
+                cb_manager.persist_reading(&cb_key, &cb_title, position, total);
+                cb_manager.emit_reading(&ReadingInfo {
+                    key: cb_key.clone(),
+                    title: cb_title.clone(),
+                    position,
+                    total,
+                    finished: position >= total,
+                    playing: position < total,
+                });
+            });
+            let result = manager
+                .core
+                .speak_sentence_run(sentences, start as usize, Some(on_played))
+                .await;
+            if let Err(e) = result {
+                log::warn!("reading: playback ended with error: {e}");
+            }
+            // Endzustand melden (Pause oder fertig): playing=false.
+            if let Some(info) = manager.stored_reading(&key) {
+                manager.emit_reading(&info);
+            }
+        });
+        // Startzustand sofort melden.
+        self.emit_reading(&ReadingInfo {
+            key,
+            title,
+            position: start,
+            total,
+            finished: false,
+            playing: true,
+        });
+        Ok(())
+    }
+
+    /// Pause = Abbruch des laufenden Sprechens; die Position des letzten
+    /// vollständig gehörten Satzes ist bereits persistiert.
+    pub fn reading_pause(&self) {
+        self.core.cancel_core();
+    }
+
+    /// Bibliothek: alle gespeicherten Dokumente mit Fortschritt.
+    pub fn reading_list(&self) -> Vec<ReadingInfo> {
+        let Some(store) = self.reading_store() else {
+            return Vec::new();
+        };
+        let mut list: Vec<ReadingInfo> = store
+            .keys()
+            .into_iter()
+            .filter_map(|key| self.stored_reading(&key))
+            .collect();
+        list.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        list
+    }
+
+    /// Fortschritt eines Dokuments auf Anfang zurücksetzen.
+    pub fn reading_reset(&self, key: &str) -> Result<(), String> {
+        let info = self.stored_reading(key).ok_or("unbekanntes Dokument")?;
+        self.persist_reading(key, &info.title, 0, info.total);
+        self.emit_reading(&ReadingInfo {
+            position: 0,
+            finished: false,
+            playing: false,
+            ..info
+        });
+        Ok(())
+    }
+
+    /// Satzweises Springen im geöffneten Dokument (delta z. B. -1/+1).
+    /// Läuft die Wiedergabe, setzt sie an der neuen Position fort.
+    pub fn reading_seek(self: &Arc<Self>, delta: i32) -> Result<ReadingInfo, String> {
+        let (key, title, total) = {
+            let guard = self.reading.lock().unwrap();
+            let session = guard.as_ref().ok_or("kein Dokument geöffnet")?;
+            (
+                session.key.clone(),
+                session.title.clone(),
+                session.sentences.len() as u32,
+            )
+        };
+        let current = self.stored_reading(&key).map(|i| i.position).unwrap_or(0);
+        let new_pos = (i64::from(current) + i64::from(delta)).clamp(0, i64::from(total) - 1) as u32;
+        let was_playing = self.core.phase() == TtsPhase::Speaking;
+        self.persist_reading(&key, &title, new_pos, total);
+        let info = ReadingInfo {
+            key,
+            title,
+            position: new_pos,
+            total,
+            finished: false,
+            playing: was_playing,
+        };
+        self.emit_reading(&info);
+        if was_playing {
+            self.core.cancel_core();
+            self.reading_play()?;
+        }
+        Ok(info)
+    }
+
+    /// Dokument aus der Bibliothek entfernen (Datei bleibt unberührt).
+    pub fn reading_remove(&self, key: &str) -> Result<(), String> {
+        if let Some(store) = self.reading_store() {
+            store.delete(key.to_string());
+        }
+        let mut guard = self.reading.lock().unwrap();
+        if guard.as_ref().is_some_and(|s| s.key == key) {
+            *guard = None;
+        }
+        Ok(())
     }
 
     /// Stimme löschen; war sie aktiv, fällt die Auswahl auf die
@@ -896,6 +1349,27 @@ mod tests {
         let all = bodies.lock().unwrap().join("|");
         assert!(all.contains("Der erste Satz"));
         assert!(all.contains("Der zweite Satz"));
+    }
+
+    #[tokio::test]
+    async fn unchanged_text_is_served_from_the_cache_on_replay() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let port = spawn_mock(calls.clone(), bodies).await;
+        let core = TtsCore::for_test(port);
+        core.ensure_server_core().await.unwrap();
+        let text = "Dieser Satz ist lang genug für den Cache-Test.";
+        core.speak_core(text).await.unwrap();
+        core.speak_core(text).await.unwrap();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "der zweite, unveränderte Lauf kommt aus dem Cache"
+        );
+        core.speak_core("Ein anderer Satz erzwingt eine neue Synthese.")
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "neuer Text → neuer Request");
     }
 
     #[tokio::test]
