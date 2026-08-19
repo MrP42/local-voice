@@ -116,6 +116,15 @@ pub enum MeetingEvent {
 // Session internals
 // ---------------------------------------------------------------------------
 
+/// What the capture callbacks hand to the transcription worker. `Shutdown`
+/// exists because "all senders dropped" is not a reliable end signal here: a
+/// loopback start that timed out may still be holding a sender clone in a
+/// thread we have given up on, and `stop()` must not block on it.
+enum WorkItem {
+    Chunk(u8, Chunk),
+    Shutdown,
+}
+
 /// One channel's write path: WAV file plus the chunker that feeds the worker.
 struct ChannelSink {
     writer: Option<StreamingWavWriter>,
@@ -218,7 +227,7 @@ struct RecordingSession {
     system_sink: Option<Arc<Mutex<ChannelSink>>>,
     mic_path: PathBuf,
     system_path: Option<PathBuf>,
-    work_tx: Option<mpsc::Sender<(u8, Chunk)>>,
+    work_tx: Option<mpsc::Sender<WorkItem>>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -330,7 +339,7 @@ impl MeetingRecorderManager {
         let paused = Arc::new(AtomicBool::new(false));
         let levels = Arc::new(LevelEmitter::new(self.app.clone()));
 
-        let (work_tx, work_rx) = mpsc::channel::<(u8, Chunk)>();
+        let (work_tx, work_rx) = mpsc::channel::<WorkItem>();
         let worker = self.spawn_worker(meeting_id.clone(), work_rx);
 
         self.transcription.initiate_model_load();
@@ -429,7 +438,7 @@ impl MeetingRecorderManager {
     fn spawn_worker(
         &self,
         meeting_id: String,
-        work_rx: mpsc::Receiver<(u8, Chunk)>,
+        work_rx: mpsc::Receiver<WorkItem>,
     ) -> JoinHandle<()> {
         let app = self.app.clone();
         let store = Arc::clone(&self.store);
@@ -438,7 +447,11 @@ impl MeetingRecorderManager {
             .name("meeting-transcribe".to_string())
             .spawn(move || {
                 let mut next_index: u32 = 0;
-                while let Ok((channel, chunk)) = work_rx.recv() {
+                while let Ok(item) = work_rx.recv() {
+                    let (channel, chunk) = match item {
+                        WorkItem::Chunk(channel, chunk) => (channel, chunk),
+                        WorkItem::Shutdown => break,
+                    };
                     let samples = chunk.samples.len();
                     match transcription.transcribe_segments(chunk.samples) {
                         Ok(timed) => {
@@ -575,8 +588,11 @@ impl MeetingRecorderManager {
             if let Some(sink) = &system_sink {
                 flush_sink(CHANNEL_SYSTEM, sink, tx);
             }
+            // FIFO: everything queued above is transcribed before the worker
+            // sees this and stops.
+            let _ = tx.send(WorkItem::Shutdown);
         }
-        drop(work_tx); // closes the channel so the worker drains and exits
+        drop(work_tx);
         if let Some(handle) = worker {
             let _ = handle.join();
         }
@@ -692,7 +708,7 @@ fn channel_callback(
     channel: u8,
     sink: Arc<Mutex<ChannelSink>>,
     paused: Arc<AtomicBool>,
-    work_tx: mpsc::Sender<(u8, Chunk)>,
+    work_tx: mpsc::Sender<WorkItem>,
     levels: Arc<LevelEmitter>,
 ) -> impl FnMut(&[i16]) + Send + 'static {
     move |samples: &[i16]| {
@@ -724,17 +740,17 @@ fn channel_callback(
                 }
             }
             if let Some(chunk) = sink.chunker.push(samples) {
-                let _ = work_tx.send((channel, chunk));
+                let _ = work_tx.send(WorkItem::Chunk(channel, chunk));
             }
         }
         levels.record(channel, rms(samples));
     }
 }
 
-fn flush_sink(channel: u8, sink: &Arc<Mutex<ChannelSink>>, work_tx: &mpsc::Sender<(u8, Chunk)>) {
+fn flush_sink(channel: u8, sink: &Arc<Mutex<ChannelSink>>, work_tx: &mpsc::Sender<WorkItem>) {
     if let Ok(mut sink) = sink.lock() {
         if let Some(chunk) = sink.chunker.flush() {
-            let _ = work_tx.send((channel, chunk));
+            let _ = work_tx.send(WorkItem::Chunk(channel, chunk));
         }
     }
 }
