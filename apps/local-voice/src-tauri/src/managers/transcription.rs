@@ -21,8 +21,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    Backend, Feature, Model, ModelOptions, ParakeetStreamOptions, RunExtension, RunOptions, Session,
-    StreamExtension, StreamOptions, Task, WhisperRunOptions,
+    Backend, Feature, Model, ModelOptions, ParakeetStreamOptions, RunExtension, RunOptions,
+    Session, StreamExtension, StreamOptions, Task, WhisperRunOptions,
 };
 use transcribe_rs::{
     onnx::{
@@ -1057,8 +1057,8 @@ impl TranscriptionManager {
             // training menu; available: 13 6 3 0` cost the whole dictation.
             // A dial nobody can see is not worth a silent failure, so an
             // unknown value is dropped and the model's own default used.
-            let family_ext = crate::settings::validated_lookahead(stream_lookahead_frames)
-                .map(|frames| {
+            let family_ext =
+                crate::settings::validated_lookahead(stream_lookahead_frames).map(|frames| {
                     StreamExtension::ParakeetStream(ParakeetStreamOptions {
                         att_context_right: Some(frames),
                     })
@@ -1817,6 +1817,206 @@ impl TranscriptionManager {
 
         Ok(final_result)
     }
+
+    // M8 meetings fundament (docs/superpowers/plans/2026-08-19-m8-meetings-fundament.md):
+    // deliberately NOT a refactor of transcribe() above. This mirrors its
+    // structure (activity touch, load-wait, catch_unwind engine-take, engine
+    // match) so the dictation path stays byte-identical and M3-stable; the
+    // duplication is the price of that stability.
+    pub fn transcribe_segments(&self, audio: Vec<f32>) -> Result<Vec<TimedSegment>> {
+        // Update last activity timestamp
+        self.touch_activity();
+
+        let audio_len = audio.len();
+        debug!("Audio vector length: {}", audio_len);
+
+        if audio.is_empty() {
+            debug!("Empty audio vector");
+            self.maybe_unload_immediately("empty audio");
+            return Ok(Vec::new());
+        }
+
+        let audio_ms = (audio_len as u64 * 1000) / 16_000;
+
+        // Check if model is loaded, if not try to load it
+        {
+            // If the model is loading, wait for it to complete.
+            let mut is_loading = self.is_loading.lock().unwrap();
+            while *is_loading {
+                is_loading = self.loading_condvar.wait(is_loading).unwrap();
+            }
+
+            let engine_guard = self.lock_engine();
+            if engine_guard.is_none() {
+                return Err(anyhow::anyhow!("Model is not loaded for transcription."));
+            }
+        }
+
+        let settings = get_settings(&self.app_handle);
+        let active_model = self
+            .get_current_model()
+            .unwrap_or_else(|| settings.selected_model.clone());
+        let validated_language =
+            effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
+
+        // Perform transcription with the appropriate engine.
+        // We use catch_unwind to prevent engine panics from poisoning the mutex,
+        // which would make the app hang indefinitely on subsequent operations.
+        let result = {
+            let mut engine_guard = self.lock_engine();
+
+            // Take the engine out so we own it during transcription.
+            // If the engine panics, we simply don't put it back (effectively unloading it)
+            // instead of poisoning the mutex.
+            let mut engine = match engine_guard.take() {
+                Some(e) => e,
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Model failed to load after auto-load attempt. Please check your model settings."
+                    ));
+                }
+            };
+
+            // Release the lock before transcribing — no mutex held during the engine call
+            drop(engine_guard);
+
+            let transcribe_result =
+                catch_unwind(AssertUnwindSafe(|| -> Result<Vec<TimedSegment>> {
+                    match &mut engine {
+                        LoadedEngine::TranscribeCpp(session) => {
+                            let run_options = RunOptions::default();
+                            session
+                                .run(&audio, &run_options)
+                                .map(|t| segments_from_result(&t.text, None, audio_ms))
+                                .map_err(|e| {
+                                    anyhow::anyhow!("transcribe-cpp transcription failed: {}", e)
+                                })
+                        }
+                        LoadedEngine::Parakeet(parakeet_engine) => {
+                            let params = ParakeetParams {
+                                timestamp_granularity: Some(TimestampGranularity::Segment),
+                                ..Default::default()
+                            };
+                            parakeet_engine
+                                .transcribe_with(&audio, &params)
+                                .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                                .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))
+                        }
+                        LoadedEngine::Moonshine(moonshine_engine) => moonshine_engine
+                            .transcribe(&audio, &TranscribeOptions::default())
+                            .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                            .map_err(|e| anyhow::anyhow!("Moonshine transcription failed: {}", e)),
+                        LoadedEngine::MoonshineStreaming(streaming_engine) => streaming_engine
+                            .transcribe(&audio, &TranscribeOptions::default())
+                            .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                            .map_err(|e| {
+                                anyhow::anyhow!("Moonshine streaming transcription failed: {}", e)
+                            }),
+                        LoadedEngine::SenseVoice(sense_voice_engine) => {
+                            let language = match normalize_cjk_language(&validated_language) {
+                                "zh" => Some("zh".to_string()),
+                                "en" => Some("en".to_string()),
+                                "ja" => Some("ja".to_string()),
+                                "ko" => Some("ko".to_string()),
+                                "yue" => Some("yue".to_string()),
+                                _ => None,
+                            };
+                            let params = SenseVoiceParams {
+                                language,
+                                use_itn: Some(true),
+                            };
+                            sense_voice_engine
+                                .transcribe_with(&audio, &params)
+                                .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                                .map_err(|e| {
+                                    anyhow::anyhow!("SenseVoice transcription failed: {}", e)
+                                })
+                        }
+                        LoadedEngine::GigaAM(gigaam_engine) => gigaam_engine
+                            .transcribe(&audio, &TranscribeOptions::default())
+                            .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                            .map_err(|e| anyhow::anyhow!("GigaAM transcription failed: {}", e)),
+                        LoadedEngine::Canary(canary_engine) => {
+                            let lang = if validated_language == "auto" {
+                                None
+                            } else {
+                                Some(validated_language.clone())
+                            };
+                            let options = TranscribeOptions {
+                                language: lang,
+                                translate: settings.translate_to_english,
+                                ..Default::default()
+                            };
+                            canary_engine
+                                .transcribe(&audio, &options)
+                                .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                                .map_err(|e| anyhow::anyhow!("Canary transcription failed: {}", e))
+                        }
+                        LoadedEngine::Cohere(cohere_engine) => {
+                            let lang = if validated_language == "auto" {
+                                None
+                            } else {
+                                Some(normalize_cjk_language(&validated_language).to_string())
+                            };
+                            let options = TranscribeOptions {
+                                language: lang,
+                                ..Default::default()
+                            };
+                            cohere_engine
+                                .transcribe(&audio, &options)
+                                .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
+                                .map_err(|e| anyhow::anyhow!("Cohere transcription failed: {}", e))
+                        }
+                    }
+                }));
+
+            match transcribe_result {
+                Ok(inner_result) => {
+                    // Success or normal error: return the engine unless a model
+                    // switch/unload invalidated it while it was in use.
+                    self.return_engine(engine, &active_model);
+                    inner_result?
+                }
+                Err(panic_payload) => {
+                    // Engine panicked — do NOT put it back (it's in an unknown state).
+                    // The engine is dropped here, effectively unloading it.
+                    let panic_msg = panic_payload_message(panic_payload.as_ref());
+                    error!(
+                        "Transcription engine panicked: {}. Model has been unloaded.",
+                        panic_msg
+                    );
+
+                    // Clear the model ID so it will be reloaded on next attempt
+                    {
+                        let mut current_model = self
+                            .current_model_id
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        *current_model = None;
+                    }
+
+                    let _ = self.app_handle.emit(
+                        "model-state-changed",
+                        ModelStateEvent {
+                            event_type: "unloaded".to_string(),
+                            model_id: None,
+                            model_name: None,
+                            error: Some(format!("Engine panicked: {}", panic_msg)),
+                        },
+                    );
+
+                    return Err(anyhow::anyhow!(
+                        "Transcription engine panicked: {}. The model has been unloaded and will reload on next attempt.",
+                        panic_msg
+                    ));
+                }
+            }
+        };
+
+        self.maybe_unload_immediately("transcription");
+
+        Ok(result)
+    }
 }
 
 struct StreamPerf {
@@ -1923,6 +2123,55 @@ impl StreamPerf {
     fn compute_secs(&self) -> f64 {
         self.stream_compute_elapsed.as_secs_f64()
     }
+}
+
+/// A transcript span with millisecond timestamps. Produced by
+/// `transcribe_segments()` (see docs/superpowers/plans/2026-08-19-m8-meetings-fundament.md).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct TimedSegment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+/// Pure conversion from an engine's raw transcription output to
+/// millisecond-timestamped segments. Engines without segment support (`None`,
+/// or an entirely blank segment list) yield a single segment spanning the
+/// whole clip; a blank/empty `full_text` yields no segments at all.
+pub fn segments_from_result(
+    full_text: &str,
+    segments: Option<Vec<transcribe_rs::TranscriptionSegment>>,
+    audio_ms: u64,
+) -> Vec<TimedSegment> {
+    if let Some(segs) = segments {
+        let mapped: Vec<TimedSegment> = segs
+            .into_iter()
+            .filter_map(|s| {
+                let text = s.text.trim().to_string();
+                if text.is_empty() {
+                    return None;
+                }
+                Some(TimedSegment {
+                    start_ms: (s.start * 1000.0).round() as u64,
+                    end_ms: (s.end * 1000.0).round() as u64,
+                    text,
+                })
+            })
+            .collect();
+        if !mapped.is_empty() {
+            return mapped;
+        }
+    }
+
+    let text = full_text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    vec![TimedSegment {
+        start_ms: 0,
+        end_ms: audio_ms,
+        text: text.to_string(),
+    }]
 }
 
 fn real_time_factor(audio_secs: f64, compute_secs: f64) -> f64 {
@@ -2361,6 +2610,47 @@ mod tests {
 
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
+    }
+
+    #[test]
+    fn engine_segments_become_ms_and_keep_their_text() {
+        let segs = vec![
+            transcribe_rs::TranscriptionSegment {
+                start: 0.0,
+                end: 1.5,
+                text: " Hallo.".into(),
+            },
+            transcribe_rs::TranscriptionSegment {
+                start: 1.62,
+                end: 3.0,
+                text: " Wie geht's?".into(),
+            },
+        ];
+        let out = segments_from_result("Hallo. Wie geht's?", Some(segs), 3_000);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].start_ms, 0);
+        assert_eq!(out[0].end_ms, 1_500);
+        assert_eq!(out[1].start_ms, 1_620);
+        assert_eq!(out[1].text, "Wie geht's?"); // getrimmt
+    }
+
+    #[test]
+    fn engines_without_segments_yield_one_full_span_segment() {
+        let out = segments_from_result("Ganzer Text.", None, 9_150);
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].start_ms, out[0].end_ms), (0, 9_150));
+        assert_eq!(out[0].text, "Ganzer Text.");
+    }
+
+    #[test]
+    fn empty_text_yields_no_segments_at_all() {
+        assert!(segments_from_result("   ", None, 5_000).is_empty());
+        let ws = vec![transcribe_rs::TranscriptionSegment {
+            start: 0.0,
+            end: 1.0,
+            text: "  ".into(),
+        }];
+        assert!(segments_from_result("", Some(ws), 1_000).is_empty());
     }
 
     #[test]
