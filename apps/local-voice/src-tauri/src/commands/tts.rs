@@ -203,6 +203,23 @@ pub fn tts_export_format(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 #[specta::specta]
+pub async fn tts_summarize_text(
+    app: AppHandle,
+    text: String,
+    options: crate::summarizer::SummaryOptions,
+) -> Result<String, String> {
+    let settings = crate::settings::get_settings(&app);
+    crate::summarizer::summarize(&settings, &text, &options).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_extract_document(path: String) -> Result<String, String> {
+    crate::media::extract_document_text(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn tts_voicechange_record_start(app: AppHandle) -> Result<(), String> {
     app.state::<Arc<TtsManager>>().record_voicechange_start()
 }

@@ -656,6 +656,17 @@ pub fn change_tts_export_format_setting(app: AppHandle, value: String) -> Result
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_tts_context_menu_setting(app: AppHandle, value: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_context_menu = value;
+    settings::write_settings(&app, settings);
+    #[cfg(windows)]
+    crate::context_menu::sync(value)?;
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_tts_translate_lang_setting(app: AppHandle, value: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.tts_translate_lang = value;

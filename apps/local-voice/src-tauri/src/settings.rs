@@ -550,6 +550,10 @@ pub struct AppSettings {
     /// Fish-Server encodiert direkt.
     #[serde(default = "default_tts_export_format")]
     pub tts_export_format: String,
+    /// Windows-Explorer-Kontextmenü „Mit Local Voice AI vorlesen" für
+    /// Dokumente (txt/md/pdf/docx). Benutzer-Registry, kein Admin nötig.
+    #[serde(default)]
+    pub tts_context_menu: bool,
 }
 
 fn default_tts_translate_lang() -> String {
@@ -1149,6 +1153,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_volume: default_tts_volume(),
         tts_speed: default_tts_speed(),
         tts_export_format: default_tts_export_format(),
+        tts_context_menu: false,
     }
 }
 

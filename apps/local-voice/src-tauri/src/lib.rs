@@ -1,5 +1,7 @@
 mod actions;
 mod appdata_migration;
+#[cfg(windows)]
+mod context_menu;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -22,6 +24,7 @@ pub mod segmenter;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod summarizer;
 mod transcription_coordinator;
 mod translator;
 mod tray;
@@ -854,6 +857,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_tts_volume_setting,
             shortcut::change_tts_speed_setting,
             shortcut::change_tts_export_format_setting,
+            shortcut::change_tts_context_menu_setting,
             shortcut::change_overlay_position_setting,
             shortcut::change_overlay_style_setting,
             shortcut::change_debug_mode_setting,
@@ -974,6 +978,8 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_reading_seek,
             commands::tts::tts_speak_resume,
             commands::tts::tts_export_format,
+            commands::tts::tts_summarize_text,
+            commands::tts::tts_extract_document,
             commands::tts::tts_voicechange_record_start,
             commands::tts::tts_voicechange_record_stop,
             commands::tts::tts_voicechange_file,
@@ -1073,6 +1079,24 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
+            } else if let Some(pos) = args.iter().position(|a| a == "--read-file") {
+                // Explorer-Kontextmenü bei bereits laufender App: Dokument
+                // öffnen und sofort vorlesen.
+                if let Some(path) = args.get(pos + 1).cloned() {
+                    show_main_window(app);
+                    let tts = app
+                        .state::<Arc<managers::tts::TtsManager>>()
+                        .inner()
+                        .clone();
+                    match tts.reading_open(&path) {
+                        Ok(_) => {
+                            if let Err(e) = tts.reading_play() {
+                                log::error!("--read-file play failed: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("--read-file open failed: {e}"),
+                    }
+                }
             } else {
                 show_main_window(app);
             }
@@ -1262,6 +1286,32 @@ pub fn run(cli_args: CliArgs) {
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
             initialize_core_logic(&app_handle);
+
+            // Kontextmenü-Eintrag mit dem Setting synchronisieren (aktualisiert
+            // auch den EXE-Pfad, wenn Builds wandern).
+            #[cfg(windows)]
+            if let Err(e) = context_menu::sync(settings.tts_context_menu) {
+                log::warn!("context menu sync failed: {e}");
+            }
+
+            // Kontextmenü-/CLI-Start mit Dokument: öffnen und sofort vorlesen.
+            if let Some(path) = cli_args.read_file.clone() {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let tts = handle
+                        .state::<Arc<managers::tts::TtsManager>>()
+                        .inner()
+                        .clone();
+                    match tts.reading_open(&path.to_string_lossy()) {
+                        Ok(_) => {
+                            if let Err(e) = tts.reading_play() {
+                                log::error!("--read-file play failed: {e}");
+                            }
+                        }
+                        Err(e) => log::error!("--read-file open failed: {e}"),
+                    }
+                });
+            }
 
             // Populate the overlay-enabled cache from initial settings so the
             // audio path (overlay::emit_levels, called ~24 Hz during recording)

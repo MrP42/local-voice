@@ -103,4 +103,10 @@ pub struct CliArgs {
     /// Write the WAV produced by --tts-test to this file (audible evidence).
     #[arg(long, value_name = "FILE")]
     pub tts_out_wav: Option<PathBuf>,
+
+    /// Open this document (txt/md/pdf/docx) in the read-aloud library and
+    /// start playback — used by the Explorer context menu. Forwards to a
+    /// running instance if there is one.
+    #[arg(long, value_name = "FILE")]
+    pub read_file: Option<PathBuf>,
 }
