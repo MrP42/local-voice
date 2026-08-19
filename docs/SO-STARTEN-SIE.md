@@ -127,3 +127,14 @@ Ein Hinweis zur GPU: Während der Fish-Server geladen ist, belegt er rund 20 GB
 Grafikspeicher. Andere GPU-Programme (ComfyUI, große Ollama-Modelle) gleichzeitig
 laufen zu lassen macht alles um ein Vielfaches langsamer — die App zeigt beim
 Serverstart einen Hinweis, wenn genau das passiert.
+
+### Erweiterungen vom 19.08.2026
+
+| Funktion | Bedienung |
+|---|---|
+| **Bücher & Dokumente (Hörbuch)** | Karte „Bücher & Dokumente": TXT/MD/PDF/DOCX öffnen → Abspielen. Fortschritt wird **je Dokument gespeichert** (Bibliothek mit Fortsetzen, Zurücksetzen, Entfernen), satzweises Springen mit ◀/▶, Pause/Weiter. Das Vorlesen startet nach dem ersten Satz (~2 s), der Rest entsteht währenddessen. |
+| **Player-Steuerung im Textfeld** | Vorlesen, Pause, Weiter (setzt am letzten vollständigen Satz fort), Satzanzeige. Bereits erzeugte, unveränderte Sätze kommen aus einem Cache und werden nicht neu synthetisiert. |
+| **Lautstärke / Geschwindigkeit / Format** | In den Vorlesen-Einstellungen: Lautstärke-Regler, Tempo 0,5×–2×, Exportformat WAV/MP3/Opus für gespeicherte Audiodateien. |
+| **KI-Zusammenfassung** | Karte „KI-Zusammenfassung": Text einfügen oder Dokument laden → Umfang/Detailgrad/Zielgruppe wählen → zusammenfassen (LLM über die Nachbearbeitungs-Einstellungen: lokal per Ollama oder API) → vorlesen oder **als Audiodatei speichern**. |
+| **Beliebige Medienformate** | Stimmwechsler und Stimmen-Import akzeptieren jetzt auch mp3, m4a, mp4, mov, mkv u. a. (Umwandlung über das installierte ffmpeg). |
+| **Explorer-Kontextmenü** | Schalter in den Vorlesen-Einstellungen: „Mit Local Voice AI vorlesen" im Rechtsklick-Menü von Dokumentdateien. Für **markierten Text** bietet Windows kein systemweites Menü — dafür gibt es den Hotkey Strg+Alt+Leertaste. |
