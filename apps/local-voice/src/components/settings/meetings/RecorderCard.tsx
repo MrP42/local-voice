@@ -7,6 +7,7 @@ import { Input } from "../../ui/Input";
 import { Dialog } from "../../ui/Dialog";
 import { Alert } from "../../ui/Alert";
 import Badge from "../../ui/Badge";
+import { translateMeetingError } from "./meetingErrors";
 
 type Phase = "idle" | "recording" | "paused";
 
@@ -56,7 +57,7 @@ export const RecorderCard: React.FC = () => {
         setMicLevel(payload.mic);
         setSystemLevel(payload.system);
       } else if (payload.kind === "error") {
-        setError(payload.message);
+        setError(translateMeetingError(payload.message, t));
         setBusy(false);
       }
     });
@@ -81,7 +82,7 @@ export const RecorderCard: React.FC = () => {
     setBusy(false);
     setConsentOpen(false);
     if (result.status === "error") {
-      setError(result.error);
+      setError(translateMeetingError(result.error, t));
       return;
     }
     setPhase("recording");
@@ -100,7 +101,7 @@ export const RecorderCard: React.FC = () => {
     const result = await commands.meetingsStop();
     setBusy(false);
     if (result.status === "error") {
-      setError(result.error);
+      setError(translateMeetingError(result.error, t));
       return;
     }
     setPhase("idle");

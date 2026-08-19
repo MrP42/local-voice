@@ -654,7 +654,8 @@
       "title": "Consent required",
       "body": "Recording non-public conversations without the consent of ALL participants is unlawful in many jurisdictions. Confirm that all participants have been informed and have agreed.",
       "confirm": "All participants have agreed",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "importBody": "You are importing an existing recording. The file's existence is not proof of consent — confirm that everyone in this conversation agreed to being recorded."
     },
     "live": {
       "empty": "No segments yet — the first one appears after ~20 seconds.",
@@ -664,7 +665,11 @@
     },
     "errors": {
       "consentRequired": "Recording will not start without confirmed consent.",
-      "dictationActive": "A dictation is currently running — please stop it first."
+      "dictationActive": "A dictation is currently running — please stop it first.",
+      "deltaStoreFailed": "The transcript could not be saved. The recording keeps running.",
+      "chunkTranscriptionFailed": "A chunk could not be transcribed. The recording keeps running.",
+      "loopbackStartTimeout": "System audio could not be started — the recording continues with the microphone only.",
+      "deleteFailed": "Deletion failed. Please try again."
     },
     "retention": {
       "title": "Audio file retention",

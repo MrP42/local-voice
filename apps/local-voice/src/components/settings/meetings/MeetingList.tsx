@@ -8,6 +8,7 @@ import { Dialog } from "../../ui/Dialog";
 import { Alert } from "../../ui/Alert";
 import Badge from "../../ui/Badge";
 import { Trash2 } from "lucide-react";
+import { translateMeetingError } from "./meetingErrors";
 
 const PAGE_SIZE = 25;
 
@@ -43,7 +44,11 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
   const [hasMore, setHasMore] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importConsentPath, setImportConsentPath] = useState<string | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -101,7 +106,7 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
     return () => observer.disconnect();
   }, [loading, hasMore, loadPage, meetings.length]);
 
-  const importFile = async () => {
+  const pickImportFile = async () => {
     setImportError(null);
     const picked = await open({
       multiple: false,
@@ -124,12 +129,22 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
       ],
     });
     if (typeof picked !== "string") return;
+    // Spec A1: the import path needs the same consent confirmation as a
+    // live recording — the file's mere existence is not proof that everyone
+    // in it agreed to being recorded. The command is only ever called with
+    // `consentConfirmed: true` after this dialog is explicitly confirmed.
+    setImportConsentPath(picked);
+  };
 
+  const confirmImport = async () => {
+    const path = importConsentPath;
+    if (!path) return;
+    setImportConsentPath(null);
     setImporting(true);
-    const result = await commands.meetingsImportFile(picked, true);
+    const result = await commands.meetingsImportFile(path, true);
     setImporting(false);
     if (result.status === "error") {
-      setImportError(result.error);
+      setImportError(translateMeetingError(result.error, t));
       return;
     }
     // The import command's own return is the completion signal (no state
@@ -141,9 +156,13 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
     setDeleteTarget(null);
+    setDeleteError(null);
     setMeetings((prev) => prev.filter((m) => m.id !== id));
     const result = await commands.meetingsDelete(id);
-    if (result.status === "error") void loadPage(0);
+    if (result.status === "error") {
+      setDeleteError(t("meetings.errors.deleteFailed"));
+      void loadPage(0);
+    }
   };
 
   return (
@@ -154,13 +173,14 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
           <Button
             variant="secondary"
             size="sm"
-            onClick={importFile}
+            onClick={pickImportFile}
             disabled={importing}
           >
             {t("meetings.list.import")}
           </Button>
         </div>
         {importError && <Alert variant="error">{importError}</Alert>}
+        {deleteError && <Alert variant="error">{deleteError}</Alert>}
 
         {loading ? (
           <p className="text-sm text-text/60 text-center py-3">
@@ -241,6 +261,32 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
         }
       >
         <p className="text-sm text-text/80">{t("meetings.list.deleteConfirm")}</p>
+      </Dialog>
+
+      <Dialog
+        open={importConsentPath !== null}
+        onOpenChange={(open) => {
+          if (!open) setImportConsentPath(null);
+        }}
+        title={t("meetings.consent.title")}
+        closeLabel={t("meetings.consent.cancel")}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setImportConsentPath(null)}
+            >
+              {t("meetings.consent.cancel")}
+            </Button>
+            <Button onClick={confirmImport} disabled={importing}>
+              {t("meetings.consent.confirm")}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text/80 whitespace-pre-wrap">
+          {t("meetings.consent.importBody")}
+        </p>
       </Dialog>
     </SettingsGroup>
   );

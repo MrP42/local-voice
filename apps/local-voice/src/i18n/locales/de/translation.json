@@ -833,7 +833,8 @@
       "title": "Einwilligung erforderlich",
       "body": "Die Aufnahme nichtöffentlich gesprochener Worte ohne Einwilligung ALLER Beteiligten ist strafbar (§ 201 StGB). Bestätigen Sie, dass alle Beteiligten informiert sind und zugestimmt haben.",
       "confirm": "Alle Beteiligten haben zugestimmt",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "importBody": "Sie importieren eine bestehende Aufnahme. Dass die Datei existiert, belegt keine Einwilligung — bestätigen Sie, dass alle an diesem Gespräch Beteiligten der Aufzeichnung zugestimmt haben."
     },
     "live": {
       "empty": "Noch keine Segmente — das erste erscheint nach ~20 Sekunden.",
@@ -843,7 +844,11 @@
     },
     "errors": {
       "consentRequired": "Ohne bestätigte Einwilligung startet keine Aufnahme.",
-      "dictationActive": "Ein Diktat läuft gerade — bitte zuerst beenden."
+      "dictationActive": "Ein Diktat läuft gerade — bitte zuerst beenden.",
+      "deltaStoreFailed": "Das Transkript konnte nicht gespeichert werden. Die Aufnahme läuft weiter.",
+      "chunkTranscriptionFailed": "Ein Abschnitt konnte nicht transkribiert werden. Die Aufnahme läuft weiter.",
+      "loopbackStartTimeout": "System-Audio konnte nicht gestartet werden — die Aufnahme läuft nur mit dem Mikrofon weiter.",
+      "deleteFailed": "Löschen fehlgeschlagen. Bitte erneut versuchen."
     },
     "retention": {
       "title": "Aufbewahrung der Audiodatei",
