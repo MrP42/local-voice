@@ -513,6 +513,19 @@ impl ShortcutAction for TranscribeAction {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
+        // A meeting recording owns the microphone, the overlay and the tray
+        // state. Starting a dictation on top of it would cut both recordings
+        // short, so the hotkey is refused with a visible notice instead.
+        if let Some(recorder) =
+            app.try_state::<Arc<crate::managers::meetings::recorder::MeetingRecorderManager>>()
+        {
+            if recorder.is_recording() {
+                debug!("Dictation refused: a meeting recording is running");
+                utils::show_transient_notice(app, "meetings.dictationBlocked");
+                return;
+            }
+        }
+
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
