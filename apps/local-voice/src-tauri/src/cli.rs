@@ -121,8 +121,12 @@ pub struct CliArgs {
     /// mid recording" meeting — a row left on `recording` with a WAV whose
     /// RIFF/data sizes were never patched — from this 16 kHz mono WAV, then
     /// prints `MEETING_ID=<ulid>`. The next meetings run repairs it through
-    /// the real `recover_orphans` path. Hidden: it only ever writes test
-    /// data, it is not a user-facing feature.
+    /// the real `recover_orphans` path.
+    ///
+    /// Hidden from `--help`, and in RELEASE builds refused outright unless
+    /// `LVA_HARNESS_DESTRUCTIVE=1` is set: it writes fabricated rows into
+    /// whatever meetings database it finds, which on a user's machine is
+    /// their real one (see `make_orphan_allowed` in lib.rs).
     #[arg(long, value_name = "WAV", hide = true)]
     pub make_orphan: Option<PathBuf>,
 

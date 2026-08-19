@@ -379,7 +379,16 @@ Invoke-Scenario 'orphan-recovery' {
     # needs a microphone and stays manual; see the report.
     $src = Join-Path $FixtureDir 'm8_short_de.wav'
     if (-not (Test-Path $src)) { throw "fixture missing: $src" }
-    $mk = Invoke-App @('--make-orphan', $src)
+
+    # --make-orphan fabricates rows in the real meetings.db, so the release
+    # binary refuses it without this explicit opt-in. Set for exactly one
+    # invocation and removed again, whatever happens.
+    $env:LVA_HARNESS_DESTRUCTIVE = '1'
+    try {
+        $mk = Invoke-App @('--make-orphan', $src)
+    } finally {
+        Remove-Item Env:\LVA_HARNESS_DESTRUCTIVE -ErrorAction SilentlyContinue
+    }
     $id = $mk.Payload.meeting_id
     $wav = $mk.Payload.orphan_wav
     $script:CreatedMeetings += $id
@@ -417,6 +426,11 @@ Invoke-Scenario 'orphan-recovery' {
     $failed = @($checks | Where-Object { -not $_.ok } | ForEach-Object { $_.n })
     $detail = "orphan wav {0} bytes; declared data length {1} -> {2} (expected {3}); ffprobe after repair {4:N2} s; status={5}, segments={6}" -f `
         $fileSize, $brokenLen, $fixedLen, ($fileSize - 44), $fixedDur, $d.status, $d.segment_count
+    $script:Notes += ('orphan-recovery: ``--make-orphan`` schreibt erfundene Zeilen in die echte ' +
+        'meetings.db und wird im Release-Binary verweigert, solange nicht ' +
+        '``LVA_HARNESS_DESTRUCTIVE=1`` gesetzt ist (Produktivdaten-Integritaet; der Harness ' +
+        'laeuft gegen Release). Der Harness setzt die Variable fuer genau diesen einen Aufruf ' +
+        'und entfernt sie danach wieder.')
     if ($failed.Count) { $detail += "; FAILED: " + ($failed -join ', ') }
     Remove-Item -LiteralPath (Split-Path $wav) -Recurse -Force -ErrorAction SilentlyContinue
     return @{ Pass = ($failed.Count -eq 0); Detail = $detail; Data = $d }

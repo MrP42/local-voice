@@ -475,6 +475,31 @@ mod headless_guard_tests {
     }
 }
 
+#[cfg(test)]
+mod make_orphan_gate_tests {
+    use super::make_orphan_allowed;
+
+    /// The case that matters: a release build is what users run, and
+    /// `--make-orphan` fabricates rows in whatever meetings.db it finds.
+    /// Hiding the flag from `--help` is not a control, so without the
+    /// explicit opt-in it must refuse.
+    #[test]
+    fn release_without_the_env_var_is_refused() {
+        assert!(!make_orphan_allowed(false, false));
+    }
+
+    #[test]
+    fn release_with_the_env_var_is_allowed_for_the_harness() {
+        assert!(make_orphan_allowed(false, true));
+    }
+
+    #[test]
+    fn debug_builds_stay_unrestricted() {
+        assert!(make_orphan_allowed(true, false));
+        assert!(make_orphan_allowed(true, true));
+    }
+}
+
 /// Headless one-shot transcription for the `--transcribe-file` / `--list-devices`
 /// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
@@ -676,6 +701,24 @@ fn run_headless_meetings(app: &AppHandle, args: &CliArgs) -> i32 {
     }
 
     if let Some(source) = args.make_orphan.clone() {
+        // `--make-orphan` writes fabricated data into whatever meetings.db it
+        // finds — normally a real user's. `hide = true` keeps it out of
+        // `--help`, but hiding is not a control: the harness runs against the
+        // RELEASE binary, so anyone who learns the flag name could corrupt
+        // production data with it. Hence an explicit opt-in in release
+        // builds. The check lives here rather than in clap so the refusal can
+        // say what to do about it.
+        if !make_orphan_allowed(
+            cfg!(debug_assertions),
+            std::env::var(HARNESS_DESTRUCTIVE_ENV).as_deref() == Ok("1"),
+        ) {
+            eprintln!(
+                "error: --make-orphan writes fabricated test data into the meetings database \
+                 and is disabled in release builds. Set {HARNESS_DESTRUCTIVE_ENV}=1 to allow it \
+                 (scripts/m8-verify.ps1 does this for the orphan-recovery scenario only)."
+            );
+            return 3;
+        }
         return make_orphan_meeting(&store, &source, args.out.as_deref());
     }
 
@@ -840,6 +883,21 @@ fn meeting_payload(
         "document_kinds": documents.iter().map(|d| d.kind.clone()).collect::<Vec<_>>(),
         "segments": segments,
     }))
+}
+
+/// Opt-in switch for `--make-orphan` in release builds.
+pub const HARNESS_DESTRUCTIVE_ENV: &str = "LVA_HARNESS_DESTRUCTIVE";
+
+/// May `--make-orphan` run? Pure, so the rule is testable without a build
+/// flag or a process environment.
+///
+/// A debug build is already a developer's own machine, so the flag stays as
+/// convenient as it was. A release build is what the harness — and every
+/// user — actually runs, so there it takes a deliberate
+/// `LVA_HARNESS_DESTRUCTIVE=1` before it will fabricate rows in a real
+/// meetings database.
+fn make_orphan_allowed(is_debug: bool, env_set: bool) -> bool {
+    is_debug || env_set
 }
 
 /// `--make-orphan`: fabricates exactly the on-disk situation a crash during

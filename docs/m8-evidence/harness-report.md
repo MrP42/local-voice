@@ -1,6 +1,6 @@
 # M8 meetings - Abnahme-Harness
 
-Lauf: 2026-08-19 18:23:21 | Szenario-Satz: `all` | Binary: `C:\Users\wolff\local-voice-project\apps\local-voice\scripts\..\src-tauri\target\release\local-voice-ai.exe`
+Lauf: 2026-08-19 18:45:38 | Szenario-Satz: `all` | Binary: `C:\Users\wolff\local-voice-project\apps\local-voice\scripts\..\src-tauri\target\release\local-voice-ai.exe`
 
 **Automatisiert: 6/6 PASS.** Alles darunter unter "Manuell offen" wurde
 NICHT gemessen und ist als offen zu lesen - keine dieser Zeilen ist ein Ergebnis.
@@ -20,35 +20,35 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 
 | Szenario | Ergebnis | Messung |
 |---|---|---|
-| import-wav | PASS | status=ready, segments=2, channels=[2], chars=901, duration=60000 ms, import=3062 ms |
-| import-matrix | PASS | mp4: status=ready, segments=2, chars=901, 3250 ms // vtt: status=ready, segments=3, times=[1000-4500 10000-14250 60000-65000] // stereo-44k1: status=ready, segments=2, duration=60000 ms, chars=901, 3191 ms |
-| silence-timeline | PASS | status=ready, segments=9, first_start=0 ms, last_start=550009 ms, last_end=599996 ms, duration=600000 ms, silence gap 181190 ms starting at 183677 ms, import=30540 ms |
-| log-privacy | PASS | no spoken word appears in handy.log (5 words probed, transcript 901 chars, log 80,1 KB) |
-| retention | PASS | policy=Days(0); before: file=True, until=1787156598, segments=2; after: mic_path=null, until=null, segments=2, chars=901 |
+| import-wav | PASS | status=ready, segments=2, channels=[2], chars=901, duration=60000 ms, import=3621 ms |
+| import-matrix | PASS | mp4: status=ready, segments=2, chars=901, 3656 ms // vtt: status=ready, segments=3, times=[1000-4500 10000-14250 60000-65000] // stereo-44k1: status=ready, segments=2, duration=60000 ms, chars=901, 3331 ms |
+| silence-timeline | PASS | status=ready, segments=9, first_start=0 ms, last_start=550009 ms, last_end=599996 ms, duration=600000 ms, silence gap 181190 ms starting at 183677 ms, import=32704 ms |
+| log-privacy | PASS | no spoken word appears in handy.log (5 words probed, transcript 901 chars, log 132,6 KB) |
+| retention | PASS | policy=Days(0); before: file=True, until=1787157935, segments=2; after: mic_path=null, until=null, segments=2, chars=901 |
 | orphan-recovery | PASS | orphan wav 1920044 bytes; declared data length 0 -> 1920000 (expected 1920000); ffprobe after repair 60,00 s; status=ready, segments=1 |
 
 ### import-wav - Rohdaten (ohne Segmenttexte)
 ```json
 {
-  "last_end_ms": 59999,
-  "system_audio_path": null,
-  "duration_ms": 60000,
-  "total_text_chars": 901,
-  "title": "m8_short_de",
-  "source": "import",
-  "first_start_ms": 0,
+  "audio_retention_until": null,
+  "segment_count": 2,
+  "id": "01M0DEJ7ARERS9ED1FCW5KGJCM",
   "last_start_ms": 45412,
-  "consent_confirmed_at": 1787156547,
+  "ended_at": 1787157883,
+  "consent_confirmed_at": 1787157880,
+  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEJ7ARERS9ED1FCW5KGJCM\\import.wav",
+  "source": "import",
+  "title": "m8_short_de",
+  "last_end_ms": 59999,
+  "document_kinds": [],
+  "status": "ready",
+  "duration_ms": 60000,
   "channels": [
     {}
   ],
-  "ended_at": 1787156550,
-  "document_kinds": [],
-  "id": "01M0DD9HRADTEFCWD39JWM16S5",
-  "segment_count": 2,
-  "status": "ready",
-  "audio_retention_until": null,
-  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DD9HRADTEFCWD39JWM16S5\\import.wav"
+  "total_text_chars": 901,
+  "first_start_ms": 0,
+  "system_audio_path": null
 }
 ```
 
@@ -56,67 +56,67 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 ```json
 {
   "stereo": {
-    "last_end_ms": 59999,
-    "system_audio_path": null,
-    "duration_ms": 60000,
-    "total_text_chars": 901,
-    "title": "m8_stereo_44k",
-    "source": "import",
-    "first_start_ms": 0,
+    "audio_retention_until": null,
+    "segment_count": 2,
+    "id": "01M0DEJGV2KMED21W7NR3QX5YV",
     "last_start_ms": 45412,
-    "consent_confirmed_at": 1787156555,
-    "channels": [
-      {}
-    ],
-    "ended_at": 1787156558,
-    "document_kinds": [],
-    "id": "01M0DD9SZ7F7TAGSG1P9BTTJRH",
-    "segment_count": 2,
-    "status": "ready",
-    "audio_retention_until": null,
-    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DD9SZ7F7TAGSG1P9BTTJRH\\import.wav"
-  },
-  "mp4": {
-    "last_end_ms": 60031,
-    "system_audio_path": null,
-    "duration_ms": 60032,
-    "total_text_chars": 901,
-    "title": "m8_import",
+    "ended_at": 1787157893,
+    "consent_confirmed_at": 1787157889,
+    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEJGV2KMED21W7NR3QX5YV\\import.wav",
     "source": "import",
-    "first_start_ms": 0,
-    "last_start_ms": 45431,
-    "consent_confirmed_at": 1787156551,
+    "title": "m8_stereo_44k",
+    "last_end_ms": 59999,
+    "document_kinds": [],
+    "status": "ready",
+    "duration_ms": 60000,
     "channels": [
       {}
     ],
-    "ended_at": 1787156554,
-    "document_kinds": [],
-    "id": "01M0DD9NNFNWM2H1KJBXM6X11S",
-    "segment_count": 2,
-    "status": "ready",
-    "audio_retention_until": null,
-    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DD9NNFNWM2H1KJBXM6X11S\\import.wav"
+    "total_text_chars": 901,
+    "first_start_ms": 0,
+    "system_audio_path": null
   },
   "vtt": {
-    "last_end_ms": 65000,
-    "system_audio_path": null,
-    "duration_ms": null,
-    "total_text_chars": 172,
-    "title": "m8_sub",
-    "source": "subtitle",
-    "first_start_ms": 1000,
+    "audio_retention_until": null,
+    "segment_count": 3,
+    "id": "01M0DEJFXSSQCDJFDCC4SAD550",
     "last_start_ms": 60000,
-    "consent_confirmed_at": 1787156554,
+    "ended_at": null,
+    "consent_confirmed_at": 1787157888,
+    "mic_audio_path": null,
+    "source": "subtitle",
+    "title": "m8_sub",
+    "last_end_ms": 65000,
+    "document_kinds": [],
+    "status": "ready",
+    "duration_ms": null,
     "channels": [
       {}
     ],
-    "ended_at": null,
-    "document_kinds": [],
-    "id": "01M0DD9S4D7SWG8YYX3SQFQDBD",
-    "segment_count": 3,
-    "status": "ready",
+    "total_text_chars": 172,
+    "first_start_ms": 1000,
+    "system_audio_path": null
+  },
+  "mp4": {
     "audio_retention_until": null,
-    "mic_audio_path": null
+    "segment_count": 2,
+    "id": "01M0DEJC1SSCQ19KCN9M5MF2XM",
+    "last_start_ms": 45431,
+    "ended_at": 1787157888,
+    "consent_confirmed_at": 1787157884,
+    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEJC1SSCQ19KCN9M5MF2XM\\import.wav",
+    "source": "import",
+    "title": "m8_import",
+    "last_end_ms": 60031,
+    "document_kinds": [],
+    "status": "ready",
+    "duration_ms": 60032,
+    "channels": [
+      {}
+    ],
+    "total_text_chars": 901,
+    "first_start_ms": 0,
+    "system_audio_path": null
   }
 }
 ```
@@ -124,50 +124,50 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 ### silence-timeline - Rohdaten (ohne Segmenttexte)
 ```json
 {
-  "last_end_ms": 599996,
-  "system_audio_path": null,
-  "duration_ms": 600000,
-  "total_text_chars": 6225,
-  "title": "m8_silence_gap",
-  "source": "import",
-  "first_start_ms": 0,
+  "audio_retention_until": null,
+  "segment_count": 9,
+  "id": "01M0DEJN1BZP5QRJPYRNSA0ANP",
   "last_start_ms": 550009,
-  "consent_confirmed_at": 1787156559,
+  "ended_at": 1787157926,
+  "consent_confirmed_at": 1787157894,
+  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEJN1BZP5QRJPYRNSA0ANP\\import.wav",
+  "source": "import",
+  "title": "m8_silence_gap",
+  "last_end_ms": 599996,
+  "document_kinds": [],
+  "status": "ready",
+  "duration_ms": 600000,
   "channels": [
     {}
   ],
-  "ended_at": 1787156590,
-  "document_kinds": [],
-  "id": "01M0DD9XY8242Z8BTW0F8EKYN1",
-  "segment_count": 9,
-  "status": "ready",
-  "audio_retention_until": null,
-  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DD9XY8242Z8BTW0F8EKYN1\\import.wav"
+  "total_text_chars": 6225,
+  "first_start_ms": 0,
+  "system_audio_path": null
 }
 ```
 
 ### log-privacy - Rohdaten (ohne Segmenttexte)
 ```json
 {
-  "last_end_ms": 59999,
-  "system_audio_path": null,
-  "duration_ms": 60000,
-  "total_text_chars": 901,
-  "title": "m8_short_de",
-  "source": "import",
-  "first_start_ms": 0,
+  "audio_retention_until": null,
+  "segment_count": 2,
+  "id": "01M0DEKNXABKPX86E96HMPYXBQ",
   "last_start_ms": 45412,
-  "consent_confirmed_at": 1787156591,
+  "ended_at": 1787157931,
+  "consent_confirmed_at": 1787157927,
+  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEKNXABKPX86E96HMPYXBQ\\import.wav",
+  "source": "import",
+  "title": "m8_short_de",
+  "last_end_ms": 59999,
+  "document_kinds": [],
+  "status": "ready",
+  "duration_ms": 60000,
   "channels": [
     {}
   ],
-  "ended_at": 1787156594,
-  "document_kinds": [],
-  "id": "01M0DDAWN3GQSB2DT48QM5YTAE",
-  "segment_count": 2,
-  "status": "ready",
-  "audio_retention_until": null,
-  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DDAWN3GQSB2DT48QM5YTAE\\import.wav"
+  "total_text_chars": 901,
+  "first_start_ms": 0,
+  "system_audio_path": null
 }
 ```
 
@@ -175,51 +175,51 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 ```json
 {
   "before": {
-    "last_end_ms": 59999,
+    "audio_retention_until": 1787157935,
     "segment_count": 2,
-    "audio_file_exists": true,
-    "system_audio_path": null,
-    "duration_ms": 60000,
-    "total_text_chars": 901,
+    "id": "01M0DEKTD0MXWW3XSAH6KVKVQC",
     "title": "m8_short_de",
-    "source": "import",
-    "first_start_ms": 0,
+    "meeting_id": "01M0DEKTD0MXWW3XSAH6KVKVQC",
+    "audio_file_exists": true,
     "last_start_ms": 45412,
-    "consent_confirmed_at": 1787156595,
+    "system_audio_path": null,
+    "ended_at": 1787157935,
+    "consent_confirmed_at": 1787157932,
+    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DEKTD0MXWW3XSAH6KVKVQC\\import.wav",
+    "document_kinds": [],
+    "source": "import",
+    "status": "ready",
+    "last_end_ms": 59999,
+    "import_ms": 3334,
+    "source_file": "C:\\Users\\wolff\\local-voice-project\\apps\\local-voice\\scripts\\..\\src-tauri\\tests\\fixtures\\m8_short_de.wav",
+    "duration_ms": 60000,
     "channels": [
       {}
     ],
-    "db": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\meetings.db",
-    "ended_at": 1787156598,
-    "document_kinds": [],
-    "id": "01M0DDB0JZ0MGJXM30E4FTD4MM",
-    "audio_retention_until": 1787156598,
-    "status": "ready",
-    "source_file": "C:\\Users\\wolff\\local-voice-project\\apps\\local-voice\\scripts\\..\\src-tauri\\tests\\fixtures\\m8_short_de.wav",
-    "meeting_id": "01M0DDB0JZ0MGJXM30E4FTD4MM",
-    "import_ms": 3148,
-    "mic_audio_path": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\01M0DDB0JZ0MGJXM30E4FTD4MM\\import.wav"
+    "total_text_chars": 901,
+    "first_start_ms": 0,
+    "db": "C:\\Users\\wolff\\AppData\\Roaming\\de.wolffappliedai.localvoiceai\\meetings\\meetings.db"
   },
   "after": {
-    "last_end_ms": 59999,
-    "system_audio_path": null,
-    "duration_ms": 60000,
-    "total_text_chars": 901,
-    "title": "m8_short_de",
-    "source": "import",
-    "first_start_ms": 0,
+    "audio_retention_until": null,
+    "segment_count": 2,
+    "id": "01M0DEKTD0MXWW3XSAH6KVKVQC",
     "last_start_ms": 45412,
-    "consent_confirmed_at": 1787156595,
+    "ended_at": 1787157935,
+    "consent_confirmed_at": 1787157932,
+    "mic_audio_path": null,
+    "source": "import",
+    "title": "m8_short_de",
+    "last_end_ms": 59999,
+    "document_kinds": [],
+    "status": "ready",
+    "duration_ms": 60000,
     "channels": [
       {}
     ],
-    "ended_at": 1787156598,
-    "document_kinds": [],
-    "id": "01M0DDB0JZ0MGJXM30E4FTD4MM",
-    "segment_count": 2,
-    "status": "ready",
-    "audio_retention_until": null,
-    "mic_audio_path": null
+    "total_text_chars": 901,
+    "first_start_ms": 0,
+    "system_audio_path": null
   }
 }
 ```
@@ -227,25 +227,25 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 ### orphan-recovery - Rohdaten (ohne Segmenttexte)
 ```json
 {
-  "last_end_ms": 3000,
-  "system_audio_path": null,
-  "duration_ms": null,
-  "total_text_chars": 30,
-  "title": "Crash-Test",
-  "source": "live",
-  "first_start_ms": 0,
+  "audio_retention_until": null,
+  "segment_count": 1,
+  "id": "01M0DEM00VXRMSMXPABWZ12QAP",
   "last_start_ms": 0,
+  "ended_at": null,
   "consent_confirmed_at": 0,
+  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Local\\Temp\\m8-orphan-BWZ12QAP\\mic.wav",
+  "source": "live",
+  "title": "Crash-Test",
+  "last_end_ms": 3000,
+  "document_kinds": [],
+  "status": "ready",
+  "duration_ms": null,
   "channels": [
     {}
   ],
-  "ended_at": null,
-  "document_kinds": [],
-  "id": "01M0DDB5YTEENG536601RZX42G",
-  "segment_count": 1,
-  "status": "ready",
-  "audio_retention_until": null,
-  "mic_audio_path": "C:\\Users\\wolff\\AppData\\Local\\Temp\\m8-orphan-01RZX42G\\mic.wav"
+  "total_text_chars": 30,
+  "first_start_ms": 0,
+  "system_audio_path": null
 }
 ```
 
@@ -254,17 +254,18 @@ ein zweiter Lauf ist damit exakt ein App-Neustart.
 Der Harness laeuft gegen die echte `meetings.db` (dort liegt das installierte
 Modell). Diese Meetings bleiben stehen und koennen in der App geloescht werden:
 
-- `01M0DD9HRADTEFCWD39JWM16S5`
-- `01M0DD9NNFNWM2H1KJBXM6X11S`
-- `01M0DD9S4D7SWG8YYX3SQFQDBD`
-- `01M0DD9SZ7F7TAGSG1P9BTTJRH`
-- `01M0DD9XY8242Z8BTW0F8EKYN1`
-- `01M0DDAWN3GQSB2DT48QM5YTAE`
-- `01M0DDB0JZ0MGJXM30E4FTD4MM`
-- `01M0DDB5YTEENG536601RZX42G`
+- `01M0DEJ7ARERS9ED1FCW5KGJCM`
+- `01M0DEJC1SSCQ19KCN9M5MF2XM`
+- `01M0DEJFXSSQCDJFDCC4SAD550`
+- `01M0DEJGV2KMED21W7NR3QX5YV`
+- `01M0DEJN1BZP5QRJPYRNSA0ANP`
+- `01M0DEKNXABKPX86E96HMPYXBQ`
+- `01M0DEKTD0MXWW3XSAH6KVKVQC`
+- `01M0DEM00VXRMSMXPABWZ12QAP`
 
-- log-privacy: handy.log war beim Test 80,1 KB gross (Rotation bei 500 KB, KeepOne) - geprueft wurde die aktuelle Datei.
+- log-privacy: handy.log war beim Test 132,6 KB gross (Rotation bei 500 KB, KeepOne) - geprueft wurde die aktuelle Datei.
 - retention: settings_store.json wurde nach dem Lauf aus dem Backup zurueckgeschrieben.
+- orphan-recovery: ``--make-orphan`` schreibt erfundene Zeilen in die echte meetings.db und wird im Release-Binary verweigert, solange nicht ``LVA_HARNESS_DESTRUCTIVE=1`` gesetzt ist (Produktivdaten-Integritaet; der Harness laeuft gegen Release). Der Harness setzt die Variable fuer genau diesen einen Aufruf und entfernt sie danach wieder.
 
 ## Manuell offen (braucht Patrick am Geraet)
 
