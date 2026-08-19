@@ -87,6 +87,7 @@ hf-hub = { git = "https://github.com/cjpais/hf-hub", branch = "cancellable-downl
 zip = { version = "2", default-features = false, features = ["deflate"] }
 pdf-extract = "0.12.0"
 tempfile = "3"
+ulid = "1"
 
 [features]
 # GPU acceleration for the Whisper/GGUF backend on Windows x86_64. Opt-in because
