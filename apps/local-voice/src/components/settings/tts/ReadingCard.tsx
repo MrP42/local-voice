@@ -14,6 +14,7 @@ const percent = (info: ReadingInfo) =>
 export const ReadingCard = () => {
   const { t } = useTranslation();
   const [current, setCurrent] = useState<ReadingInfo | null>(null);
+  const [currentSentence, setCurrentSentence] = useState<string | null>(null);
   const [library, setLibrary] = useState<ReadingInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,8 +38,15 @@ export const ReadingCard = () => {
           : [...prev, { ...e.payload, playing: false }],
       );
     });
+    const unSentence = listen<{ context: string; text: string }>(
+      "tts-current-sentence",
+      (e) => {
+        if (e.payload.context === "reading") setCurrentSentence(e.payload.text);
+      },
+    );
     return () => {
       un.then((f) => f());
+      unSentence.then((f) => f());
     };
   }, [refreshLibrary]);
 
@@ -185,6 +193,11 @@ export const ReadingCard = () => {
                 style={{ width: `${percent(current)}%` }}
               />
             </div>
+            {current.playing && currentSentence && (
+              <p className="text-sm italic text-text/70 border-s-2 border-logo-primary ps-2 pt-1">
+                {currentSentence}
+              </p>
+            )}
           </div>
         )}
 

@@ -15,6 +15,7 @@ import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { Slider } from "../../ui/Slider";
+import { Select } from "../../ui/Select";
 import { ReadingCard } from "./ReadingCard";
 import { SummaryCard } from "./SummaryCard";
 
@@ -43,6 +44,7 @@ export const TtsSettings = () => {
     position: number;
     total: number;
   } | null>(null);
+  const [currentSentence, setCurrentSentence] = useState<string | null>(null);
   const startingTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -61,9 +63,16 @@ export const TtsSettings = () => {
       "tts-speak-progress",
       (e) => setSpeakProgress(e.payload),
     );
+    const unSentence = listen<{ context: string; text: string }>(
+      "tts-current-sentence",
+      (e) => {
+        if (e.payload.context === "speak") setCurrentSentence(e.payload.text);
+      },
+    );
     return () => {
       un.then((f) => f());
       unProgress.then((f) => f());
+      unSentence.then((f) => f());
     };
   }, []);
 
@@ -198,6 +207,11 @@ export const TtsSettings = () => {
               </span>
             )}
           </div>
+          {speaking && currentSentence && (
+            <p className="text-sm italic text-text/70 border-s-2 border-logo-primary ps-2">
+              {currentSentence}
+            </p>
+          )}
         </div>
       </SettingsGroup>
 
@@ -241,18 +255,21 @@ export const TtsSettings = () => {
           grouped={true}
           layout="horizontal"
         >
-          <select
-            className="text-sm bg-transparent border border-mid-gray/40 rounded-md px-2 py-1"
-            value={getSetting("tts_export_format") ?? "wav"}
-            onChange={(e) => updateSetting("tts_export_format", e.target.value)}
-          >
+          <div className="w-36">
             {/* Formatnamen sind Eigennamen — bewusst nicht übersetzt. */}
-            {/* eslint-disable i18next/no-literal-string */}
-            <option value="wav">WAV</option>
-            <option value="mp3">MP3</option>
-            <option value="opus">Opus</option>
-            {/* eslint-enable i18next/no-literal-string */}
-          </select>
+            <Select
+              value={getSetting("tts_export_format") ?? "wav"}
+              options={[
+                { value: "wav", label: "WAV" },
+                { value: "mp3", label: "MP3" },
+                { value: "opus", label: "Opus" },
+              ]}
+              isClearable={false}
+              onChange={(value) => {
+                if (value) updateSetting("tts_export_format", value);
+              }}
+            />
+          </div>
         </SettingContainer>
         <SettingContainer
           title={t("tts.settings.fishDir")}

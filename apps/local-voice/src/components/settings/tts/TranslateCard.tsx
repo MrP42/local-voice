@@ -6,6 +6,7 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { Select } from "../../ui/Select";
 
 /// Zielsprachen als englische Namen (so erwartet sie der Übersetzungs-Prompt);
 /// die Labels sind Eigennamen der Sprachen, keine UI-Texte.
@@ -80,17 +81,16 @@ export const TranslateCard = () => {
 
         <div className="flex items-center gap-2">
           <span className="text-sm">{t("tts.translate.targetLang")}</span>
-          <select
-            className="text-sm bg-transparent border border-mid-gray/40 rounded-md px-2 py-1"
-            value={targetLang}
-            onChange={(e) => updateSetting("tts_translate_lang", e.target.value)}
-          >
-            {TARGET_LANGS.map((lang) => (
-              <option key={lang.value} value={lang.value}>
-                {lang.label}
-              </option>
-            ))}
-          </select>
+          <div className="w-44">
+            <Select
+              value={targetLang}
+              options={TARGET_LANGS}
+              isClearable={false}
+              onChange={(value) => {
+                if (value) updateSetting("tts_translate_lang", value);
+              }}
+            />
+          </div>
         </div>
 
         <Textarea

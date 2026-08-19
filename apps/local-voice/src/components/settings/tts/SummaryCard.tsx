@@ -6,6 +6,8 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { Input } from "../../ui/Input";
+import { Select } from "../../ui/Select";
 
 export const SummaryCard = () => {
   const { t } = useTranslation();
@@ -18,6 +20,21 @@ export const SummaryCard = () => {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
+
+  const [url, setUrl] = useState("");
+
+  const loadUrl = async () => {
+    setError(null);
+    setBusy(true);
+    const result = await commands.ttsExtractUrl(url.trim());
+    setBusy(false);
+    if (result.status === "error") {
+      setError(result.error);
+      return;
+    }
+    setSource(result.data);
+    setSourceName(url.trim());
+  };
 
   const loadDocument = async () => {
     setError(null);
@@ -79,9 +96,6 @@ export const SummaryCard = () => {
     setSaved(target);
   };
 
-  const selectClass =
-    "text-sm bg-transparent border border-mid-gray/40 rounded-md px-2 py-1";
-
   return (
     <SettingsGroup title={t("tts.summary.title")}>
       <div className="px-4 py-3 space-y-3">
@@ -92,8 +106,24 @@ export const SummaryCard = () => {
           <Button variant="secondary" onClick={loadDocument} disabled={busy}>
             {t("tts.summary.loadDocument")}
           </Button>
+          <Input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder={t("tts.summary.urlPlaceholder")}
+            className="flex-1 min-w-48"
+          />
+          <Button
+            variant="secondary"
+            onClick={loadUrl}
+            disabled={busy || url.trim().length === 0}
+          >
+            {t("tts.summary.loadUrl")}
+          </Button>
           {sourceName && (
-            <span className="text-xs text-text/60 truncate">{sourceName}</span>
+            <span className="text-xs text-text/60 truncate w-full">
+              {sourceName}
+            </span>
           )}
         </div>
         <Textarea
@@ -110,40 +140,49 @@ export const SummaryCard = () => {
         <div className="flex gap-3 items-center flex-wrap">
           <label className="flex items-center gap-1 text-sm">
             {t("tts.summary.length")}
-            <select
-              className={selectClass}
-              value={length}
-              onChange={(e) => setLength(e.target.value)}
-            >
-              <option value="kurz">{t("tts.summary.lengths.short")}</option>
-              <option value="mittel">{t("tts.summary.lengths.medium")}</option>
-              <option value="lang">{t("tts.summary.lengths.long")}</option>
-            </select>
+            <div className="w-44">
+              <Select
+                value={length}
+                isClearable={false}
+                options={[
+                  { value: "kurz", label: t("tts.summary.lengths.short") },
+                  { value: "mittel", label: t("tts.summary.lengths.medium") },
+                  { value: "lang", label: t("tts.summary.lengths.long") },
+                ]}
+                onChange={(value) => value && setLength(value)}
+              />
+            </div>
           </label>
           <label className="flex items-center gap-1 text-sm">
             {t("tts.summary.detail")}
-            <select
-              className={selectClass}
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-            >
-              <option value="ueberblick">{t("tts.summary.details.overview")}</option>
-              <option value="ausgewogen">{t("tts.summary.details.balanced")}</option>
-              <option value="detailliert">{t("tts.summary.details.deep")}</option>
-            </select>
+            <div className="w-40">
+              <Select
+                value={detail}
+                isClearable={false}
+                options={[
+                  { value: "ueberblick", label: t("tts.summary.details.overview") },
+                  { value: "ausgewogen", label: t("tts.summary.details.balanced") },
+                  { value: "detailliert", label: t("tts.summary.details.deep") },
+                ]}
+                onChange={(value) => value && setDetail(value)}
+              />
+            </div>
           </label>
           <label className="flex items-center gap-1 text-sm">
             {t("tts.summary.audience")}
-            <select
-              className={selectClass}
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-            >
-              <option value="allgemein">{t("tts.summary.audiences.general")}</option>
-              <option value="fachpublikum">{t("tts.summary.audiences.expert")}</option>
-              <option value="management">{t("tts.summary.audiences.management")}</option>
-              <option value="einfache_sprache">{t("tts.summary.audiences.plain")}</option>
-            </select>
+            <div className="w-44">
+              <Select
+                value={audience}
+                isClearable={false}
+                options={[
+                  { value: "allgemein", label: t("tts.summary.audiences.general") },
+                  { value: "fachpublikum", label: t("tts.summary.audiences.expert") },
+                  { value: "management", label: t("tts.summary.audiences.management") },
+                  { value: "einfache_sprache", label: t("tts.summary.audiences.plain") },
+                ]}
+                onChange={(value) => value && setAudience(value)}
+              />
+            </div>
           </label>
         </div>
 
