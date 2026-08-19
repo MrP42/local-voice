@@ -43,9 +43,11 @@ exceptions = []
 [advisories]
 version = 2
 yanked = "warn"
-# Unmaintained crates are worth knowing about but are not vulnerabilities, and
-# several are Linux-only (gtk-layer-shell). Surface them without failing the gate.
-unmaintained = "warn"
+# cargo-deny 0.20 turned `unmaintained` from a warn/deny lint level into a
+# scope selector (which part of the graph gets checked), and now treats any
+# advisory match that isn't in `ignore` below as a hard error regardless of
+# type. "all" keeps checking the whole graph, matching the old default scope.
+unmaintained = "all"
 
 ignore = [
     # quick-xml DoS advisories, reached only through `plist`, which Tauri uses for
