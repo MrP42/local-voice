@@ -963,6 +963,9 @@ impl TtsManager {
             .map(|(text, _)| text.clone())
             .collect();
         self.ensure_server_for(&texts).await?;
+        // Standardstimme an ihre Referenz binden, damit sie ueber Saetze
+        // hinweg dieselbe bleibt (siehe ensure_seed_reference).
+        self.bind_seed_voice().await;
         let total = sentences.len() as u32;
         let cb_manager = Arc::clone(self);
         let on_played: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
@@ -1388,6 +1391,83 @@ impl TtsManager {
         Some(dir)
     }
 
+    /// Der Standardstimme eine echte Referenz verschaffen — einmal je Seed.
+    ///
+    /// Ohne Referenz wuerfelt Fish Speech die Sprecheridentitaet gemeinsam mit
+    /// dem Inhalt aus. Der Seed geht zwar bei jeder Anfrage mit, aber jeder
+    /// Satz ist eine eigene Anfrage mit eigenem Text — und damit klingt jede
+    /// Zeile nach einer anderen Person. Fuer eine Vorlesestimme ist das
+    /// unbrauchbar; genau das war die Beobachtung am 20.08.2026.
+    ///
+    /// Der Ausweg: den Demosatz EINMAL mit diesem Seed erzeugen und das
+    /// Ergebnis als Referenz ablegen. Ab da spricht die Standardstimme so
+    /// stabil wie eine geklonte — und weil Text und Seed feststehen, ergibt
+    /// derselbe Seed auch nach einer Neuinstallation dieselbe Stimme.
+    ///
+    /// Die Referenz liegt unter `__seed_<seed>` und ist damit aus der
+    /// Stimmenliste ausgenommen (siehe `voices::INTERNAL_PREFIX`).
+    ///
+    /// Rueckgabe: die Referenz-Kennung, oder `None`, wenn sie sich nicht
+    /// anlegen liess — dann laeuft alles wie bisher weiter, nur eben
+    /// wechselhaft. Ein Vorlesen daran scheitern zu lassen waere schlimmer.
+    async fn ensure_seed_reference(&self, port: u16, seed: i64) -> Option<String> {
+        let id = voices::seed_voice_id(seed);
+        let fish_dir = self.fish_dir();
+        if voices::voice_is_complete(&fish_dir, &id) {
+            return Some(id);
+        }
+        let body = protocol::tts_request_body_in_format(Self::DEMO_TEXT, seed, None, "wav");
+        let resp = self
+            .core
+            .http
+            .post(format!("{}/v1/tts", protocol::base_url(port)))
+            .json(&body)
+            .timeout(TTS_TIMEOUT)
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            log::warn!("seed reference: server answered {}", resp.status());
+            return None;
+        }
+        let audio = resp.bytes().await.ok()?.to_vec();
+        if !protocol::looks_like_wav(&audio) {
+            log::warn!("seed reference: answer was not a WAV");
+            return None;
+        }
+        // Auf denselben Pegel wie jede andere Referenz: die Standardstimme
+        // soll sich in einen Dialog einreihen koennen, ohne herauszustechen.
+        let audio = normalize_wav_bytes(&audio).unwrap_or(audio);
+        let dir = voices::voice_dir(&fish_dir, &id);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!("seed reference: could not create {}: {e}", dir.display());
+            return None;
+        }
+        if let Err(e) = std::fs::write(dir.join("sample.wav"), &audio) {
+            log::warn!("seed reference: could not write sample: {e}");
+            return None;
+        }
+        if let Err(e) = std::fs::write(dir.join("sample.lab"), Self::DEMO_TEXT.as_bytes()) {
+            log::warn!("seed reference: could not write transcript: {e}");
+            return None;
+        }
+        log::info!("Standardstimme fuer Seed {seed} als Referenz {id} festgehalten");
+        Some(id)
+    }
+
+    /// `core.voice` auf die Seed-Referenz setzen, wenn keine Stimme gewaehlt
+    /// ist. Vor jedem Sprechlauf aufgerufen, nachdem der Server steht.
+    async fn bind_seed_voice(&self) {
+        if self.core.voice.lock().unwrap().is_some() {
+            return;
+        }
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+        if let Some(id) = self.ensure_seed_reference(port, seed).await {
+            *self.core.voice.lock().unwrap() = Some(id);
+        }
+    }
+
     /// Hörprobe einer Stimme: `DEMO_TEXT`, mit genau dieser Stimme erzeugt und
     /// als WAV zwischengespeichert.
     ///
@@ -1431,6 +1511,14 @@ impl TtsManager {
 
         self.ensure_server().await?;
         let port = *self.core.port.lock().unwrap();
+        // Die Standardstimme wird ueber ihre Seed-Referenz angehoert, nicht
+        // referenzlos: sonst waere die Hoerprobe eine andere Person als die,
+        // die danach vorliest.
+        let seed_reference = match reference {
+            Some(_) => None,
+            None => self.ensure_seed_reference(port, seed).await,
+        };
+        let reference = reference.or(seed_reference.as_deref());
         // Immer WAV, unabhängig vom Export-Format des Nutzers: die Hörprobe ist
         // ein interner Cache mit vorhersagbarem Namen, kein Liefergegenstand.
         let body = protocol::tts_request_body_in_format(Self::DEMO_TEXT, seed, reference, "wav");
@@ -1483,6 +1571,7 @@ impl TtsManager {
         }
         self.refresh_from_settings();
         self.ensure_server().await?;
+        self.bind_seed_voice().await;
         let port = *self.core.port.lock().unwrap();
         let seed = *self.core.seed.lock().unwrap();
 

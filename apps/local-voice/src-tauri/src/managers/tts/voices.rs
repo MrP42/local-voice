@@ -7,6 +7,19 @@
 
 use std::path::{Path, PathBuf};
 
+/// Praefix interner, nicht vom Nutzer angelegter Referenzen.
+pub const INTERNAL_PREFIX: &str = "__";
+
+/// Verzeichnisname der aus einem Seed erzeugten Standardstimme.
+pub fn seed_voice_id(seed: i64) -> String {
+    format!("{INTERNAL_PREFIX}seed_{seed}")
+}
+
+/// Ist die Referenz dieser Stimme vollstaendig (WAV samt Transkript)?
+pub fn voice_is_complete(fish_dir: &Path, id: &str) -> bool {
+    voice_sample(fish_dir, id).is_some()
+}
+
 /// 16-kHz-Samples unterhalb dieser Dauer taugen nicht als Referenz.
 pub const MIN_REFERENCE_SECS: usize = 3;
 const SAMPLE_RATE: usize = 16_000;
@@ -66,6 +79,11 @@ pub fn list_voices(fish_dir: &Path) -> Vec<String> {
     let mut voices: Vec<String> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
+        // Interne Referenzen (Praefix `__`) gehoeren nicht in die Stimmenliste:
+        // die Standardstimme legt sich eine an, damit sie ueber Saetze hinweg
+        // dieselbe bleibt — als eigener Eintrag waere sie dieselbe Stimme
+        // zweimal, einmal loeschbar.
+        .filter(|e| !e.file_name().to_string_lossy().starts_with(INTERNAL_PREFIX))
         .filter(|e| {
             std::fs::read_dir(e.path())
                 .map(|files| {

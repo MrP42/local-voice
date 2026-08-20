@@ -92,9 +92,10 @@
     "serverIconStarting": "Server fährt hoch — das dauert je nach Einstellung bis zu zwei Minuten",
     "serverIconStop": "Server läuft — zum Beenden klicken",
     "serverIconError": "Der Server ist auf einen Fehler gelaufen. Klicken, um ihn erneut zu starten.",
-    "stopConfirmTitle": "Server beenden?",
-    "stopConfirmBody": "Der Fish-Speech-Server wird beendet und gibt dabei rund 17 GB Grafikspeicher wieder frei. Eine laufende Wiedergabe bricht sofort ab, und der nächste Start dauert je nach Einstellung bis zu zwei Minuten, weil das Modell erneut geladen werden muss. Bereits vorgelesene Sätze bleiben im Zwischenspeicher und lassen sich auch ohne Server weiter anhören.",
+    "stopConfirmTitle": "Was soll mit dem Server geschehen?",
+    "stopConfirmBody": "Der Fish-Speech-Server läuft und hält rund 17 GB Grafikspeicher belegt. Beenden gibt den Speicher frei; eine laufende Wiedergabe bricht dabei sofort ab. Neu starten beendet ihn ebenfalls und fährt ihn gleich wieder hoch — der Weg, wenn er zwar läuft, aber nicht mehr vernünftig antwortet. Beides kostet beim nächsten Sprechen bis zu zwei Minuten, weil das Modell erneut geladen werden muss. Bereits vorgelesene Sätze bleiben im Zwischenspeicher und lassen sich auch ohne Server anhören.",
     "stopConfirmAccept": "Server beenden",
+    "stopConfirmRestart": "Neu starten",
     "stopConfirmCancel": "Weiterlaufen lassen",
     "externalServerHint": "Dieser Server wurde außerhalb der App gestartet. Beenden hier schließt diesen Prozess.",
     "status": {

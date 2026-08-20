@@ -12,7 +12,6 @@ import { SettingContainer } from "../../ui/SettingContainer";
 import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
-import Badge from "../../ui/Badge";
 import { Dialog } from "../../ui/Dialog";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { Slider } from "../../ui/Slider";
@@ -22,21 +21,12 @@ import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
-import { Dices, Download, OctagonX, Server } from "lucide-react";
+import { Dices, Download, Server } from "lucide-react";
 
-const badgeVariant = (
-  phase: TtsStatus["phase"] | undefined,
-): "primary" | "success" | "secondary" => {
-  switch (phase) {
-    case "ready":
-    case "speaking":
-      return "success";
-    case "starting":
-      return "primary";
-    default:
-      return "secondary";
-  }
-};
+/// Abspieltempo der Transportleiste. Bewusst grob gestuft: feiner regelt der
+/// Schieber in den Einstellungen, hier will man im Hoeren einmal schneller
+/// oder langsamer stellen, nicht justieren.
+const SPEEDS = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
 export const TtsSettings = () => {
   const { t } = useTranslation();
@@ -249,10 +239,6 @@ export const TtsSettings = () => {
     window.setTimeout(() => setKillNotice(null), 4000);
   };
 
-  const stopServer = () => {
-    void commands.ttsServerStop();
-  };
-
   /**
    * Farbe des Serversymbols. Nur Farbe, kein zweites Symbol: die Form soll
    * ueber alle Zustaende gleich bleiben, damit man sie an derselben Stelle
@@ -293,6 +279,22 @@ export const TtsSettings = () => {
     setConfirmStop(true);
   };
 
+  /**
+   * Neu starten = beenden und sofort wieder hochfahren. Der Weg, wenn der
+   * Server zwar laeuft, aber nicht mehr vernuenftig antwortet (etwa mit 500);
+   * ohne ihn muesste man zweimal klicken und dazwischen raten, wann er
+   * wirklich unten ist.
+   */
+  const restartServer = async () => {
+    setLastError(null);
+    const killed = await commands.ttsServerKill();
+    if (killed.status === "error") {
+      setLastError(killed.error);
+      return;
+    }
+    await startServer();
+  };
+
   const showVramHint =
     starting && (startingSeconds >= 120 || status?.message === "vram");
 
@@ -305,11 +307,13 @@ export const TtsSettings = () => {
           grouped={true}
           layout="horizontal"
         >
-          <div className="flex items-center gap-1">
-            {/* Zustand und Bedienung sind EIN Element: die Farbe sagt, woran
-                man ist, der Klick tut das, was in diesem Zustand ansteht.
-                Grau = aus (starten), Gelb = faehrt hoch, Gruen = laeuft
-                (beenden, nach Rueckfrage), Orange blinkend = Fehler. */}
+          <div className="flex items-center">
+            {/* Ein einziges Element traegt Zustand UND Bedienung. Die Farbe
+                sagt, woran man ist — grau (aus), gelb (faehrt hoch), gruen
+                (laeuft), orange blinkend (Fehler) —, der Klick tut, was in
+                diesem Zustand ansteht. Das Wort daneben war eine zweite
+                Anzeige derselben Sache; es steht jetzt im Tooltip, wo es nur
+                stoert, wenn man es sucht. */}
             <button
               type="button"
               onClick={onServerIconClick}
@@ -318,29 +322,12 @@ export const TtsSettings = () => {
               className="p-1.5 rounded-md hover:bg-mid-gray/20 transition-colors cursor-pointer"
             >
               <Server
-                width={18}
-                height={18}
+                width={20}
+                height={20}
                 className={serverIconClass}
                 aria-hidden="true"
               />
             </button>
-            {/* Der Notausgang. Bewusst IMMER sichtbar und nie gesperrt: sein
-                Zweck ist ja gerade, dass die gemeldete Phase falsch sein kann
-                — ein haengender Server meldet nichts mehr, haelt aber die
-                Grafikkarte fest. Ein Notausgang, der von derselben Anzeige
-                abhinge wie das Problem, waere keiner. */}
-            <button
-              type="button"
-              onClick={killServer}
-              title={t("tts.serverKillHint")}
-              aria-label={t("tts.serverKill")}
-              className="p-1.5 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer"
-            >
-              <OctagonX width={18} height={18} aria-hidden="true" />
-            </button>
-            <Badge variant={badgeVariant(phase)}>
-              {t(`tts.status.${phase}`, { seconds: startingSeconds })}
-            </Badge>
           </div>
         </SettingContainer>
         {killNotice && (
@@ -408,14 +395,41 @@ export const TtsSettings = () => {
               >
                 <Glyph name="stop" />
               </button>
+              <span className="mediabar__sep" />
+              {/* Tempo gehoert an die Transportleiste, nicht in die
+                  Einstellungen: man merkt beim Hoeren, dass es zu langsam
+                  ist, nicht vorher. Dieselbe Einstellung wie unten, nur hier
+                  erreichbar. Bereich bewusst eng — Tempo entsteht per
+                  Resampling und zieht die Tonhoehe mit. */}
+              <label className="flex items-center gap-1 text-xs text-text/60">
+                <span className="sr-only">{t("tts.settings.speed")}</span>
+                <select
+                  value={String(getSetting("tts_speed") ?? 1.0)}
+                  onChange={(e) =>
+                    updateSetting("tts_speed", Number(e.target.value))
+                  }
+                  title={t("tts.settings.speedDescription")}
+                  className="bg-transparent border border-mid-gray/40 rounded-md px-1.5 py-1 text-xs cursor-pointer hover:border-logo-primary focus:outline-none focus:border-logo-primary"
+                >
+                  {SPEEDS.map((value) => (
+                    <option key={value} value={value}>
+                      {value.toFixed(2).replace(".", ",")}×
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
+            {/* Nur das Symbol: die Zeile ist eine Transportleiste, und ein
+                Wort neben lauter Glyphen zieht das Auge auf die unwichtigste
+                Schaltflaeche. Beschriftung wandert in title + aria-label. */}
             <Button
               variant="secondary"
               onClick={saveSpokenAudio}
               disabled={saving || text.trim().length === 0}
+              title={saving ? t("tts.savingAudio") : t("tts.saveAudio")}
+              aria-label={saving ? t("tts.savingAudio") : t("tts.saveAudio")}
             >
-              <Download width={14} height={14} />
-              {saving ? t("tts.savingAudio") : t("tts.saveAudio")}
+              <Download width={16} height={16} />
             </Button>
             {saving && (
               <div className="flex items-center gap-2">
@@ -675,10 +689,19 @@ export const TtsSettings = () => {
               {t("tts.stopConfirmCancel")}
             </Button>
             <Button
+              variant="secondary"
+              onClick={() => {
+                setConfirmStop(false);
+                void restartServer();
+              }}
+            >
+              {t("tts.stopConfirmRestart")}
+            </Button>
+            <Button
               variant="danger"
               onClick={() => {
                 setConfirmStop(false);
-                stopServer();
+                void killServer();
               }}
             >
               {t("tts.stopConfirmAccept")}

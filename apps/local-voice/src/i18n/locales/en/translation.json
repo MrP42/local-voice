@@ -92,9 +92,10 @@
     "serverIconStarting": "Server is starting — this takes up to two minutes depending on your settings",
     "serverIconStop": "Server is running — click to stop it",
     "serverIconError": "The server ran into an error. Click to start it again.",
-    "stopConfirmTitle": "Stop the server?",
-    "stopConfirmBody": "The Fish Speech server will be stopped, freeing roughly 17 GB of graphics memory. Any playback in progress stops at once, and the next start takes up to two minutes depending on your settings, because the model has to load again. Sentences already spoken stay in the cache and can still be played without a server.",
+    "stopConfirmTitle": "What should happen to the server?",
+    "stopConfirmBody": "The Fish Speech server is running and holds roughly 17 GB of graphics memory. Stopping frees it; any playback in progress ends at once. Restarting stops it as well and brings it straight back up — the way to go when it is running but no longer answering properly. Either way the next sentence takes up to two minutes, because the model has to load again. Sentences already spoken stay in the cache and can still be played without a server.",
     "stopConfirmAccept": "Stop the server",
+    "stopConfirmRestart": "Restart",
     "stopConfirmCancel": "Keep it running",
     "externalServerHint": "This server was started outside the app. Stopping it here terminates that process.",
     "status": {
