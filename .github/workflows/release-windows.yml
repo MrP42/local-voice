@@ -153,7 +153,8 @@ jobs:
           # update it downloads. Repository secret; the private key half of the
           # pubkey in tauri.conf.json.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The key was generated without a password, so none is passed. If it is
+          # ever replaced by a password-protected one, add the matching secret here.
         with:
           projectPath: apps/local-voice
           tagName: v${{ steps.version.outputs.version }}
