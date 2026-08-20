@@ -14,6 +14,22 @@ Reproduzierbarer Ablauf ohne Docker. Alles läuft als natives Windows-Programm.
 Bun ist **nicht** installiert; das Frontend wird mit npm gebaut (`node_modules`
 liegt im pnpm-Layout vor und ist vollständig).
 
+## Abkürzung: `scripts/dev.ps1`
+
+Die beiden folgenden Stolpersteine sind in einem Wrapper gekapselt. Er setzt
+den PATH selbst, prüft jeden Exit-Code einzeln (kein grünes Ergebnis aus einer
+Pipeline) und räumt den CMake-Cache auf beiden Seiten der Junction:
+
+```powershell
+pwsh -File apps\local-voice\scripts\dev.ps1 test          # cargo test --lib
+pwsh -File apps\local-voice\scripts\dev.ps1 check         # fmt + clippy + test
+pwsh -File apps\local-voice\scripts\dev.ps1 build         # tauri build --no-bundle
+pwsh -File apps\local-voice\scripts\dev.ps1 clean-cmake   # Stolperstein 2
+pwsh -File apps\local-voice\scripts\dev.ps1 harness       # scripts/m8-verify.ps1
+```
+
+Die Handarbeit darunter bleibt gültig und erklärt, was der Wrapper tut.
+
 ## Stolperstein 1 — cargo ist nicht im PATH
 
 Weder Git Bash noch PowerShell finden `cargo`. Vor jedem Rust-Befehl:

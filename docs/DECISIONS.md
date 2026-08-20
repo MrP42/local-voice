@@ -172,3 +172,37 @@ Modelle). Deshalb zieht `appdata_migration.rs` beim Start einmalig die alten Ord
 vorhandene neue Daten gewinnen immer (OBSERVED: Unit-Test mit Tempdir, beide Fälle).
 Historische Evidence-Dokumente (m2-m7) behalten die alten Namen, weil sie reale
 Kommandos von damals protokollieren.
+
+## D12 — Ein stiller Ausfall des System-Kanals wird gemeldet, nicht nur protokolliert
+**Datum:** 2026-08-20 · **Status:** entschieden und implementiert (Issue #12)
+
+Stirbt der WASAPI-Loopback-Thread **nach** erfolgreichem Start (Endpoint entfernt,
+Treiberfehler), verstummte bisher nur der Callback: Die Besprechung lief weiter, das
+halbe Protokoll fehlte, und der Fehler stand allein im Log. Das ist der schlimmste
+Fehlermodus des Meeting-Features, weil er wie Erfolg aussieht.
+
+`LoopbackCapture` führt jetzt — wie `MeetingMicCapture` — ein Fehlerflag (`had_error()`)
+und gibt Stop- und Fehlerflag über `watch_flags()` heraus. Der Recorder hängt daran einen
+schlanken Wachthread (500 ms Takt), der einmalig `MeetingEvent::Error { loopback_died }`
+sendet und sich beendet; die Oberfläche zeigt dafür `meetings.errors.loopbackDied`.
+
+Bewusst **kein** Abbruch der Aufnahme: Der Mikrofonkanal ist der wichtigere von beiden,
+und eine laufende Besprechung wegen eines toten Zweitkanals zu beenden wäre der größere
+Schaden. Gemeldet wird, entschieden wird vom Nutzer.
+
+## D13 — Ein misslungener Transkriptblock kostet nicht das ganze Protokoll
+**Datum:** 2026-08-20 · **Status:** entschieden und implementiert (Issue #13)
+
+Der Map-Reduce-Lauf in `minutes.rs` brach bisher beim ersten endgültig
+fehlgeschlagenen Block ab — bei einer zweistündigen Besprechung waren damit alle
+bereits ausgewerteten Blöcke verloren und der Nutzer sah gar nichts.
+
+Jeder Block hat jetzt ein eigenes Retry-Budget (`CHUNK_ATTEMPTS`, zusätzlich zum
+Struktur-Retry innerhalb eines Versuchs). Bleibt er trotzdem erfolglos, wird
+**degradiert statt abgebrochen**: Der Merge läuft über die übrigen Blöcke, der
+Merge-Prompt nennt die fehlenden Teile ausdrücklich (das Modell soll die Lücke kennen,
+nicht überspielen), das Dokument trägt einen sichtbaren Hinweis und
+`generation_metadata` hält `chunks_total`/`chunks_failed` fest.
+
+Nur wenn **kein einziger** Block durchkommt, schlägt die Erzeugung fehl — dann gäbe es
+nichts zu verdichten. Das vollständige Transkript bleibt in jedem Fall erhalten.
