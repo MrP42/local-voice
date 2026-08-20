@@ -8,7 +8,7 @@ import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Alert } from "../../ui/Alert";
 import Badge from "../../ui/Badge";
-import { Trash2 } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 import { translateMeetingError } from "./meetingErrors";
 
 const PAGE_SIZE = 25;
@@ -243,6 +243,7 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
             onClick={pickImportFile}
             disabled={importing}
           >
+            <Upload width={14} height={14} />
             {t("meetings.list.import")}
           </Button>
         </div>

@@ -8,6 +8,7 @@ import { Button } from "../../ui/Button";
 import { Alert } from "../../ui/Alert";
 import Badge from "../../ui/Badge";
 import { MarkdownContent } from "../../whats-new/MarkdownContent";
+import { Download } from "lucide-react";
 
 interface MinutesViewProps {
   meetingId: string;
@@ -150,6 +151,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
                 : t("meetings.minutes.copy")}
             </Button>
             <Button variant="secondary" onClick={exportMinutes}>
+              <Download width={14} height={14} />
               {t("meetings.detail.export")}
             </Button>
           </>

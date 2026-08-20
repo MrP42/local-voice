@@ -21,7 +21,7 @@ import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
-import { Dices } from "lucide-react";
+import { Dices, Download } from "lucide-react";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -336,6 +336,7 @@ export const TtsSettings = () => {
               onClick={saveSpokenAudio}
               disabled={saving || text.trim().length === 0}
             >
+              <Download width={14} height={14} />
               {saving ? t("tts.savingAudio") : t("tts.saveAudio")}
             </Button>
             {saving && (

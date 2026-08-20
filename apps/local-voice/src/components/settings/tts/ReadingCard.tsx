@@ -7,6 +7,7 @@ import { commands, type ReadingInfo } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { Upload } from "lucide-react";
 
 const percent = (info: ReadingInfo) =>
   info.total > 0 ? Math.round((info.position / info.total) * 100) : 0;
@@ -137,6 +138,7 @@ export const ReadingCard = () => {
 
         <div className="flex gap-2 items-center">
           <Button onClick={() => openDocument()} disabled={busy}>
+            <Upload width={14} height={14} />
             {t("tts.reading.open")}
           </Button>
           {current && (

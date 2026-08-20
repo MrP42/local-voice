@@ -8,6 +8,7 @@ import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { Upload } from "lucide-react";
 import {
   usePersistentNullableText,
   usePersistentState,
@@ -133,6 +134,7 @@ export const SummaryCard = () => {
 
         <div className="flex gap-2 items-center flex-wrap">
           <Button variant="secondary" onClick={loadDocument} disabled={busy}>
+            <Upload width={14} height={14} />
             {t("tts.summary.loadDocument")}
           </Button>
           <Input

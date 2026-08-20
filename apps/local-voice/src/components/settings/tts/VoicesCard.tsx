@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { commands, type VoiceSample } from "@/bindings";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Play } from "lucide-react";
+import { Play, Trash2, Upload } from "lucide-react";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { useSettings } from "../../../hooks/useSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
@@ -242,12 +242,17 @@ export const VoicesCard = () => {
                       {t("tts.voices.activate")}
                     </Button>
                   )}
+                  {/* Nur das Symbol: die Zeile traegt schon drei Knoepfe, und
+                      der Papierkorb ist eindeutiger als ein viertes Wort.
+                      Beschriftung wandert in title + aria-label. */}
                   <Button
                     size="sm"
                     variant="danger-ghost"
                     onClick={() => setDeleteTarget(id)}
+                    title={t("tts.voices.delete")}
+                    aria-label={t("tts.voices.delete")}
                   >
-                    {t("tts.voices.delete")}
+                    <Trash2 width={14} height={14} />
                   </Button>
                 </div>
               </div>
@@ -280,6 +285,7 @@ export const VoicesCard = () => {
           <div className="flex gap-2">
             <Button onClick={startRecording}>{t("tts.voices.record")}</Button>
             <Button variant="secondary" onClick={pickFile}>
+              <Upload width={14} height={14} />
               {t("tts.voices.import")}
             </Button>
           </div>
