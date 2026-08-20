@@ -14,14 +14,18 @@ export const MeetingsSettings: React.FC = () => {
 
   if (selected) {
     return (
-      <div className="max-w-3xl w-full mx-auto space-y-6">
-        <MeetingDetail meeting={selected} onBack={() => setSelected(null)} />
+      <div className="w-full space-y-6">
+        <MeetingDetail
+          meeting={selected}
+          onBack={() => setSelected(null)}
+          onMeetingChange={setSelected}
+        />
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <RecorderCard />
       <LiveTranscript />
       <MeetingList onSelect={setSelected} />

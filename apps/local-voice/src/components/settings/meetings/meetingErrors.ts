@@ -19,6 +19,11 @@ const ERROR_KEY_MAP: Record<string, string> = {
   import_failed: "meetings.errors.importFailed",
   already_recording: "meetings.errors.alreadyRecording",
   not_recording: "meetings.errors.notRecording",
+  meeting_not_found: "meetings.errors.notFound",
+  no_audio: "meetings.errors.noAudio",
+  audio_missing: "meetings.errors.audioMissing",
+  retranscribe_failed: "meetings.errors.retranscribeFailed",
+  transcription_failed: "meetings.errors.chunkTranscriptionFailed",
 };
 
 /**

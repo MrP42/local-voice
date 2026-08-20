@@ -11,6 +11,7 @@ use crate::managers::meetings::import::import_media_file;
 use crate::managers::meetings::minutes::generate_minutes;
 use crate::managers::meetings::recorder::MeetingRecorderManager;
 use crate::managers::meetings::retention::delete_audio_files;
+use crate::managers::meetings::retranscribe::retranscribe_meeting;
 use crate::managers::meetings::store::{Meeting, MeetingDocument, MeetingStore, StoredSegment};
 use crate::managers::transcription::TranscriptionManager;
 
@@ -101,6 +102,37 @@ pub async fn meetings_update_segment(
     store
         .update_segment_text(&meeting_id, segment_index, &text)
         .map_err(|e| e.to_string())
+}
+
+/// Renames a meeting. The title is free text and deliberately independent of
+/// the file an imported meeting came from (that is kept in `source_path`).
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_rename(
+    store: State<'_, Arc<MeetingStore>>,
+    meeting_id: String,
+    title: String,
+) -> Result<(), String> {
+    store
+        .set_title(&meeting_id, &title)
+        .map_err(|e| e.to_string())
+}
+
+/// Re-runs the transcription of a finished meeting from its stored audio,
+/// optionally with a different model. Discards the old segments — see
+/// `retranscribe_meeting`.
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_retranscribe(
+    app: tauri::AppHandle,
+    store: State<'_, Arc<MeetingStore>>,
+    transcription: State<'_, Arc<TranscriptionManager>>,
+    meeting_id: String,
+    model_id: Option<String>,
+) -> Result<(), String> {
+    let store = Arc::clone(&store);
+    let transcription = Arc::clone(&transcription);
+    retranscribe_meeting(&app, store, transcription, meeting_id, model_id).await
 }
 
 #[tauri::command]

@@ -12,9 +12,15 @@ import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import Footer from "./components/footer";
 import Onboarding, { AccessibilityOnboarding } from "./components/onboarding";
-import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
+import {
+  Sidebar,
+  SidebarSection,
+  SECTIONS_CONFIG,
+  isSidebarSection,
+} from "./components/Sidebar";
 import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
+import { usePersistentState } from "./hooks/usePersistentState";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
@@ -23,7 +29,7 @@ type OnboardingStep = "accessibility" | "model" | "done";
 
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
+    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.settings.component;
   return <ActiveComponent />;
 };
 
@@ -35,8 +41,13 @@ function App() {
   // Track if this is a returning user who just needs to grant permissions
   // (vs a new user who needs full onboarding including model selection)
   const [isReturningUser, setIsReturningUser] = useState(false);
+  // Which page you were on survives a restart — the app is opened dozens of
+  // times a day and landing on "Allgemein" every time is a tax. `isSidebarSection`
+  // guards against a stored id that a later version renamed away.
   const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+    // Settings opens on its "Allgemein" tab, which is where the app landed
+    // before General became a tab there.
+    usePersistentState<SidebarSection>("section", "settings", isSidebarSection);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
@@ -322,9 +333,13 @@ function App() {
             onSectionChange={setCurrentSection}
           />
           {/* Scrollable content area */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center p-4 gap-4">
+              {/* Fluid: the content uses whatever width the window offers, up
+                  to a readable ceiling, and never forces the page to scroll
+                  sideways (`min-w-0` on the flex child above does the same for
+                  the column itself). */}
+              <div className="flex flex-col w-full max-w-5xl mx-auto p-3 sm:p-4 gap-4 min-w-0">
                 <AccessibilityPermissions />
                 {renderSettingsContent(currentSection)}
               </div>

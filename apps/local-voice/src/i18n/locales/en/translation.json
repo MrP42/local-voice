@@ -19,7 +19,9 @@
     "about": "About",
     "dictationTest": "Dictation test",
     "tts": "Read Aloud",
-    "meetings": "Meetings"
+    "meetings": "Meetings",
+    "settings": "Settings",
+    "ariaLabel": "Main navigation"
   },
   "tts": {
     "title": "Read Aloud",
@@ -713,6 +715,11 @@
           "details": "Local Voice AI's local speech-to-text is built on transcribe.cpp and ggml. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
+    },
+    "app": {
+      "tabs": {
+        "app": "Advanced"
+      }
     }
   },
   "footer": {
@@ -854,7 +861,12 @@
       "alreadyRecording": "A recording is already running.",
       "notRecording": "No recording is currently running.",
       "deleteFailed": "Deletion failed. Please try again.",
-      "unsupportedFile": "This file format is not supported (allowed: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt)."
+      "unsupportedFile": "This file format is not supported (allowed: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt).",
+      "notFound": "This meeting no longer exists.",
+      "noAudio": "No recording stored for this meeting — there is nothing to transcribe again.",
+      "audioMissing": "The recording is no longer on disk (retention period expired).",
+      "retranscribeFailed": "Re-transcription failed. The transcript was left unchanged.",
+      "listFailed": "The meeting list could not be loaded: {{error}}"
     },
     "retention": {
       "title": "Audio file retention",
@@ -893,7 +905,9 @@
       "back": "Back to list",
       "copyTranscript": "Copy transcript",
       "copied": "Copied!",
-      "exportTranscript": "Save as file…"
+      "exportTranscript": "Save as file…",
+      "renameTitle": "Rename",
+      "titleLabel": "Meeting title"
     },
     "status": {
       "recording": "Recording",
@@ -931,6 +945,13 @@
       "title": "Transcription model",
       "likeDictation": "Same as dictation (default)",
       "description": "Dedicated model for meetings and imports. Streaming models are tuned for live dictation — meetings transcribe in batches and profit from batch models like Parakeet V3."
+    },
+    "retranscribe": {
+      "description": "Transcribe this meeting again from its recording — for example with a different model.",
+      "configuredModel": "Configured meeting model",
+      "start": "Re-transcribe",
+      "running": "Transcribing…",
+      "runningHint": "The existing transcript is replaced when the run finishes. This can take a while for long recordings."
     }
   }
 }

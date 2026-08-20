@@ -40,7 +40,9 @@ export const SummaryCard = () => {
     setError(null);
     const picked = await open({
       multiple: false,
-      filters: [{ name: "Dokumente", extensions: ["txt", "md", "pdf", "docx"] }],
+      filters: [
+        { name: "Dokumente", extensions: ["txt", "md", "pdf", "docx"] },
+      ],
     });
     if (typeof picked !== "string") return;
     setBusy(true);
@@ -160,9 +162,18 @@ export const SummaryCard = () => {
                 value={detail}
                 isClearable={false}
                 options={[
-                  { value: "ueberblick", label: t("tts.summary.details.overview") },
-                  { value: "ausgewogen", label: t("tts.summary.details.balanced") },
-                  { value: "detailliert", label: t("tts.summary.details.deep") },
+                  {
+                    value: "ueberblick",
+                    label: t("tts.summary.details.overview"),
+                  },
+                  {
+                    value: "ausgewogen",
+                    label: t("tts.summary.details.balanced"),
+                  },
+                  {
+                    value: "detailliert",
+                    label: t("tts.summary.details.deep"),
+                  },
                 ]}
                 onChange={(value) => value && setDetail(value)}
               />
@@ -175,10 +186,22 @@ export const SummaryCard = () => {
                 value={audience}
                 isClearable={false}
                 options={[
-                  { value: "allgemein", label: t("tts.summary.audiences.general") },
-                  { value: "fachpublikum", label: t("tts.summary.audiences.expert") },
-                  { value: "management", label: t("tts.summary.audiences.management") },
-                  { value: "einfache_sprache", label: t("tts.summary.audiences.plain") },
+                  {
+                    value: "allgemein",
+                    label: t("tts.summary.audiences.general"),
+                  },
+                  {
+                    value: "fachpublikum",
+                    label: t("tts.summary.audiences.expert"),
+                  },
+                  {
+                    value: "management",
+                    label: t("tts.summary.audiences.management"),
+                  },
+                  {
+                    value: "einfache_sprache",
+                    label: t("tts.summary.audiences.plain"),
+                  },
                 ]}
                 onChange={(value) => value && setAudience(value)}
               />
@@ -193,7 +216,9 @@ export const SummaryCard = () => {
           >
             {t("tts.summary.run")}
           </Button>
-          {busy && <Badge variant="secondary">{t("tts.summary.working")}</Badge>}
+          {busy && (
+            <Badge variant="secondary">{t("tts.summary.working")}</Badge>
+          )}
         </div>
 
         {summary && (
@@ -208,7 +233,11 @@ export const SummaryCard = () => {
               <Button onClick={speakSummary} disabled={busy}>
                 {t("tts.summary.speak")}
               </Button>
-              <Button variant="secondary" onClick={exportSummary} disabled={busy}>
+              <Button
+                variant="secondary"
+                onClick={exportSummary}
+                disabled={busy}
+              >
                 {t("tts.summary.export")}
               </Button>
               {saved && (

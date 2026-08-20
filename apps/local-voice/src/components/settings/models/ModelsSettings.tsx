@@ -215,7 +215,7 @@ export const ModelsSettings: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="max-w-3xl w-full mx-auto">
+      <div className="w-full">
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 border-2 border-logo-primary border-t-transparent rounded-full animate-spin" />
         </div>
@@ -224,7 +224,7 @@ export const ModelsSettings: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-4">
+    <div className="w-full space-y-4">
       <div className="mb-4">
         <h1 className="text-xl font-semibold mb-2">
           {t("settings.models.title")}
@@ -234,27 +234,31 @@ export const ModelsSettings: React.FC = () => {
         </p>
       </div>
 
-      {/* Search bar — filter the catalog by name or description */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text/40 pointer-events-none" />
+      {/* Search bar — filter the catalog by name or description.
+          The magnifier sits in the flow as a flex sibling rather than being
+          absolutely positioned over the field: an overlay only lines up while
+          the input keeps the exact padding and height it was drawn against,
+          and it did not. A row that lays itself out cannot drift. */}
+      <label className="flex items-center gap-2 w-full px-3 py-2 bg-mid-gray/10 border border-mid-gray/40 rounded-lg focus-within:ring-1 focus-within:ring-logo-primary">
+        <Search className="w-4 h-4 shrink-0 text-text/40" aria-hidden="true" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t("settings.models.searchPlaceholder")}
-          className="w-full pl-9 pr-3 py-2 text-sm bg-mid-gray/10 border border-mid-gray/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-logo-primary placeholder:text-text/40"
+          className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-text/40"
         />
-      </div>
+      </label>
 
       {filteredModels.length > 0 ? (
         <div className="space-y-6">
           {/* Downloaded Models Section — header always visible so filter stays accessible */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-medium text-text/60">
                 {t("settings.models.yourModels")}
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {/* Rescan local sources for models added outside Handy */}
                 <button
                   type="button"

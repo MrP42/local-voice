@@ -55,7 +55,10 @@ export const TtsSettings = () => {
       setStatus(e.payload);
       if (e.payload.phase === "error" && e.payload.message) {
         setLastError(e.payload.message);
-      } else if (e.payload.phase === "ready" || e.payload.phase === "speaking") {
+      } else if (
+        e.payload.phase === "ready" ||
+        e.payload.phase === "speaking"
+      ) {
         setLastError(null);
       }
     });
@@ -135,10 +138,11 @@ export const TtsSettings = () => {
     void commands.ttsServerStop();
   };
 
-  const showVramHint = starting && (startingSeconds >= 120 || status?.message === "vram");
+  const showVramHint =
+    starting && (startingSeconds >= 120 || status?.message === "vram");
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <SettingsGroup title={t("tts.title")}>
         <SettingContainer
           title={t("tts.serverTitle")}
@@ -173,7 +177,9 @@ export const TtsSettings = () => {
           <p className="px-4 pb-2 text-sm text-text/70">{t("tts.vramHint")}</p>
         )}
         {lastError && (
-          <p className="px-4 pb-2 text-sm text-red-500 break-words">{lastError}</p>
+          <p className="px-4 pb-2 text-sm text-red-500 break-words">
+            {lastError}
+          </p>
         )}
         <div className="px-4 pb-4 space-y-2">
           <Textarea
@@ -190,7 +196,11 @@ export const TtsSettings = () => {
             >
               {t("tts.speak")}
             </Button>
-            <Button variant="secondary" onClick={pauseSpeaking} disabled={!speaking}>
+            <Button
+              variant="secondary"
+              onClick={pauseSpeaking}
+              disabled={!speaking}
+            >
               {t("tts.pause")}
             </Button>
             {canResume && (

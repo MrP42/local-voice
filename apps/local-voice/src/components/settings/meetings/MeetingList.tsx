@@ -33,7 +33,9 @@ const hasImportExtension = (path: string) => {
   return IMPORT_EXTENSIONS.includes(ext);
 };
 
-const baseName = (path: string) => path.split(/[\/]/).pop() ?? path;
+// Windows paths use backslashes; the old class `[\/]` matched only the
+// forward slash, so a C:\... path came back whole.
+const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
 const statusBadgeVariant = (
   status: string,
@@ -67,12 +69,13 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
   const [hasMore, setHasMore] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importConsentPaths, setImportConsentPaths] = useState<
-    string[] | null
-  >(null);
+  const [importConsentPaths, setImportConsentPaths] = useState<string[] | null>(
+    null,
+  );
   const [isDragOver, setIsDragOver] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
@@ -85,10 +88,16 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
     try {
       const result = await commands.meetingsList(offset, PAGE_SIZE);
       if (result.status === "ok") {
+        setListError(null);
         setMeetings((prev) =>
           isFirstPage ? result.data : [...prev, ...result.data],
         );
         setHasMore(result.data.length === PAGE_SIZE);
+      } else {
+        // A failing list used to render as "no meetings yet" — visually
+        // indistinguishable from data loss. Say what actually happened.
+        setListError(result.error);
+        setHasMore(false);
       }
     } finally {
       setLoading(false);
@@ -242,6 +251,11 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
             {t("meetings.list.dropHint")}
           </p>
         )}
+        {listError && (
+          <Alert variant="error">
+            {t("meetings.errors.listFailed", { error: listError })}
+          </Alert>
+        )}
         {importError && <Alert variant="error">{importError}</Alert>}
         {deleteError && <Alert variant="error">{deleteError}</Alert>}
 
@@ -275,6 +289,16 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
                     <p className="text-sm font-medium truncate">
                       {meeting.title}
                     </p>
+                    {/* The file an import came from, kept visible even after
+                        the title was renamed away from it. */}
+                    {meeting.source_path && (
+                      <p
+                        className="text-xs text-text/50 truncate"
+                        title={meeting.source_path}
+                      >
+                        {baseName(meeting.source_path)}
+                      </p>
+                    )}
                     <p className="text-xs text-text/60">
                       {dateLabel} · {formatDuration(meeting.duration_ms)}
                     </p>
@@ -323,7 +347,9 @@ export const MeetingList: React.FC<MeetingListProps> = ({ onSelect }) => {
           </>
         }
       >
-        <p className="text-sm text-text/80">{t("meetings.list.deleteConfirm")}</p>
+        <p className="text-sm text-text/80">
+          {t("meetings.list.deleteConfirm")}
+        </p>
       </Dialog>
 
       <Dialog

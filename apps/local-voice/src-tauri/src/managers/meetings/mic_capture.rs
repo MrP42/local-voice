@@ -75,7 +75,8 @@ impl MeetingMicCapture {
         let consumer_handle = std::thread::Builder::new()
             .name("meeting-mic-consumer".to_string())
             .spawn(move || {
-                let mut resampler = FrameResampler::new(sample_rate, TARGET_SAMPLE_RATE, FRAME_DURATION);
+                let mut resampler =
+                    FrameResampler::new(sample_rate, TARGET_SAMPLE_RATE, FRAME_DURATION);
                 while let Ok(msg) = msg_rx.recv() {
                     match msg {
                         Msg::Samples(interleaved) => {
@@ -156,7 +157,10 @@ fn resolve_device(device_name: Option<&str>) -> Result<cpal::Device> {
 
     let resolved_name = resolve_device_name(device_name, &names);
     let device = match resolved_name {
-        Some(name) => devices.into_iter().find(|d| d.name == name).map(|d| d.device),
+        Some(name) => devices
+            .into_iter()
+            .find(|d| d.name == name)
+            .map(|d| d.device),
         None => None,
     };
 

@@ -17,18 +17,22 @@ const LocalVoiceAiLogo = ({
   height,
   className,
   showEndorsement = true,
+  showMark = true,
 }: {
   width?: number;
   height?: number;
   className?: string;
   showEndorsement?: boolean;
+  /** The pictorial mark. Off in the sidebar, where the taskbar icon already
+   *  carries it and the space belongs to the navigation labels. */
+  showMark?: boolean;
 }) => {
   return (
     <span
       className={`lva-logo ${className ?? ""}`}
       style={width ? { width } : undefined}
     >
-      <LocalVoiceAiMark height={height ?? 26} />
+      {showMark && <LocalVoiceAiMark height={height ?? 26} />}
       <span className="lva-logo__text">
         {/* Markenname und Endorsement sind Eigennamen — bewusst nicht übersetzt. */}
         {/* eslint-disable i18next/no-literal-string */}
@@ -37,9 +41,7 @@ const LocalVoiceAiLogo = ({
           <span className="lva-logo__accent">Voice&nbsp;AI</span>
         </span>
         {showEndorsement && (
-          <small className="lva-logo__endorsement">
-            Ingenieurbüro Wolff
-          </small>
+          <small className="lva-logo__endorsement">Ingenieurbüro Wolff</small>
         )}
         {/* eslint-enable i18next/no-literal-string */}
       </span>

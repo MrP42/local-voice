@@ -49,6 +49,31 @@ curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.compute
 
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
+## Versioning and releases
+
+**Every change that ships gets a new version number.** Not "when it feels
+significant" — the in-app updater compares the running app's version against
+`latest.json`, so an unbumped build is a build the updater cannot offer and
+cannot recognise as installed.
+
+```bash
+node scripts/set-version.mjs 0.3.0   # package.json + Cargo.toml + tauri.conf.json
+git commit -am "…"
+git tag v0.3.0 && git push --follow-tags
+```
+
+The tag triggers `.github/workflows/release-windows.yml` **at the repo root**
+(the workflows under `apps/local-voice/.github/` came with the Handy subtree
+and never run — GitHub only reads the repo root). It builds, signs the updater
+artifact with the `TAURI_SIGNING_PRIVATE_KEY` repository secret, publishes the
+release and attaches `latest.json`. The workflow refuses to run if the tag and
+`tauri.conf.json` disagree.
+
+Requirements for the update path to work at all: the repository (or at least
+its releases) must be **public** — the updater fetches
+`releases/latest/download/latest.json` unauthenticated — and the release must
+be published, not a draft.
+
 ## Architecture Overview
 
 Handy is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).

@@ -56,7 +56,8 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
     if (!doc) return;
     setError(null);
     setSaved(null);
-    const safeName = meetingTitle.replace(/[\\/:*?"<>|]/g, "_").trim() || "protokoll";
+    const safeName =
+      meetingTitle.replace(/[\\/:*?"<>|]/g, "_").trim() || "protokoll";
     const target = await save({
       filters: [{ name: "Markdown", extensions: ["md"] }],
       defaultPath: `${safeName}.md`,
@@ -84,7 +85,9 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
 
       <div className="flex gap-2 items-center flex-wrap">
         <Button onClick={generate} disabled={generating}>
-          {doc ? t("meetings.detail.regenerate") : t("meetings.detail.generate")}
+          {doc
+            ? t("meetings.detail.regenerate")
+            : t("meetings.detail.generate")}
         </Button>
         {doc && (
           <Button variant="secondary" onClick={exportMinutes}>

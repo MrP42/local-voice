@@ -19,7 +19,9 @@
     "about": "Info",
     "dictationTest": "Diktattest",
     "tts": "Vorlesen",
-    "meetings": "Besprechungen"
+    "meetings": "Besprechungen",
+    "settings": "Einstellungen",
+    "ariaLabel": "Hauptnavigation"
   },
   "tts": {
     "title": "Vorlesen",
@@ -713,6 +715,11 @@
         "label": "Neuerungen anzeigen",
         "description": "Versionshinweise nach Updates anzeigen"
       }
+    },
+    "app": {
+      "tabs": {
+        "app": "Erweitert"
+      }
     }
   },
   "footer": {
@@ -854,7 +861,12 @@
       "alreadyRecording": "Es läuft bereits eine Aufnahme.",
       "notRecording": "Es läuft aktuell keine Aufnahme.",
       "deleteFailed": "Löschen fehlgeschlagen. Bitte erneut versuchen.",
-      "unsupportedFile": "Dieses Dateiformat wird nicht unterstützt (erlaubt: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt)."
+      "unsupportedFile": "Dieses Dateiformat wird nicht unterstützt (erlaubt: wav, mp3, m4a, mp4, mkv, mov, flac, ogg, vtt, srt).",
+      "notFound": "Diese Besprechung existiert nicht mehr.",
+      "noAudio": "Zu dieser Besprechung ist keine Aufzeichnung gespeichert — es gibt nichts, was neu transkribiert werden könnte.",
+      "audioMissing": "Die Aufzeichnung liegt nicht mehr auf der Platte (Aufbewahrungsfrist abgelaufen).",
+      "retranscribeFailed": "Die Neu-Transkription ist fehlgeschlagen. Das Transkript blieb unverändert.",
+      "listFailed": "Die Besprechungsliste konnte nicht geladen werden: {{error}}"
     },
     "retention": {
       "title": "Aufbewahrung der Audiodatei",
@@ -893,7 +905,9 @@
       "back": "Zurück zur Liste",
       "copyTranscript": "Transkript kopieren",
       "copied": "Kopiert!",
-      "exportTranscript": "Als Datei speichern…"
+      "exportTranscript": "Als Datei speichern…",
+      "renameTitle": "Umbenennen",
+      "titleLabel": "Titel der Besprechung"
     },
     "status": {
       "recording": "Aufnahme läuft",
@@ -931,6 +945,13 @@
       "title": "Transkriptionsmodell",
       "likeDictation": "Wie Diktat (Standard)",
       "description": "Eigenes Modell für Besprechungen und Importe. Streaming-Modelle sind fürs Live-Diktat optimiert — Besprechungen transkribieren in Blöcken und profitieren von Batch-Modellen wie Parakeet V3."
+    },
+    "retranscribe": {
+      "description": "Diese Besprechung erneut aus der Aufzeichnung transkribieren — zum Beispiel mit einem anderen Modell.",
+      "configuredModel": "Eingestelltes Besprechungsmodell",
+      "start": "Neu transkribieren",
+      "running": "Transkribiere…",
+      "runningHint": "Das bisherige Transkript wird nach dem Lauf ersetzt. Bei langen Aufzeichnungen dauert das eine Weile."
     }
   }
 }

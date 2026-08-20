@@ -114,6 +114,9 @@ mod tests {
     #[test]
     fn multiline_cues_join_with_spaces() {
         let srt = "1\n00:00:01,000 --> 00:00:03,000\nZeile eins\nZeile zwei\n";
-        assert_eq!(parse_subtitles(srt).unwrap()[0].text, "Zeile eins Zeile zwei");
+        assert_eq!(
+            parse_subtitles(srt).unwrap()[0].text,
+            "Zeile eins Zeile zwei"
+        );
     }
 }

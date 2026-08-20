@@ -95,6 +95,11 @@ fn import_subtitle_file(
     let meeting = store
         .create_meeting(title, MeetingSource::Subtitle, consent_confirmed_at)
         .map_err(|e| format!("meeting_create_failed: {e}"))?;
+    if let Some(source) = path.to_str() {
+        if let Err(e) = store.set_source_path(&meeting.id, source) {
+            log::warn!("meetings: source_path not stored for subtitle import: {e}");
+        }
+    }
 
     store
         .append_delta(
@@ -127,6 +132,13 @@ async fn import_audio_file(
         .create_meeting(&title, MeetingSource::Import, consent_confirmed_at)
         .map_err(|e| format!("meeting_create_failed: {e}"))?;
     let meeting_id = meeting.id.clone();
+    // The title starts out as the file stem but is user-editable from here on,
+    // so the file it came from is recorded separately (store.rs `source_path`).
+    if let Some(source) = path.to_str() {
+        if let Err(e) = store.set_source_path(&meeting_id, source) {
+            log::warn!("meetings: source_path not stored for import: {e}");
+        }
+    }
     emit_state(app, &meeting_id, "processing");
 
     let app_owned = app.clone();
@@ -179,11 +191,16 @@ fn run_import(
         std::fs::copy(&wav_path, &import_wav_path)
             .map_err(|e| format!("import_wav_copy_failed: {e}"))?;
 
-        transcribe_and_store(app, store, tm, meeting_id, &samples)?;
+        transcribe_and_store(app, store, tm, meeting_id, &samples, CHANNEL_MIXED, 0)?;
 
         let duration_ms = (samples.len() as u64 * 1_000) / 16_000;
         store
-            .set_audio_paths(meeting_id, import_wav_path.to_str(), None, Some(duration_ms))
+            .set_audio_paths(
+                meeting_id,
+                import_wav_path.to_str(),
+                None,
+                Some(duration_ms),
+            )
             .map_err(|e| format!("audio_paths_failed: {e}"))?;
         Ok(duration_ms)
     })();
@@ -275,14 +292,16 @@ fn chunk_all(samples: &[i16], target_ms: u64) -> Vec<Chunk> {
 
 /// Transcribes and stores each chunk in turn, same as the live worker in
 /// `recorder.rs` — chunking itself happens incrementally in `chunk_all`.
-fn transcribe_and_store(
+pub(super) fn transcribe_and_store(
     app: &tauri::AppHandle,
     store: &Arc<MeetingStore>,
     tm: &Arc<TranscriptionManager>,
     meeting_id: &str,
     samples: &[i16],
-) -> Result<(), String> {
-    let mut next_index: u32 = 0;
+    channel: u8,
+    first_index: u32,
+) -> Result<u32, String> {
+    let mut next_index: u32 = first_index;
     for chunk in chunk_all(samples, IMPORT_CHUNK_TARGET_MS) {
         let offset_ms = chunk.offset_ms;
         let timed = tm
@@ -298,7 +317,7 @@ fn transcribe_and_store(
                     text: s.text,
                     start_ms: offset_ms + s.start_ms,
                     end_ms: offset_ms + s.end_ms,
-                    channel: CHANNEL_MIXED,
+                    channel,
                     speaker_index: None,
                 };
                 next_index += 1;
@@ -323,7 +342,7 @@ fn transcribe_and_store(
         })
         .emit(app);
     }
-    Ok(())
+    Ok(next_index)
 }
 
 /// Reads a WAV file as 16 kHz mono i16 PCM, downmixing/resampling as needed.
@@ -332,7 +351,7 @@ fn transcribe_and_store(
 /// stays tolerant of arbitrary channel counts and sample rates (same
 /// downmix/linear-resample approach as
 /// `managers::tts::voices::load_wav_mono_16k`, i16 output instead of f32).
-fn read_wav_i16_mono_16k(path: &Path) -> Result<Vec<i16>, String> {
+pub(super) fn read_wav_i16_mono_16k(path: &Path) -> Result<Vec<i16>, String> {
     let mut reader = hound::WavReader::open(path).map_err(|e| format!("WAV nicht lesbar: {e}"))?;
     let spec = reader.spec();
     let channels = spec.channels.max(1) as usize;
@@ -403,7 +422,10 @@ mod tests {
 
     #[test]
     fn title_from_path_uses_the_file_stem() {
-        assert_eq!(title_from_path(Path::new("C:/rec/Jour Fixe.mp3")), "Jour Fixe");
+        assert_eq!(
+            title_from_path(Path::new("C:/rec/Jour Fixe.mp3")),
+            "Jour Fixe"
+        );
         assert_eq!(title_from_path(Path::new("C:/rec/notes.vtt")), "notes");
     }
 
@@ -486,8 +508,7 @@ mod tests {
         // empty audio.
         let dir = tempfile::tempdir().unwrap();
         let garbage_path = dir.path().join("not-actually-audio.wav");
-        std::fs::write(&garbage_path, b"this is not a wav file at all, just text")
-            .unwrap();
+        std::fs::write(&garbage_path, b"this is not a wav file at all, just text").unwrap();
 
         let outcome: Result<Vec<i16>, String> = (|| {
             let (wav_path, _tmp) = media::ensure_wav(&garbage_path, 16_000)?;

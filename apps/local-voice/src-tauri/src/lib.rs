@@ -786,8 +786,8 @@ fn run_headless_meetings(app: &AppHandle, args: &CliArgs) -> i32 {
                     // meetings run purges at startup. Observing "the audio
                     // was there and had an expiry" is therefore only possible
                     // from inside the run that created it.
-                    let mut payload =
-                        meeting_payload(&store, &meeting_id).unwrap_or_else(|| serde_json::json!({}));
+                    let mut payload = meeting_payload(&store, &meeting_id)
+                        .unwrap_or_else(|| serde_json::json!({}));
                     payload["meeting_id"] = serde_json::json!(meeting_id);
                     payload["db"] = serde_json::json!(store.db_path().display().to_string());
                     payload["import_ms"] = serde_json::json!(started.elapsed().as_millis() as u64);
@@ -1371,6 +1371,8 @@ pub fn run(cli_args: CliArgs) {
             commands::meetings::meetings_list,
             commands::meetings::meetings_get_segments,
             commands::meetings::meetings_update_segment,
+            commands::meetings::meetings_rename,
+            commands::meetings::meetings_retranscribe,
             commands::meetings::meetings_get_documents,
             commands::meetings::meetings_delete,
             commands::meetings::meetings_import_file,
@@ -1529,6 +1531,20 @@ pub fn run(cli_args: CliArgs) {
         }));
     }
 
+    // In-app updates and remembered window geometry. Both are desktop-only and
+    // pointless in a headless run (no window, no user to prompt).
+    if !headless_mode {
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            // The recording overlay places itself (overlay.rs) — restoring a
+            // saved position would fight that logic, so it is excluded.
+            .plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_denylist(&["recording_overlay"])
+                    .build(),
+            );
+    }
+
     builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
@@ -1665,8 +1681,13 @@ pub fn run(cli_args: CliArgs) {
             let mut win_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
                     .title("Local Voice AI")
-                    .inner_size(680.0, 570.0)
-                    .min_inner_size(680.0, 570.0)
+                    // Start size; the persisted geometry (tauri-plugin-window-state)
+                    // overrides this from the second launch on.
+                    .inner_size(800.0, 600.0)
+                    // Deliberately well below the start size: the layout is
+                    // responsive down to a single narrow column (sidebar
+                    // collapses to icons), so the window may be made small.
+                    .min_inner_size(480.0, 420.0)
                     .resizable(true)
                     .maximizable(true)
                     // Centred rather than wherever Windows would cascade it.

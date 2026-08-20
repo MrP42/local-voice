@@ -126,7 +126,9 @@ export const ReadingCard = () => {
     <SettingsGroup title={t("tts.reading.title")}>
       <div
         className={`px-4 py-3 space-y-3 rounded-lg transition-colors ${
-          dragging ? "bg-logo-primary/10 outline-2 outline-dashed outline-logo-primary" : ""
+          dragging
+            ? "bg-logo-primary/10 outline-2 outline-dashed outline-logo-primary"
+            : ""
         }`}
       >
         <p className="text-sm text-text/70">{t("tts.reading.description")}</p>
@@ -170,7 +172,9 @@ export const ReadingCard = () => {
               </Button>
             </>
           )}
-          {busy && <Badge variant="secondary">{t("tts.reading.working")}</Badge>}
+          {busy && (
+            <Badge variant="secondary">{t("tts.reading.working")}</Badge>
+          )}
         </div>
 
         {current && (
@@ -234,7 +238,11 @@ export const ReadingCard = () => {
                   >
                     {t("tts.reading.openEntry")}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => reset(doc.key)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => reset(doc.key)}
+                  >
                     {t("tts.reading.reset")}
                   </Button>
                   <Button

@@ -11,7 +11,8 @@ use ulid::Ulid;
 /// Database migrations for the meetings store. One migration creates every
 /// table for M8; later milestones (M9/M10) add migrations rather than
 /// editing this one, matching the pattern in `history.rs`.
-static MIGRATIONS: &[M] = &[M::up(
+static MIGRATIONS: &[M] = &[
+    M::up(
     "CREATE TABLE meetings (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
       source TEXT NOT NULL, started_at INTEGER, ended_at INTEGER, language TEXT,
@@ -47,7 +48,13 @@ static MIGRATIONS: &[M] = &[M::up(
       id TEXT PRIMARY KEY, title TEXT NOT NULL, sections_json TEXT NOT NULL,
       pinned INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER);",
-)];
+    ),
+    // The title is user-editable from M9 on, so it can no longer double as the
+    // record of where an imported meeting came from. `source_path` keeps the
+    // original file path (import only; NULL for live recordings), which the
+    // detail view shows underneath the title.
+    M::up("ALTER TABLE meetings ADD COLUMN source_path TEXT;"),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeetingSource {
@@ -99,6 +106,10 @@ pub struct Meeting {
     pub duration_ms: Option<u64>,
     pub consent_confirmed_at: Option<i64>,
     pub audio_retention_until: Option<i64>,
+    /// Original file path an imported meeting came from. `None` for live
+    /// recordings. Kept separately from `title` because the title is
+    /// user-editable (M9) and must be allowed to diverge from the file name.
+    pub source_path: Option<String>,
     pub created_at: i64,
     pub deleted_at: Option<i64>,
 }
@@ -266,6 +277,7 @@ impl MeetingStore {
             duration_ms: row.get::<_, Option<i64>>("duration_ms")?.map(|v| v as u64),
             consent_confirmed_at: row.get("consent_confirmed_at")?,
             audio_retention_until: row.get("audio_retention_until")?,
+            source_path: row.get("source_path")?,
             created_at: row.get("created_at")?,
             deleted_at: row.get("deleted_at")?,
         })
@@ -304,9 +316,75 @@ impl MeetingStore {
             duration_ms: None,
             consent_confirmed_at,
             audio_retention_until: None,
+            source_path: None,
             created_at: now,
             deleted_at: None,
         })
+    }
+
+    /// Renames a meeting. The title is free text chosen by the user and is
+    /// deliberately independent of `source_path` — see the field's doc.
+    pub fn set_title(&self, id: &str, title: &str) -> Result<()> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(anyhow!("Meeting title must not be empty"));
+        }
+        let conn = self.get_connection()?;
+        let now = Utc::now().timestamp();
+        let updated = conn.execute(
+            "UPDATE meetings SET title = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+            params![title, now, id],
+        )?;
+        if updated == 0 {
+            return Err(anyhow!("Meeting {} not found", id));
+        }
+        Ok(())
+    }
+
+    /// Records where an imported meeting came from.
+    pub fn set_source_path(&self, id: &str, source_path: &str) -> Result<()> {
+        let conn = self.get_connection()?;
+        let now = Utc::now().timestamp();
+        conn.execute(
+            "UPDATE meetings SET source_path = ?1, updated_at = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+            params![source_path, now, id],
+        )?;
+        Ok(())
+    }
+
+    /// Drops every stored segment of a meeting, leaving the transcript row in
+    /// place with an empty segment list. Used before a re-transcription: the
+    /// new run starts its `segment_index` at 0, so old segments must not
+    /// survive alongside it. The raw `transcript_deltas` are cleared too —
+    /// they are the replay log of exactly the segments being discarded, and
+    /// keeping them would make a later replay resurrect the old text.
+    pub fn clear_segments(&self, meeting_id: &str) -> Result<()> {
+        let mut conn = self.get_connection()?;
+        let now = Utc::now().timestamp();
+        let tx = conn.transaction()?;
+        Self::ensure_meeting_is_live(&tx, meeting_id)?;
+
+        let transcript_id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM transcripts WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        if let Some(transcript_id) = transcript_id {
+            tx.execute(
+                "DELETE FROM transcript_deltas WHERE transcript_id = ?1",
+                params![transcript_id],
+            )?;
+            tx.execute(
+                "UPDATE transcripts SET segments_json = '[]', content_revision = content_revision + 1, updated_at = ?1
+                 WHERE id = ?2",
+                params![now, transcript_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn set_status(&self, id: &str, status: MeetingStatus) -> Result<()> {
@@ -384,7 +462,7 @@ impl MeetingStore {
         let mut stmt = conn.prepare(
             "SELECT id, title, status, source, started_at, ended_at, language,
                     mic_audio_path, system_audio_path, duration_ms, consent_confirmed_at,
-                    audio_retention_until, created_at, deleted_at
+                    audio_retention_until, source_path, created_at, deleted_at
              FROM meetings
              WHERE deleted_at IS NULL
                AND audio_retention_until IS NOT NULL
@@ -402,7 +480,7 @@ impl MeetingStore {
             .query_row(
                 "SELECT id, title, status, source, started_at, ended_at, language,
                         mic_audio_path, system_audio_path, duration_ms, consent_confirmed_at,
-                        audio_retention_until, created_at, deleted_at
+                        audio_retention_until, source_path, created_at, deleted_at
                  FROM meetings WHERE id = ?1 AND deleted_at IS NULL",
                 params![id],
                 Self::map_meeting,
@@ -416,7 +494,7 @@ impl MeetingStore {
         let mut stmt = conn.prepare(
             "SELECT id, title, status, source, started_at, ended_at, language,
                     mic_audio_path, system_audio_path, duration_ms, consent_confirmed_at,
-                    audio_retention_until, created_at, deleted_at
+                    audio_retention_until, source_path, created_at, deleted_at
              FROM meetings WHERE deleted_at IS NULL
              ORDER BY created_at DESC
              LIMIT ?1 OFFSET ?2",
@@ -710,6 +788,86 @@ mod tests {
             .unwrap();
         assert_eq!(m.status, "recording");
         assert_eq!(m.consent_confirmed_at, Some(1_755_600_000));
+    }
+
+    #[test]
+    fn the_title_is_renamable_and_independent_of_the_source_file() {
+        let s = store();
+        let m = s
+            .create_meeting("voicemail-4ADF923F", MeetingSource::Import, None)
+            .unwrap();
+        s.set_source_path(&m.id, "C:/in/voicemail-4ADF923F.wav")
+            .unwrap();
+        s.set_title(&m.id, "  Rueckruf Agentur fuer Arbeit  ")
+            .unwrap();
+
+        let reloaded = s.get_meeting(&m.id).unwrap().unwrap();
+        assert_eq!(
+            reloaded.title, "Rueckruf Agentur fuer Arbeit",
+            "wird getrimmt"
+        );
+        assert_eq!(
+            reloaded.source_path.as_deref(),
+            Some("C:/in/voicemail-4ADF923F.wav"),
+            "Umbenennen darf die Herkunft nicht verlieren"
+        );
+    }
+
+    #[test]
+    fn an_empty_title_is_rejected_rather_than_stored() {
+        let s = store();
+        let m = s
+            .create_meeting("Jour fixe", MeetingSource::Live, None)
+            .unwrap();
+        assert!(s.set_title(&m.id, "   ").is_err());
+        assert_eq!(s.get_meeting(&m.id).unwrap().unwrap().title, "Jour fixe");
+    }
+
+    #[test]
+    fn clear_segments_empties_the_transcript_and_its_replay_log() {
+        let s = store();
+        let m = s.create_meeting("T", MeetingSource::Live, Some(1)).unwrap();
+        s.append_delta(
+            &m.id,
+            &TranscriptDelta {
+                new_segments: vec![StoredSegment {
+                    segment_index: 0,
+                    text: "Alt.".into(),
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    channel: 0,
+                    speaker_index: None,
+                }],
+            },
+        )
+        .unwrap();
+        assert_eq!(s.get_segments(&m.id).unwrap().len(), 1);
+
+        s.clear_segments(&m.id).unwrap();
+        assert!(s.get_segments(&m.id).unwrap().is_empty());
+
+        // Der naechste Lauf faengt wieder bei Sequenz 1 an — der alte
+        // Delta-Log ist mitgeloescht, sonst wuerde ein Replay den alten Text
+        // wiederauferstehen lassen.
+        let sequence = s
+            .append_delta(
+                &m.id,
+                &TranscriptDelta {
+                    new_segments: vec![StoredSegment {
+                        segment_index: 0,
+                        text: "Neu.".into(),
+                        start_ms: 0,
+                        end_ms: 1_000,
+                        channel: 0,
+                        speaker_index: None,
+                    }],
+                },
+            )
+            .unwrap();
+        assert_eq!(sequence, 1);
+        let segments = s.get_segments(&m.id).unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, "Neu.");
     }
 
     #[test]

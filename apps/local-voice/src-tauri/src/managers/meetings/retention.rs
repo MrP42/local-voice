@@ -212,7 +212,10 @@ mod tests {
 
     #[test]
     fn forever_never_expires() {
-        assert_eq!(retention_until(&MeetingAudioRetention::Forever, 5, 1, true), None);
+        assert_eq!(
+            retention_until(&MeetingAudioRetention::Forever, 5, 1, true),
+            None
+        );
     }
 
     /// Regression for the review finding: a `Days(n)` expiry must stay
@@ -243,12 +246,7 @@ mod tests {
         // reading `ended_at` back from the store, not substituting "now".
         let now_much_later = ended_at + 500_000;
         let stored = s.get_meeting(&meeting.id).unwrap().unwrap();
-        let until_later = retention_until(
-            &policy,
-            now_much_later,
-            stored.ended_at.unwrap(),
-            true,
-        );
+        let until_later = retention_until(&policy, now_much_later, stored.ended_at.unwrap(), true);
         assert_eq!(
             until_later, expected,
             "Days(n) expiry must not drift when recomputed later"
@@ -315,7 +313,10 @@ mod tests {
             cleared: true,  // but nothing left to keep a pointer to either
         }];
         let (clear_mic, clear_system) = paths_to_clear(Some("mic.wav"), None, &outcomes);
-        assert!(clear_mic, "NotFound clears the path just like a real delete");
+        assert!(
+            clear_mic,
+            "NotFound clears the path just like a real delete"
+        );
         assert!(clear_system, "a path that was never set is trivially clear");
     }
 

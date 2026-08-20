@@ -99,7 +99,10 @@ export const MicLevelMeter: React.FC<{ compact?: boolean }> = ({
             sumSquares += v * v;
           }
           const rms = Math.sqrt(sumSquares / time.length);
-          peakRef.current = Math.max(peakRef.current * 0.9, Math.min(1, rms * 4));
+          peakRef.current = Math.max(
+            peakRef.current * 0.9,
+            Math.min(1, rms * 4),
+          );
           setPeak(peakRef.current);
 
           rafRef.current = requestAnimationFrame(tick);

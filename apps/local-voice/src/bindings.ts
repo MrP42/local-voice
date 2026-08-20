@@ -1048,6 +1048,31 @@ async meetingsUpdateSegment(meetingId: string, segmentIndex: number, text: strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Renames a meeting. The title is free text and deliberately independent of
+ * the file an imported meeting came from (that is kept in `source_path`).
+ */
+async meetingsRename(meetingId: string, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_rename", { meetingId, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Re-runs the transcription of a finished meeting from its stored audio,
+ * optionally with a different model. Discards the old segments — see
+ * `retranscribe_meeting`.
+ */
+async meetingsRetranscribe(meetingId: string, modelId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_retranscribe", { meetingId, modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async meetingsGetDocuments(meetingId: string) : Promise<Result<MeetingDocument[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("meetings_get_documents", { meetingId }) };
@@ -1563,7 +1588,13 @@ export type ImportedVoice = { id: string; transcript: string }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
-export type Meeting = { id: string; title: string; status: string; source: string; started_at: number | null; ended_at: number | null; language: string | null; mic_audio_path: string | null; system_audio_path: string | null; duration_ms: number | null; consent_confirmed_at: number | null; audio_retention_until: number | null; created_at: number; deleted_at: number | null }
+export type Meeting = { id: string; title: string; status: string; source: string; started_at: number | null; ended_at: number | null; language: string | null; mic_audio_path: string | null; system_audio_path: string | null; duration_ms: number | null; consent_confirmed_at: number | null; audio_retention_until: number | null; 
+/**
+ * Original file path an imported meeting came from. `None` for live
+ * recordings. Kept separately from `title` because the title is
+ * user-editable (M9) and must be allowed to diverge from the file name.
+ */
+source_path: string | null; created_at: number; deleted_at: number | null }
 /**
  * How long a meeting's audio survives after the meeting ends.
  */
@@ -1587,7 +1618,13 @@ export type MeetingDocument = { id: string; meeting_id: string; kind: string; bo
  * Typed frontend event (pattern: `HistoryUpdatePayload`). `message` on the
  * error variant carries an i18n-able code string, never a prose sentence.
  */
-export type MeetingEvent = { kind: "state"; meeting_id: string; status: string; paused: boolean } | { kind: "segments"; meeting_id: string; appended: StoredSegment[] } | { kind: "levels"; mic: number; system: number } | { kind: "error"; meeting_id: string; message: string }
+export type MeetingEvent = { kind: "state"; meeting_id: string; status: string; paused: boolean } | { kind: "segments"; meeting_id: string; appended: StoredSegment[] } | { kind: "levels"; mic: number; system: number } | { kind: "error"; meeting_id: string; message: string } | 
+/**
+ * Every segment of this meeting was discarded (re-transcription started).
+ * Consumers that keep a local segment list must clear it — otherwise the
+ * new run's segments, which restart at index 0, would append to the old.
+ */
+{ kind: "reset"; meeting_id: string }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**

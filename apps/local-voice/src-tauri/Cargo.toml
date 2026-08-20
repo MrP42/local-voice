@@ -1,6 +1,6 @@
 [package]
 name = "local-voice-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local Voice AI - lokale Sprach-KI (Diktat, Vorlesen, Stimmen, Übersetzung)"
 authors = ["Patrick Wolff"]
 edition = "2021"
@@ -103,6 +103,12 @@ signal-hook = "0.3"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-single-instance = "2.3.2"
+# In-app updates from the GitHub releases of MrP42/sprechstift. The JS side
+# (@tauri-apps/plugin-updater) has always been wired up in UpdateChecker.tsx;
+# without this Rust half every check() failed silently.
+tauri-plugin-updater = "2.10.0"
+# Remembers the main window's size/position across restarts.
+tauri-plugin-window-state = "2.4.1"
 
 [target.'cfg(windows)'.dependencies]
 # ONNX Runtime on Windows is CPU-only (no ort-directml), matching macOS/Linux.

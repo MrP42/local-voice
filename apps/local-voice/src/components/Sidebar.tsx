@@ -4,24 +4,19 @@ import {
   Cog,
   FlaskConical,
   History,
-  Info,
   Sparkles,
   Cpu,
-  Mic,
   Users,
   Volume2,
 } from "lucide-react";
-import LocalVoiceAiLogo, { LocalVoiceAiMark } from "./icons/LocalVoiceAiLogo";
+import LocalVoiceAiLogo from "./icons/LocalVoiceAiLogo";
 import { useSettings } from "../hooks/useSettings";
 import {
-  GeneralSettings,
-  AdvancedSettings,
+  AppSettings,
   HistorySettings,
   DebugSettings,
-  AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
-  DictationTest,
   TtsSettings,
   MeetingsSettings,
 } from "./settings";
@@ -43,13 +38,11 @@ interface SectionConfig {
   enabled: (settings: any) => boolean;
 }
 
+// The sidebar lists what you DO with the app; everything that merely
+// configures it lives under one "Einstellungen" entry with tabs (AppSettings).
+// General, Advanced, the dictation test and the about page were four separate
+// rows before — four rows of navigation for one activity.
 export const SECTIONS_CONFIG = {
-  general: {
-    labelKey: "sidebar.general",
-    icon: LocalVoiceAiMark,
-    component: GeneralSettings,
-    enabled: () => true,
-  },
   history: {
     labelKey: "sidebar.history",
     icon: History,
@@ -68,22 +61,16 @@ export const SECTIONS_CONFIG = {
     component: ModelsSettings,
     enabled: () => true,
   },
-  dictationTest: {
-    labelKey: "sidebar.dictationTest",
-    icon: Mic,
-    component: DictationTest,
-    enabled: () => true,
-  },
   tts: {
     labelKey: "sidebar.tts",
     icon: Volume2,
     component: TtsSettings,
     enabled: () => true,
   },
-  advanced: {
-    labelKey: "sidebar.advanced",
+  settings: {
+    labelKey: "sidebar.settings",
     icon: Cog,
-    component: AdvancedSettings,
+    component: AppSettings,
     enabled: () => true,
   },
   postprocessing: {
@@ -98,13 +85,10 @@ export const SECTIONS_CONFIG = {
     component: DebugSettings,
     enabled: (settings) => settings?.debug_mode ?? false,
   },
-  about: {
-    labelKey: "sidebar.about",
-    icon: Info,
-    component: AboutSettings,
-    enabled: () => true,
-  },
 } as const satisfies Record<string, SectionConfig>;
+
+export const isSidebarSection = (value: string): value is SidebarSection =>
+  Object.prototype.hasOwnProperty.call(SECTIONS_CONFIG, value);
 
 interface SidebarProps {
   activeSection: SidebarSection;
@@ -123,17 +107,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
   return (
-    <div className="flex flex-col w-40 h-full border-e border-mid-gray/20 items-center px-2">
-      <LocalVoiceAiLogo className="m-4" height={22} />
+    // Two widths, one breakpoint: below `sm` the rail is icons only (a label
+    // column would eat half a narrow window), from `sm` up it is wide enough
+    // that the longest label — "Besprechungen" — fits without truncation.
+    // That is a change of the interaction model, not cosmetics, which is why
+    // it earns a media query (design system, references/responsive.md).
+    <nav
+      className="flex flex-col w-14 sm:w-52 h-full shrink-0 border-e border-mid-gray/20 px-2 overflow-y-auto"
+      aria-label={t("sidebar.ariaLabel")}
+    >
+      {/* Word mark only — the pictorial mark repeats what the taskbar icon
+          already says and cost the labels their width. */}
+      <div className="hidden sm:block px-1 py-4">
+        <LocalVoiceAiLogo height={22} showMark={false} />
+      </div>
+      <div className="sm:hidden h-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         {availableSections.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;
+          const label = t(section.labelKey);
 
           return (
-            <div
+            <button
               key={section.id}
-              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${
+              type="button"
+              aria-current={isActive ? "page" : undefined}
+              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors justify-center sm:justify-start ${
                 isActive
                   ? // Ink auf Gelb (Design-System) — sonst stünde im Dark-Theme
                     // weiße Schrift auf dem gelben Aktiv-Balken.
@@ -141,18 +141,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   : "hover:bg-mid-gray/20 hover:opacity-100 opacity-85"
               }`}
               onClick={() => onSectionChange(section.id)}
+              title={label}
             >
-              <Icon width={24} height={24} className="shrink-0" />
-              <p
-                className="text-sm font-medium truncate"
-                title={t(section.labelKey)}
-              >
-                {t(section.labelKey)}
-              </p>
-            </div>
+              <Icon width={22} height={22} className="shrink-0" />
+              <span className="hidden sm:block text-sm font-medium text-start min-w-0">
+                {label}
+              </span>
+            </button>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 };

@@ -18,8 +18,11 @@ export const Button: React.FC<ButtonProps> = ({
   size = "md",
   ...props
 }) => {
+  // inline-flex, not the default inline-block: a button with an icon plus a
+  // label must put the icon BESIDE the text, not above it. Without this the
+  // SVG is a block-level child and the label wraps under it.
   const baseClasses =
-    "font-medium rounded-lg border focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
+    "inline-flex items-center justify-center gap-1.5 whitespace-nowrap font-medium rounded-lg border focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer";
 
   const variantClasses = {
     primary:

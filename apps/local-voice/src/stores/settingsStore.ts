@@ -120,8 +120,7 @@ const settingUpdaters: {
   tts_idle_minutes: (value) =>
     commands.changeTtsIdleMinutesSetting(value as number),
   tts_max_chars: (value) => commands.changeTtsMaxCharsSetting(value as number),
-  tts_voice: (value) =>
-    commands.changeTtsVoiceSetting(value as string | null),
+  tts_voice: (value) => commands.changeTtsVoiceSetting(value as string | null),
   tts_compile: (value) => commands.changeTtsCompileSetting(value as boolean),
   tts_translate_lang: (value) =>
     commands.changeTtsTranslateLangSetting(value as string),
@@ -184,7 +183,8 @@ const settingUpdaters: {
     commands.changeExtraRecordingBufferSetting(value as number),
   meeting_audio_retention: (value) =>
     commands.changeMeetingAudioRetentionSetting(value as MeetingAudioRetention),
-  meeting_language: (value) => commands.changeMeetingLanguageSetting(value as string),
+  meeting_language: (value) =>
+    commands.changeMeetingLanguageSetting(value as string),
   meeting_model: (value) =>
     commands.changeMeetingModelSetting((value as string | null) ?? null),
 };

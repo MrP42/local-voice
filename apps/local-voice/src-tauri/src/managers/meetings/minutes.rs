@@ -654,7 +654,8 @@ pub async fn generate_minutes(
     let policy = settings.meeting_audio_retention;
     let meeting = store.get_meeting(meeting_id).map_err(|e| e.to_string())?;
     let ended_at = meeting.as_ref().map(|m| m.ended_at.unwrap_or(m.created_at));
-    let until = ended_at.and_then(|ended_at| super::retention::retention_until(&policy, now, ended_at, true));
+    let until = ended_at
+        .and_then(|ended_at| super::retention::retention_until(&policy, now, ended_at, true));
     if let Err(e) = store.set_retention_until(meeting_id, until) {
         log::warn!("meetings: retention_until not stored after minutes: {e}");
     }
@@ -788,6 +789,7 @@ mod tests {
             duration_ms: Some(10_000),
             consent_confirmed_at: None,
             audio_retention_until: None,
+            source_path: None,
             created_at: 1_755_600_000,
             deleted_at: None,
         };
@@ -1038,9 +1040,7 @@ mod tests {
         // Mirrors the real flow: the recorder moves a meeting to `ready`
         // once it stops. The status guard (review finding #1) now refuses
         // minutes for a meeting still `recording`.
-        store
-            .set_status(&meeting.id, MeetingStatus::Ready)
-            .unwrap();
+        store.set_status(&meeting.id, MeetingStatus::Ready).unwrap();
 
         let document = generate_minutes_with_settings(&settings, Arc::clone(&store), &meeting.id)
             .await
@@ -1091,16 +1091,16 @@ mod tests {
         let meeting = store
             .create_meeting("Live jour fixe", MeetingSource::Live, Some(1_755_600_000))
             .unwrap();
-        assert_eq!(meeting.status, "recording", "MeetingSource::Live starts recording");
+        assert_eq!(
+            meeting.status, "recording",
+            "MeetingSource::Live starts recording"
+        );
 
         let result =
             generate_minutes_with_settings(&settings, Arc::clone(&store), &meeting.id).await;
 
         let err = result.expect_err("must not generate minutes for a live recording");
-        assert!(
-            err.starts_with("meeting_not_finished"),
-            "war: {err}"
-        );
+        assert!(err.starts_with("meeting_not_finished"), "war: {err}");
 
         assert!(
             store.get_documents(&meeting.id).unwrap().is_empty(),

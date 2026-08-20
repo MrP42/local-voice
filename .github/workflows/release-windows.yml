@@ -1,0 +1,167 @@
+# Windows release for Local Voice AI, and the source of the in-app update.
+#
+# Why this file exists next to apps/local-voice/.github/workflows/: those came
+# with the Handy subtree and sit BELOW the repo root, where GitHub never looks
+# for them — they have never run. This one is at the root and does run. Its
+# Windows steps (Vulkan SDK, VC++ redist, ONNX Runtime, SPIRV-Headers) are
+# copied from that inherited build.yml rather than re-derived, because each of
+# them fixes a specific, hard-won Windows build failure documented there.
+#
+# The update path: `createUpdaterArtifacts` (tauri.conf.json) makes the bundler
+# emit an .exe + .sig per build; tauri-action collects them into `latest.json`
+# and attaches it to the release. The app polls
+# https://github.com/MrP42/sprechstift/releases/latest/download/latest.json,
+# which only resolves for a PUBLISHED, non-prerelease release of a PUBLIC repo
+# — hence `draft: false` below.
+name: "Release (Windows)"
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: apps/local-voice
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - name: Enable long paths
+        shell: pwsh
+        working-directory: .
+        run: |
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+            -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+          git config --system core.longpaths true
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Read version from tauri.conf.json
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep -o '"version": "[^"]*"' src-tauri/tauri.conf.json | cut -d'"' -f4)
+          echo "Application version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # A tag must name the version the app will report — otherwise the updater
+      # compares against a version that was never built and either loops or
+      # never fires. Fail loudly instead of shipping a mismatched release.
+      - name: Verify tag matches version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [ "$TAG" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag v$TAG does not match tauri.conf.json version ${{ steps.version.outputs.version }}" >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/local-voice/pnpm-lock.yaml
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      # ggml-vulkan does find_package(SPIRV-Headers CONFIG REQUIRED); the CI
+      # Vulkan SDK does not expose a findable SPIRV-HeadersConfig.cmake.
+      - name: Install SPIRV-Headers
+        shell: pwsh
+        run: |
+          vcpkg install spirv-headers:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
+          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          $combined = if ($env:CMAKE_PREFIX_PATH) { "$prefix;$env:CMAKE_PREFIX_PATH" } else { $prefix }
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$combined"
+
+      # Ship the VC++ runtime app-local so the app starts without a current
+      # Microsoft redistributable. build.rs stages these into transcribe-libs/.
+      - name: Locate VC++ runtime redist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -latest -products * -property installationPath
+          if (-not $vsRoot) { throw "vswhere found no Visual Studio installation" }
+          $redistVersion = (Get-Content (Join-Path $vsRoot "VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt")).Trim()
+          $archDir = Join-Path $vsRoot "VC\Redist\MSVC\$redistVersion\x64"
+          if (-not (Test-Path $archDir)) { throw "VC++ redist arch dir not found: $archDir" }
+          $crt = Get-ChildItem $archDir -Directory -Filter "Microsoft.VC*.CRT" | Sort-Object Name | Select-Object -Last 1
+          if (-not $crt -or -not (Test-Path (Join-Path $crt.FullName "msvcp140.dll"))) {
+            throw "VC++ CRT redist dir not found or incomplete under: $archDir"
+          }
+          $omp = Get-ChildItem $archDir -Directory -Filter "Microsoft.VC*.OpenMP" | Sort-Object Name | Select-Object -Last 1
+          if (-not $omp -or -not (Test-Path (Join-Path $omp.FullName "vcomp140.dll"))) {
+            throw "VC++ OpenMP redist dir not found or incomplete under: $archDir"
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "HANDY_VC_REDIST_DIRS=$($crt.FullName);$($omp.FullName)"
+
+      # Microsoft's ONNX Runtime build (SSE2 baseline + MLAS runtime dispatch)
+      # instead of pyke's AVX2-baseline default, which crashes pre-Haswell CPUs
+      # in a static initializer before main().
+      - name: Install ONNX Runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ORT_VERSION = "1.24.2"
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$ORT_VERSION/onnxruntime-win-x64-$ORT_VERSION.zip"
+          Invoke-WebRequest -Uri $url -OutFile ort.zip
+          Expand-Archive -Path ort.zip -DestinationPath ort-dist -Force
+          $ortLib = (Resolve-Path "ort-dist/onnxruntime-win-x64-$ORT_VERSION/lib").Path
+          Add-Content -Path $env:GITHUB_ENV -Value "ORT_LIB_LOCATION=$ortLib"
+          Add-Content -Path $env:GITHUB_ENV -Value "ORT_PREFER_DYNAMIC_LINK=1"
+
+      # Not in git (gitignored *.onnx-class binaries); the app cannot compile
+      # without it (see AGENTS.md, "Model Setup").
+      - name: Fetch Silero VAD model
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force src-tauri/resources/models | Out-Null
+          Invoke-WebRequest -Uri "https://blob.handy.computer/silero_vad_v4.onnx" `
+            -OutFile "src-tauri/resources/models/silero_vad_v4.onnx"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Without this the bundler emits no .sig and the app rejects every
+          # update it downloads. Repository secret; the private key half of the
+          # pubkey in tauri.conf.json.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/local-voice
+          tagName: v${{ steps.version.outputs.version }}
+          releaseName: v${{ steps.version.outputs.version }}
+          releaseBody: "Automatischer Windows-Build. Die App aktualisiert sich hierauf selbst."
+          # Published, not draft: `releases/latest/download/latest.json` — the
+          # updater endpoint — does not resolve to a draft.
+          draft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: --bundles nsis,updater

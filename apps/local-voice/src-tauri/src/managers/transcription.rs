@@ -1971,8 +1971,7 @@ impl TranscriptionManager {
                         LoadedEngine::TranscribeCpp(session) => {
                             // Custom words become the initial prompt ONLY for models
                             // that accept one (whisper family), exactly like transcribe().
-                            let family = if settings.custom_words.is_empty() || !model_is_whisper
-                            {
+                            let family = if settings.custom_words.is_empty() || !model_is_whisper {
                                 None
                             } else {
                                 Some(RunExtension::Whisper(WhisperRunOptions {
@@ -2011,7 +2010,9 @@ impl TranscriptionManager {
                             parakeet_engine
                                 .transcribe_with(&audio, &params)
                                 .map(|r| segments_from_result(&r.text, r.segments, audio_ms))
-                                .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Parakeet transcription failed: {}", e)
+                                })
                         }
                         LoadedEngine::Moonshine(moonshine_engine) => moonshine_engine
                             .transcribe(&audio, &TranscribeOptions::default())

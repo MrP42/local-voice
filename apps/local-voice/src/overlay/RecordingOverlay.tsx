@@ -13,11 +13,7 @@ import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
 type OverlayState =
-  | "recording"
-  | "streaming"
-  | "transcribing"
-  | "processing"
-  | "notice";
+  "recording" | "streaming" | "transcribing" | "processing" | "notice";
 
 type PasteFallbackNotice = {
   reason: string;

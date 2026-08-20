@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, ArrowLeft } from "lucide-react";
+import { Check, Pencil, X, ArrowLeft } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
@@ -11,6 +11,9 @@ import { Textarea } from "../../ui/Textarea";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import Badge from "../../ui/Badge";
 import { MinutesView } from "./MinutesView";
+import { RetranscribeControl } from "./RetranscribeControl";
+import { Input } from "../../ui/Input";
+import { translateMeetingError } from "./meetingErrors";
 
 const formatMmSs = (ms: number) => {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -32,20 +35,28 @@ const channelLabelKey = (channel: number) => {
 
 type Tab = "transcript" | "minutes";
 
-const fileBaseName = (path: string) => path.split(/[\/]/).pop() ?? path;
+// Windows paths use backslashes; the old class `[\/]` matched only the
+// forward slash, so a C:\... path came back whole.
+const fileBaseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
 interface MeetingDetailProps {
   meeting: Meeting;
   onBack: () => void;
+  /** Propagates a title change back to the list, which owns the record. */
+  onMeetingChange: (meeting: Meeting) => void;
 }
 
 export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   meeting,
   onBack,
+  onMeetingChange,
 }) => {
   const { t, i18n } = useTranslation();
   const meetingId = meeting.id;
   const meetingTitle = meeting.title;
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(meetingTitle);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("transcript");
   const [segments, setSegments] = useState<StoredSegment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +80,29 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   useEffect(() => {
     void loadSegments();
   }, [loadSegments]);
+
+  const saveTitle = async () => {
+    const next = titleDraft.trim();
+    if (next === "" || next === meetingTitle) {
+      setEditingTitle(false);
+      setTitleDraft(meetingTitle);
+      return;
+    }
+    const result = await commands.meetingsRename(meetingId, next);
+    if (result.status === "error") {
+      setTitleError(translateMeetingError(result.error, t));
+      return;
+    }
+    setTitleError(null);
+    setEditingTitle(false);
+    onMeetingChange({ ...meeting, title: next });
+  };
+
+  const cancelTitleEdit = () => {
+    setEditingTitle(false);
+    setTitleDraft(meetingTitle);
+    setTitleError(null);
+  };
 
   const transcriptText = () =>
     segments
@@ -144,7 +178,58 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
             {t("meetings.detail.back")}
           </button>
         </div>
-        <h3 className="text-base font-semibold truncate">{meetingTitle}</h3>
+        {/* Title and origin are two different facts: the title is what the
+            user calls this meeting, `source_path` is the file it was imported
+            from. Renaming must not lose the second one, hence both lines. */}
+        {editingTitle ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveTitle();
+                if (e.key === "Escape") cancelTitleEdit();
+              }}
+              className="flex-1 min-w-[12rem]"
+              autoFocus
+              aria-label={t("meetings.detail.titleLabel")}
+            />
+            <Button size="sm" onClick={saveTitle}>
+              <Check width={14} height={14} />
+              {t("meetings.detail.save")}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={cancelTitleEdit}>
+              <X width={14} height={14} />
+              {t("meetings.detail.cancel")}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 group">
+            <h3 className="text-base font-semibold break-words min-w-0 flex-1">
+              {meetingTitle}
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                setTitleDraft(meetingTitle);
+                setEditingTitle(true);
+              }}
+              title={t("meetings.detail.renameTitle")}
+              className="p-1 rounded-md text-text/50 hover:text-logo-primary cursor-pointer shrink-0"
+            >
+              <Pencil width={14} height={14} />
+            </button>
+          </div>
+        )}
+        {meeting.source_path && (
+          <p
+            className="text-xs text-text/50 break-all -mt-2"
+            title={meeting.source_path}
+          >
+            {fileBaseName(meeting.source_path)}
+          </p>
+        )}
+        {titleError && <p className="text-sm text-red-400">{titleError}</p>}
 
         {(meeting.mic_audio_path || meeting.system_audio_path) && (
           <AudioPlayerGroup>
@@ -179,7 +264,7 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           </AudioPlayerGroup>
         )}
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm border border-mid-gray/20 rounded-md px-3 py-2">
+        <div className="grid grid-cols-[minmax(6rem,auto)_1fr] gap-x-4 gap-y-1 text-sm border border-mid-gray/20 rounded-md px-3 py-2">
           <span className="text-text/60">{t("meetings.meta.status")}</span>
           <span>
             <Badge
@@ -241,6 +326,8 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           <span>{segments.length}</span>
         </div>
 
+        <RetranscribeControl meeting={meeting} onFinished={loadSegments} />
+
         <div className="flex gap-1 border-b border-mid-gray/20">
           <button
             type="button"
@@ -291,7 +378,10 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {segments.map((segment) => (
-                <div key={segment.segment_index} className="flex gap-2 items-start text-sm group">
+                <div
+                  key={segment.segment_index}
+                  className="flex gap-2 items-start text-sm group"
+                >
                   <span className="text-xs text-text/40 w-10 shrink-0 pt-0.5">
                     {formatMmSs(segment.start_ms)}
                   </span>
@@ -315,7 +405,11 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                         >
                           {t("meetings.detail.save")}
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={cancelEdit}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={cancelEdit}
+                        >
                           {t("meetings.detail.cancel")}
                         </Button>
                       </div>

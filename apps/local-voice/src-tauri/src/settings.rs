@@ -579,8 +579,8 @@ fn default_meeting_language() -> String {
     "auto".to_string()
 }
 
-fn default_meeting_audio_retention(
-) -> crate::managers::meetings::retention::MeetingAudioRetention {
+fn default_meeting_audio_retention() -> crate::managers::meetings::retention::MeetingAudioRetention
+{
     crate::managers::meetings::retention::MeetingAudioRetention::AfterMinutes
 }
 
@@ -903,6 +903,27 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         label: "AWS Bedrock (Mantle)".to_string(),
         base_url: "https://bedrock-mantle.us-east-1.api.aws/v1".to_string(),
         allow_base_url_edit: false,
+        models_endpoint: Some("/models".to_string()),
+        supports_structured_output: true,
+    });
+
+    // Local, OpenAI-compatible servers. Both need an editable base URL — the
+    // user decides on which host and port their server listens — and neither
+    // asks for an API key (llm_client sends the header only when non-empty).
+    // Ollama: `/v1` on 11434. vLLM: `/v1` on 8000 (`vllm serve ...`).
+    providers.push(PostProcessProvider {
+        id: "ollama".to_string(),
+        label: "Ollama (lokal)".to_string(),
+        base_url: "http://localhost:11434/v1".to_string(),
+        allow_base_url_edit: true,
+        models_endpoint: Some("/models".to_string()),
+        supports_structured_output: false,
+    });
+    providers.push(PostProcessProvider {
+        id: "vllm".to_string(),
+        label: "vLLM (lokal)".to_string(),
+        base_url: "http://localhost:8000/v1".to_string(),
+        allow_base_url_edit: true,
         models_endpoint: Some("/models".to_string()),
         supports_structured_output: true,
     });

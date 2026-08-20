@@ -110,6 +110,11 @@ pub enum MeetingEvent {
     Levels { mic: f32, system: f32 },
     #[serde(rename = "error")]
     Error { meeting_id: String, message: String },
+    /// Every segment of this meeting was discarded (re-transcription started).
+    /// Consumers that keep a local segment list must clear it — otherwise the
+    /// new run's segments, which restart at index 0, would append to the old.
+    #[serde(rename = "reset")]
+    Reset { meeting_id: String },
 }
 
 // ---------------------------------------------------------------------------

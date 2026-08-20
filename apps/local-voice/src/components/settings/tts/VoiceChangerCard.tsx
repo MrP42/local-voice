@@ -47,8 +47,19 @@ export const VoiceChangerCard = () => {
         {
           name: "Audio/Video",
           extensions: [
-            "wav", "mp3", "m4a", "aac", "flac", "ogg", "opus",
-            "wma", "mp4", "mov", "mkv", "webm", "avi",
+            "wav",
+            "mp3",
+            "m4a",
+            "aac",
+            "flac",
+            "ogg",
+            "opus",
+            "wma",
+            "mp4",
+            "mov",
+            "mkv",
+            "webm",
+            "avi",
           ],
         },
       ],
@@ -102,7 +113,11 @@ export const VoiceChangerCard = () => {
               {t("tts.voiceChanger.record")}
             </Button>
           )}
-          <Button variant="secondary" onClick={pickFile} disabled={busy || recording}>
+          <Button
+            variant="secondary"
+            onClick={pickFile}
+            disabled={busy || recording}
+          >
             {t("tts.voiceChanger.pickFile")}
           </Button>
           {recording && (
@@ -120,7 +135,12 @@ export const VoiceChangerCard = () => {
               <span className="text-text/80">{transcript}</span>
             </div>
             <div className="flex gap-2 items-center">
-              <Button size="sm" variant="secondary" onClick={exportWav} disabled={busy}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={exportWav}
+                disabled={busy}
+              >
                 {t("tts.voiceChanger.export")}
               </Button>
               {saved && (

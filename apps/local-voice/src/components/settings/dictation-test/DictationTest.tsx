@@ -60,7 +60,7 @@ export const DictationTest: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <SettingsGroup title={t("dictationTest.title")}>
         <p className="text-sm opacity-70 px-1 pb-2">
           {t("dictationTest.intro")}
@@ -89,7 +89,9 @@ export const DictationTest: React.FC = () => {
               onClick={readAloud}
               className="text-xs px-2 py-1 rounded border border-mid-gray/30 hover:border-mid-gray/60"
             >
-              {speaking ? t("dictationTest.reading") : t("dictationTest.readAloud")}
+              {speaking
+                ? t("dictationTest.reading")
+                : t("dictationTest.readAloud")}
             </button>
           </div>
         </div>
@@ -177,7 +179,8 @@ const DiffView: React.FC<{ diff: WordDiff[] }> = ({ diff }) => (
           key={i}
           className="rounded px-1"
           style={{
-            background: "color-mix(in srgb, var(--color-logo-primary) 30%, transparent)",
+            background:
+              "color-mix(in srgb, var(--color-logo-primary) 30%, transparent)",
           }}
           title={part.kind === "extra" ? "zu viel" : "abweichend"}
         >

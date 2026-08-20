@@ -49,7 +49,10 @@ export const LiveTranscript: React.FC = () => {
           setActiveMeetingId((prev) =>
             prev === payload.meeting_id ? prev : payload.meeting_id,
           );
-        } else if (payload.status === "processing" || payload.status === "ready") {
+        } else if (
+          payload.status === "processing" ||
+          payload.status === "ready"
+        ) {
           // Recording ended — leave the transcript visible until a new
           // recording starts rather than clearing it out from under the user.
         }

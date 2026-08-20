@@ -112,14 +112,20 @@ export const TranslateCard = () => {
               {t("tts.translate.stopRecording")}
             </Button>
           ) : (
-            <Button variant="secondary" onClick={startRecording} disabled={busy}>
+            <Button
+              variant="secondary"
+              onClick={startRecording}
+              disabled={busy}
+            >
               {t("tts.translate.record")}
             </Button>
           )}
           {recording && (
             <Badge variant="primary">{t("tts.translate.recording")}</Badge>
           )}
-          {busy && <Badge variant="secondary">{t("tts.translate.working")}</Badge>}
+          {busy && (
+            <Badge variant="secondary">{t("tts.translate.working")}</Badge>
+          )}
         </div>
 
         {transcript && (
@@ -134,7 +140,9 @@ export const TranslateCard = () => {
             <span className="text-text/80">{translation}</span>
           </div>
         )}
-        <p className="text-xs text-text/50">{t("tts.translate.providerHint")}</p>
+        <p className="text-xs text-text/50">
+          {t("tts.translate.providerHint")}
+        </p>
       </div>
     </SettingsGroup>
   );

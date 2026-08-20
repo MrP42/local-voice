@@ -11,6 +11,8 @@
     "opener:default",
     "store:default",
     "process:default",
+    "window-state:default",
+    "updater:default",
     "dialog:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
