@@ -107,6 +107,7 @@
       "error": "Fehler"
     },
     "vramHint": "Start dauert lange — VRAM freigeben: andere GPU-Apps schließen.",
+    "truncatedWarning": "Nur die ersten {{limit}} von {{total}} Zeichen werden vorgelesen. Die Grenze steht weiter unten unter „Maximale Zeichenzahl“ — beim Speichern als Audiodatei gilt sie nicht, dort wird immer der ganze Text erzeugt.",
     "voices": {
       "title": "Stimmen",
       "description": "Stimme aus einer 10–30-Sekunden-Referenz klonen. Aufnahmen bleiben auf diesem Rechner; das Transkript entsteht automatisch und ist editierbar.",
@@ -176,6 +177,13 @@
       "volumeDescription": "Wiedergabelautstärke der Sprachausgabe, unabhängig von den Feedback-Sounds.",
       "normalize": "Stimmen gleich laut",
       "normalizeDescription": "Zieht alle Stimmen auf denselben Pegel (-20 LUFS) — beim Aufnehmen und Importieren einer Referenz und beim Vorlesen. Ohne das ist im Dialog eine Sprecherin zu leise und die nächste zu laut.",
+      "enhance": "Klang verbessern",
+      "enhanceDescription": "Entfernt Trittschall und Brummen, senkt das Rauschen in Sprechpausen und gleicht laute und leise Stellen an. Wirkt an drei Stellen: beim Aufnehmen oder Importieren einer Stimme, beim Vorlesen und beim Speichern als Datei. Am meisten bringt es bei der Aufnahme — Fish Speech bildet die Stimme daraus nach, mitsamt allem, was im Hintergrund zu hören ist.",
+      "enhanceStrength": "Stärke",
+      "enhanceStrengthDescription": "Sanft räumt nur auf und lässt die Stimme unangetastet. Stark ist für hörbar verrauschte Aufnahmen und kann die Stimme leicht verfärben.",
+      "strengthGentle": "Sanft",
+      "strengthMedium": "Mittel",
+      "strengthStrong": "Stark",
       "speed": "Wiedergabegeschwindigkeit",
       "speedDescription": "0,5×–2×. Das Resampling verändert auch die Tonhöhe leicht.",
       "exportFormat": "Audio-Exportformat",

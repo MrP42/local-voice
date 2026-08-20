@@ -40,6 +40,11 @@ export const TtsSettings = () => {
   const [lastError, setLastError] = useState<string | null>(null);
   /** Rueckmeldung des harten Beendens — was gefunden und beendet wurde. */
   const [killNotice, setKillNotice] = useState<string | null>(null);
+  /** Der Vorlesetext wurde an der Zeichengrenze gekappt. */
+  const [truncated, setTruncated] = useState<{
+    limit: number;
+    total: number;
+  } | null>(null);
   /** Offene Rueckfrage vor dem Beenden des Servers. */
   const [confirmStop, setConfirmStop] = useState(false);
   const [speakProgress, setSpeakProgress] = useState<{
@@ -100,12 +105,19 @@ export const TtsSettings = () => {
         if (e.payload.context === "speak") setCurrentSentence(e.payload.text);
       },
     );
+    // Eine Kuerzung darf nicht stumm bleiben: sonst hoert das Vorlesen
+    // mitten im Text auf, ohne dass irgendwo steht, warum.
+    const unTruncated = listen<{ limit: number; total: number }>(
+      "tts-text-truncated",
+      (e) => setTruncated(e.payload),
+    );
     return () => {
       un.then((f) => f());
       unExport.then((f) => f());
       unExportError.then((f) => f());
       unProgress.then((f) => f());
       unSentence.then((f) => f());
+      unTruncated.then((f) => f());
     };
   }, []);
 
@@ -143,6 +155,7 @@ export const TtsSettings = () => {
     }
     setLastError(null);
     setSpeakProgress(null);
+    setTruncated(null);
     const result = await commands.ttsSpeakText(text);
     if (result.status === "error") setLastError(result.error);
   };
@@ -334,6 +347,14 @@ export const TtsSettings = () => {
             </button>
           </div>
         </SettingContainer>
+        {truncated && (
+          <p className="px-4 pb-2 text-sm text-orange-400">
+            {t("tts.truncatedWarning", {
+              limit: truncated.limit,
+              total: truncated.total,
+            })}
+          </p>
+        )}
         {killNotice && (
           <p className="px-4 pb-2 text-sm text-text/70">{killNotice}</p>
         )}
@@ -512,6 +533,41 @@ export const TtsSettings = () => {
           description={t("tts.settings.normalizeDescription")}
           grouped={true}
         />
+        <ToggleSwitch
+          checked={getSetting("tts_enhance") ?? true}
+          onChange={(checked) => updateSetting("tts_enhance", checked)}
+          isUpdating={isUpdating("tts_enhance")}
+          label={t("tts.settings.enhance")}
+          description={t("tts.settings.enhanceDescription")}
+          grouped={true}
+        />
+        {(getSetting("tts_enhance") ?? true) && (
+          <SettingContainer
+            title={t("tts.settings.enhanceStrength")}
+            description={t("tts.settings.enhanceStrengthDescription")}
+            grouped={true}
+            layout="horizontal"
+          >
+            <div className="w-40">
+              <Select
+                value={getSetting("tts_enhance_strength") ?? "gentle"}
+                options={[
+                  { value: "gentle", label: t("tts.settings.strengthGentle") },
+                  { value: "medium", label: t("tts.settings.strengthMedium") },
+                  { value: "strong", label: t("tts.settings.strengthStrong") },
+                ]}
+                onChange={(value) =>
+                  value &&
+                  updateSetting(
+                    "tts_enhance_strength",
+                    value as "gentle" | "medium" | "strong",
+                  )
+                }
+                isClearable={false}
+              />
+            </div>
+          </SettingContainer>
+        )}
         <Slider
           value={getSetting("tts_speed") ?? 1.0}
           onChange={(value) => updateSetting("tts_speed", value)}

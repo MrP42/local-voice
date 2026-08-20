@@ -152,6 +152,7 @@ pub fn save_voice(
     id: &str,
     samples: &[f32],
     transcript: &str,
+    enhance: Option<super::enhance::Strength>,
 ) -> Result<(), String> {
     if transcript.trim().is_empty() {
         return Err("transcript must not be empty".into());
@@ -174,6 +175,22 @@ pub fn save_voice(
     let wav_path = dir.join("sample.wav");
     let mut writer = hound::WavWriter::create(&wav_path, spec)
         .map_err(|e| format!("could not write {}: {e}", wav_path.display()))?;
+    // Klangbearbeitung VOR dem Pegeln: der Zielpegel soll fuer das gelten,
+    // was am Ende in der Datei steht, nicht fuer eine Zwischenstufe.
+    //
+    // Hier bringt sie am meisten: Fish Speech bildet die Stimme aus dieser
+    // Aufnahme nach — mitsamt Luefterrauschen. Was hier hineingeraet, steckt
+    // in jeder spaeteren Synthese.
+    let owned;
+    let samples: &[f32] = match enhance {
+        Some(strength) => {
+            let mut work = samples.to_vec();
+            super::enhance::process(&mut work, SAMPLE_RATE as u32, strength);
+            owned = work;
+            &owned
+        }
+        None => samples,
+    };
     // Alle Stimmen auf denselben Pegel: sonst ist in einem Dialog eine
     // Sprecherin dauernd zu leise und die nächste zu laut.
     let gain = normalize_gain(samples, SAMPLE_RATE as u32);
@@ -198,6 +215,7 @@ pub fn import_voice(
     id: &str,
     source_wav: &Path,
     transcript: &str,
+    enhance: Option<super::enhance::Strength>,
 ) -> Result<(), String> {
     if transcript.trim().is_empty() {
         return Err("transcript must not be empty".into());
@@ -217,6 +235,18 @@ pub fn import_voice(
             .map(|s| s.map(|v| v as f32 / scale))
             .collect::<Result<_, _>>()
             .map_err(|e| format!("WAV nicht lesbar: {e}"))?,
+    };
+    // Klangbearbeitung nur bei einkanaligen Quellen: die Kette ist fuer eine
+    // Sprachspur gebaut und auch nur dafuer geprueft. Eine Stereodatei
+    // bekommt sie nicht, statt sie mit ungepruefter Kanalbehandlung zu
+    // veraendern.
+    let samples: Vec<f32> = match (enhance, spec.channels) {
+        (Some(strength), 1) => {
+            let mut work = samples;
+            super::enhance::process(&mut work, spec.sample_rate, strength);
+            work
+        }
+        _ => samples,
     };
     // Gemessen wird über den Mono-Downmix — dieselbe Sicht, die auch der
     // Fish-Server auf die Referenz hat. Gedeckelt wird gegen die Spitze
@@ -518,7 +548,14 @@ mod tests {
         assert!(list_voices(fish).is_empty(), "leer ohne references/");
 
         let samples = vec![0.1f32; 4 * 16_000]; // 4 s
-        save_voice(fish, "patrick", &samples, "Hallo, das ist meine Stimme.").unwrap();
+        save_voice(
+            fish,
+            "patrick",
+            &samples,
+            "Hallo, das ist meine Stimme.",
+            None,
+        )
+        .unwrap();
         assert_eq!(list_voices(fish), vec!["patrick".to_string()]);
 
         // .lab-Inhalt: getrimmt, UTF-8 ohne BOM.
@@ -540,9 +577,9 @@ mod tests {
     fn too_short_or_untranscribed_references_are_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let short = vec![0.1f32; 16_000]; // 1 s
-        assert!(save_voice(dir.path(), "kurz", &short, "text").is_err());
+        assert!(save_voice(dir.path(), "kurz", &short, "text", None).is_err());
         let ok_len = vec![0.1f32; 4 * 16_000];
-        assert!(save_voice(dir.path(), "leer", &ok_len, "   ").is_err());
+        assert!(save_voice(dir.path(), "leer", &ok_len, "   ", None).is_err());
         assert!(
             list_voices(dir.path()).is_empty(),
             "nichts halb Gespeichertes"
@@ -596,7 +633,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bogus = dir.path().join("nicht-wav.wav");
         std::fs::write(&bogus, b"definitiv kein wav").unwrap();
-        assert!(import_voice(dir.path(), "x", &bogus, "text").is_err());
+        assert!(import_voice(dir.path(), "x", &bogus, "text", None).is_err());
         assert!(list_voices(dir.path()).is_empty());
     }
 }

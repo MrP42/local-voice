@@ -45,25 +45,7 @@ const RELATIVE_GATE_LU: f64 = 10.0;
 /// Offset aus BS.1770 — bringt die Skala auf LUFS.
 const LUFS_OFFSET: f64 = -0.691;
 
-/// Biquad in transponierter Direktform II.
-struct Biquad {
-    b0: f64,
-    b1: f64,
-    b2: f64,
-    a1: f64,
-    a2: f64,
-    z1: f64,
-    z2: f64,
-}
-
-impl Biquad {
-    fn process(&mut self, x: f64) -> f64 {
-        let y = self.b0 * x + self.z1;
-        self.z1 = self.b1 * x - self.a1 * y + self.z2;
-        self.z2 = self.b2 * x - self.a2 * y;
-        y
-    }
-}
+use super::dsp::Biquad;
 
 /// Erste Stufe der K-Gewichtung: Kugelkopf-Filter (High-Shelf, +4 dB).
 ///
@@ -79,15 +61,13 @@ fn shelving_filter(sample_rate: f64) -> Biquad {
     let vh = 10f64.powf(gain_db / 20.0);
     let vb = vh.powf(0.499_666_774_154_641_6);
     let a0 = 1.0 + k / q + k * k;
-    Biquad {
-        b0: (vh + vb * k / q + k * k) / a0,
-        b1: 2.0 * (k * k - vh) / a0,
-        b2: (vh - vb * k / q + k * k) / a0,
-        a1: 2.0 * (k * k - 1.0) / a0,
-        a2: (1.0 - k / q + k * k) / a0,
-        z1: 0.0,
-        z2: 0.0,
-    }
+    Biquad::new(
+        (vh + vb * k / q + k * k) / a0,
+        2.0 * (k * k - vh) / a0,
+        (vh - vb * k / q + k * k) / a0,
+        2.0 * (k * k - 1.0) / a0,
+        (1.0 - k / q + k * k) / a0,
+    )
 }
 
 /// Zweite Stufe: RLB-Hochpass, nimmt den Tiefbass aus der Messung.
@@ -96,15 +76,13 @@ fn highpass_filter(sample_rate: f64) -> Biquad {
     let q = 0.5003270373238773;
     let k = (std::f64::consts::PI * f0 / sample_rate).tan();
     let denom = 1.0 + k / q + k * k;
-    Biquad {
-        b0: 1.0,
-        b1: -2.0,
-        b2: 1.0,
-        a1: 2.0 * (k * k - 1.0) / denom,
-        a2: (1.0 - k / q + k * k) / denom,
-        z1: 0.0,
-        z2: 0.0,
-    }
+    Biquad::new(
+        1.0,
+        -2.0,
+        1.0,
+        2.0 * (k * k - 1.0) / denom,
+        (1.0 - k / q + k * k) / denom,
+    )
 }
 
 /// Integrierte Lautheit in LUFS eines Mono-Signals.

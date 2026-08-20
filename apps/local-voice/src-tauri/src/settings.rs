@@ -547,6 +547,15 @@ pub struct AppSettings {
     /// Vorlesen. Aus bedeutet: der rohe Pegel des Servers, wie er kommt.
     #[serde(default = "default_tts_normalize")]
     pub tts_normalize: bool,
+    /// Klangbearbeitung der Sprache: Hochpass, Rauschgatter, Kompressor,
+    /// Begrenzer. Wirkt an drei Stellen — beim Aufnehmen und Importieren
+    /// einer Referenzstimme, beim Vorlesen und beim Datei-Export. Am meisten
+    /// bringt sie bei der Referenz: Fish Speech klont, was darin steckt.
+    #[serde(default = "default_tts_enhance")]
+    pub tts_enhance: bool,
+    /// Wie stark die Klangbearbeitung eingreift.
+    #[serde(default)]
+    pub tts_enhance_strength: crate::managers::tts::enhance::Strength,
     /// Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
     /// Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).
     #[serde(default = "default_tts_speed")]
@@ -595,6 +604,13 @@ fn default_tts_translate_lang() -> String {
 
 fn default_tts_volume() -> f32 {
     1.0
+}
+
+/// Standardmäßig an, aber in der sanftesten Stufe: aufräumen, nichts formen.
+/// Eine zu kräftige Kette klingt atemlos, und das fällt mehr auf als etwas
+/// Rauschen.
+fn default_tts_enhance() -> bool {
+    true
 }
 
 /// Standardmäßig an: ungleich laute Stimmen sind ein Fehler, kein Merkmal.
@@ -1211,6 +1227,8 @@ pub fn get_default_settings() -> AppSettings {
         tts_translate_lang: default_tts_translate_lang(),
         tts_volume: default_tts_volume(),
         tts_normalize: default_tts_normalize(),
+        tts_enhance: default_tts_enhance(),
+        tts_enhance_strength: crate::managers::tts::enhance::Strength::default(),
         tts_speed: default_tts_speed(),
         tts_export_format: default_tts_export_format(),
         tts_context_menu: false,

@@ -6,6 +6,8 @@
 //! Settings, Events, Prozess-Spawn, Idle-Watchdog und Exit-Teardown.
 
 pub mod compile_cache;
+pub mod dsp;
+pub mod enhance;
 pub mod loudness;
 pub mod player;
 pub mod protocol;
@@ -87,6 +89,8 @@ pub struct TtsCore {
     stop_requested: AtomicBool,
     /// Ob die Wiedergabe alle Stimmen auf denselben Pegel zieht.
     normalize: AtomicBool,
+    /// Klangbearbeitung und ihre Stufe (None = aus).
+    enhance: Mutex<Option<enhance::Strength>>,
     /// Korrekturfaktor je Stimme, einmal je Sitzung aus dem ersten
     /// synthetisierten Satz dieser Stimme gemessen. Schlüssel ist die
     /// reference_id, leer für die Seed-Standardstimme.
@@ -174,6 +178,7 @@ impl TtsCore {
             start_claim: AtomicBool::new(false),
             stop_requested: AtomicBool::new(false),
             normalize: AtomicBool::new(true),
+            enhance: Mutex::new(None),
             voice_gains: Mutex::new(std::collections::HashMap::new()),
             on_phase_change: Mutex::new(None),
         }
@@ -505,6 +510,13 @@ impl TtsCore {
                 .await
             {
                 Ok(bytes) => {
+                    // Klangbearbeitung vor der Wiedergabe. Sie laeuft, waehrend
+                    // der vorige Satz noch spielt (siehe Pipeline unten), faellt
+                    // also nicht als Wartezeit auf.
+                    let bytes = match *self.enhance.lock().unwrap() {
+                        Some(strength) => enhance_wav_bytes(&bytes, strength).unwrap_or(bytes),
+                        None => bytes,
+                    };
                     total_bytes += bytes.len();
                     // Vorherigen Satz zu Ende spielen lassen (Reihenfolge!).
                     if let Some((done_idx, handle)) = previous_playback.take() {
@@ -731,6 +743,47 @@ fn decode_wav(bytes: &[u8]) -> Option<(Vec<f32>, u32, f32)> {
     Some((mono, spec.sample_rate, peak))
 }
 
+/// WAV-Blob durch die Klangbearbeitung schicken und neu schreiben.
+///
+/// `None`, wenn der Blob nicht lesbar ist — der Aufrufer behaelt dann das
+/// Original. Eine Klangverbesserung ist es nicht wert, an ihr zu scheitern.
+fn enhance_wav_bytes(bytes: &[u8], strength: enhance::Strength) -> Option<Vec<u8>> {
+    let reader = hound::WavReader::new(std::io::Cursor::new(bytes)).ok()?;
+    let spec = reader.spec();
+    let channels = spec.channels.max(1) as usize;
+    let (mut mono, rate, _) = decode_wav(bytes)?;
+    // Bearbeitet wird der Downmix; bei Mono ist das die Spur selbst. Fuer
+    // mehrkanalige Referenzen waere eine getrennte Bearbeitung je Kanal
+    // richtiger, aber Sprache ist praktisch immer mono aufgenommen, und ein
+    // Downmix ist ehrlicher als eine Kanalbehandlung, die niemand geprueft hat.
+    if channels > 1 {
+        return None;
+    }
+    enhance::process(&mut mono, rate, strength);
+    write_wav_pcm16(&mono, spec)
+}
+
+/// f32-Mono als 16-bit-PCM-WAV in den Speicher schreiben.
+fn write_wav_pcm16(samples: &[f32], spec: hound::WavSpec) -> Option<Vec<u8>> {
+    let out_spec = hound::WavSpec {
+        channels: 1,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+        ..spec
+    };
+    let mut out = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(&mut out, out_spec).ok()?;
+        for &s in samples {
+            writer
+                .write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                .ok()?;
+        }
+        writer.finalize().ok()?;
+    }
+    Some(out.into_inner())
+}
+
 /// WAV-Blob auf `loudness::TARGET_LUFS` gezogen neu schreiben (16-bit PCM).
 ///
 /// `None`, wenn der Blob nicht lesbar ist oder ohnehin schon passt — der
@@ -936,6 +989,9 @@ impl TtsManager {
         *self.core.port.lock().unwrap() = settings.tts_port;
         *self.core.seed.lock().unwrap() = settings.tts_seed;
         *self.core.max_chars.lock().unwrap() = settings.tts_max_chars;
+        *self.core.enhance.lock().unwrap() = settings
+            .tts_enhance
+            .then_some(settings.tts_enhance_strength);
         self.core.controls.set_volume(settings.tts_volume);
         self.core.controls.set_speed(settings.tts_speed);
         *self.core.export_format.lock().unwrap() = settings.tts_export_format;
@@ -963,9 +1019,22 @@ impl TtsManager {
     /// Freitext sprechen: legt eine Pause/Weiter-fähige Session an und meldet
     /// den Satzfortschritt als `tts-speak-progress`-Event.
     pub async fn speak_text(self: &Arc<Self>, raw: &str) -> Result<usize, String> {
+        use tauri::Emitter;
         let max_chars = *self.core.max_chars.lock().unwrap();
         let prepared =
             protocol::prepare_text(raw, max_chars).ok_or_else(|| "empty text".to_string())?;
+        // Eine Kuerzung muss man sehen. Bisher fiel sie nur einer Funktion
+        // auf, die gar nicht mehr aufgerufen wird — der Nutzer merkte sie
+        // daran, dass das Vorlesen mitten im Text aufhoerte, ohne dass
+        // irgendwo stand, warum.
+        if prepared.truncated {
+            let total = raw.trim().chars().count() as u32;
+            log::warn!("Vorlesetext auf {max_chars} von {total} Zeichen gekuerzt");
+            let _ = self.app.emit(
+                "tts-text-truncated",
+                serde_json::json!({ "limit": max_chars, "total": total }),
+            );
+        }
         let sentences = self.utterances(&prepared.text);
         *self.speak_session.lock().unwrap() = Some(SpeakSession {
             sentences: sentences.clone(),
@@ -1338,7 +1407,13 @@ impl TtsManager {
             .unwrap()
             .take()
             .ok_or_else(|| "keine Referenzaufnahme vorhanden".to_string())?;
-        if let Err(e) = voices::save_voice(&self.fish_dir(), &id, &samples, transcript) {
+        if let Err(e) = voices::save_voice(
+            &self.fish_dir(),
+            &id,
+            &samples,
+            transcript,
+            *self.core.enhance.lock().unwrap(),
+        ) {
             // Aufnahme zurücklegen, damit ein Tippfehler sie nicht kostet.
             *self.pending_reference.lock().unwrap() = Some(samples);
             return Err(e);
@@ -1375,7 +1450,13 @@ impl TtsManager {
                 })?
             }
         };
-        voices::import_voice(&self.fish_dir(), &id, &source, &transcript)?;
+        voices::import_voice(
+            &self.fish_dir(),
+            &id,
+            &source,
+            &transcript,
+            *self.core.enhance.lock().unwrap(),
+        )?;
         Ok((id, transcript))
     }
 
@@ -1750,9 +1831,17 @@ impl TtsManager {
         out_path: &str,
     ) -> Result<usize, String> {
         let max_chars = *self.core.max_chars.lock().unwrap();
-        let prepared =
-            protocol::prepare_text(raw, max_chars).ok_or_else(|| "empty text".to_string())?;
-        let utterances = self.utterances(&prepared.text);
+        // Der GANZE Text, nicht die ersten `tts_max_chars` Zeichen. Die
+        // Grenze schuetzt das Vorlesen davor, sich an einem Monsterdokument
+        // festzufahren — bei einer Datei ist sie sinnlos: wer exportiert,
+        // will den Text, den er sieht, und nicht dessen erste 5000 Zeichen.
+        // Bis v0.9.0 wurde hier stillschweigend abgeschnitten; sichtbar war
+        // das nur daran, dass die Datei frueher endete als der Text.
+        //
+        // Die Grenze gilt weiterhin je SATZ (siehe unten): ein einzelner
+        // Satz, der laenger als das Limit ist, waere fuer den Server ein
+        // Problem, nicht fuer uns.
+        let utterances = self.utterances(raw.trim());
         if utterances.is_empty() {
             return Err("empty text".to_string());
         }
@@ -1789,6 +1878,12 @@ impl TtsManager {
                 .core
                 .fetch_wav(port, seed, &part.text, voice.as_deref())
                 .await?;
+            // Dieselbe Klangbearbeitung wie beim Hoeren — die Datei soll
+            // klingen wie das, was man vorher gehoert hat.
+            let bytes = match *self.core.enhance.lock().unwrap() {
+                Some(strength) => enhance_wav_bytes(&bytes, strength).unwrap_or(bytes),
+                None => bytes,
+            };
             // Derselbe Ausgleich wie beim Hören: eine exportierte Datei mit
             // wechselnden Stimmen soll nicht lauter und leiser werden.
             let gain = self.core.playback_gain(voice.as_deref(), &bytes);

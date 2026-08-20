@@ -662,6 +662,36 @@ pub fn change_tts_speed_setting(app: AppHandle, value: f32) -> Result<(), String
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_normalize_setting(app: AppHandle, value: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_normalize = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_enhance_setting(app: AppHandle, value: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_enhance = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_enhance_strength_setting(
+    app: AppHandle,
+    value: crate::managers::tts::enhance::Strength,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_enhance_strength = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Einen Reglerwert sofort an die laufende Wiedergabe geben.
 ///
 /// Ohne das landet er nur in der Einstellungsdatei und wird erst beim

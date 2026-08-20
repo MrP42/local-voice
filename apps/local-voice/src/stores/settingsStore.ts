@@ -126,6 +126,13 @@ const settingUpdaters: {
     commands.changeTtsTranslateLangSetting(value as string),
   tts_volume: (value) => commands.changeTtsVolumeSetting(value as number),
   tts_speed: (value) => commands.changeTtsSpeedSetting(value as number),
+  tts_normalize: (value) =>
+    commands.changeTtsNormalizeSetting(value as boolean),
+  tts_enhance: (value) => commands.changeTtsEnhanceSetting(value as boolean),
+  tts_enhance_strength: (value) =>
+    commands.changeTtsEnhanceStrengthSetting(
+      value as "gentle" | "medium" | "strong",
+    ),
   tts_export_format: (value) =>
     commands.changeTtsExportFormatSetting(value as string),
   tts_context_menu: (value) =>

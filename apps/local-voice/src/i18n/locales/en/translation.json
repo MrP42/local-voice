@@ -107,6 +107,7 @@
       "error": "Error"
     },
     "vramHint": "Startup is slow — free GPU memory by closing other GPU apps.",
+    "truncatedWarning": "Only the first {{limit}} of {{total}} characters are read aloud. The limit is below under “Maximum characters” — it does not apply when saving to an audio file, where the whole text is always produced.",
     "voices": {
       "title": "Voices",
       "description": "Clone a voice from a 10–30 second reference. Recordings stay on this computer; the transcript is generated automatically and can be edited.",
@@ -176,6 +177,13 @@
       "volumeDescription": "Playback volume for speech output, independent of feedback sounds.",
       "normalize": "Equal loudness across voices",
       "normalizeDescription": "Levels every voice to the same loudness (-20 LUFS) — when recording or importing a reference and during playback. Without it, one speaker in a dialogue is too quiet and the next too loud.",
+      "enhance": "Improve audio",
+      "enhanceDescription": "Removes rumble and mains hum, lowers the noise in speaking pauses and evens out loud and quiet passages. Applies in three places: when recording or importing a voice, during playback, and when saving to a file. It matters most at recording time — Fish Speech models the voice from that take, including whatever is audible behind it.",
+      "enhanceStrength": "Strength",
+      "enhanceStrengthDescription": "Gentle only cleans up and leaves the voice alone. Strong is for audibly noisy recordings and may colour the voice slightly.",
+      "strengthGentle": "Gentle",
+      "strengthMedium": "Medium",
+      "strengthStrong": "Strong",
       "speed": "Playback speed",
       "speedDescription": "0.5×–2×. Resampling slightly changes the pitch as well.",
       "exportFormat": "Audio export format",

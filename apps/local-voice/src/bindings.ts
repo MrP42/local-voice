@@ -1133,6 +1133,30 @@ async meetingsMinutesFile(meetingId: string) : Promise<Result<string | null, str
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsNormalizeSetting(value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_normalize_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsEnhanceSetting(value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_enhance_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTtsEnhanceStrengthSetting(value: EnhanceStrength) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_enhance_strength_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsServerKill() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_server_kill") };
@@ -1492,6 +1516,8 @@ streamTextEvent: "stream-text-event"
  * object, so a partial store can never fail the whole load (#1619).
  * Field-level defaults below take precedence where present.
  */
+export type EnhanceStrength = "gentle" | "medium" | "strong"
+
 export type AppSettings = { 
 /**
  * Internal settings schema marker for one-time migrations. Fresh installs
@@ -1611,6 +1637,15 @@ tts_volume?: number;
  * Vorlesen. Aus bedeutet: der rohe Pegel des Servers, wie er kommt.
  */
 tts_normalize?: boolean; 
+/**
+ * Klangbearbeitung der Sprache: Hochpass, Rauschgatter, Kompressor,
+ * Begrenzer.
+ */
+tts_enhance?: boolean; 
+/**
+ * Wie stark die Klangbearbeitung eingreift.
+ */
+tts_enhance_strength?: EnhanceStrength; 
 /**
  * Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
  * Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).
