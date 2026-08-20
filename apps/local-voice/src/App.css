@@ -199,3 +199,135 @@
 .lva-mark__dot {
   fill: var(--color-logo-primary);
 }
+
+/* ============================================================
+   Media-Controls — .mediabar / .mbtn
+
+   Übernommen aus dem WAI-Design-System (references/components.md,
+   /admin/designsystem/media-controls): Wiedergabe-Steuerung ist eine EIGENE
+   Button-Familie, nicht `.btn` — runde, randlose Glyph-Schalter in einer
+   Transportzeile, nie Text im Button, immer aria-label.
+
+   Struktur, Zustände und Maßverhältnisse sind aus dem Design-System
+   übernommen; die Farben kommen ausschließlich aus den App-Tokens
+   (styles/theme.css), damit kein zweites Token-Set einwandert.
+   ============================================================ */
+.mediabar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.mediabar--start {
+  justify-content: flex-start;
+}
+.mediabar__sep {
+  flex: none;
+  width: 1px;
+  height: 1.4rem;
+  background: color-mix(in srgb, var(--color-mid-gray), transparent 60%);
+  margin: 0 0.25rem;
+}
+
+.mbtn {
+  --_mb-size: 2.5rem;
+  --_mb-ico: 1.15rem;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--_mb-size);
+  height: var(--_mb-size);
+  padding: 0;
+  font: inherit;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+.mbtn svg {
+  width: var(--_mb-ico);
+  height: var(--_mb-ico);
+  display: block;
+}
+.mbtn:hover {
+  background: color-mix(in srgb, var(--color-mid-gray), transparent 80%);
+  transform: translateY(-1px);
+}
+.mbtn:active {
+  transform: translateY(0);
+}
+.mbtn:focus-visible {
+  outline: 2px solid var(--color-logo-primary);
+  outline-offset: 2px;
+}
+.mbtn--sm {
+  --_mb-size: 2rem;
+  --_mb-ico: 0.95rem;
+}
+.mbtn--lg {
+  --_mb-size: 3.25rem;
+  --_mb-ico: 1.5rem;
+}
+/* Die Zahl im Ring (±15 s) — erst ab Basisgröße, in --sm wäre sie unlesbar. */
+.mbtn__num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  font-size: calc(var(--_mb-ico) * 0.42);
+  font-weight: 600;
+  line-height: 1;
+  padding-top: 0.18em;
+}
+
+/* Genau EIN Hauptschalter je Player (Play/Pause): gelbe Scheibe mit
+   Ink-Glyph. Auf Hell dreht sich die Kombination um, weil Gelb einen dunklen
+   Träger braucht — Weiß auf Gelb bleibt auch hier verboten. */
+.mbtn--primary {
+  background: var(--color-logo-primary);
+  border-color: var(--color-logo-primary);
+  color: var(--color-on-accent);
+}
+.mbtn--primary:hover {
+  background: var(--color-logo-primary);
+  color: var(--color-on-accent);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+}
+/* Ohne :root, damit die Umkehrung auch in einer hellen Insel innerhalb einer
+   dunklen Seite greift — das Attribut darf auf jedem Vorfahren sitzen. */
+[data-theme="light"] .mbtn--primary {
+  background: var(--color-logo-stroke);
+  border-color: var(--color-logo-stroke);
+  color: var(--color-logo-primary);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mbtn--primary {
+    background: var(--color-logo-stroke);
+    border-color: var(--color-logo-stroke);
+    color: var(--color-logo-primary);
+  }
+}
+
+/* Dauerzustand (Ton aus, Tempo gesetzt) — NICHT für Play/Pause: das ist ein
+   Glyphwechsel, kein Schalter. */
+.mbtn[aria-pressed="true"],
+.mbtn.is-active {
+  background: color-mix(in srgb, var(--color-logo-primary), transparent 82%);
+  border-color: color-mix(in srgb, var(--color-logo-primary), transparent 55%);
+  color: var(--color-logo-primary);
+}
+.mbtn[disabled],
+.mbtn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}

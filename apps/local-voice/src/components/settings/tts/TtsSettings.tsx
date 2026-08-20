@@ -20,6 +20,7 @@ import { ReadingCard } from "./ReadingCard";
 import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { save } from "@tauri-apps/plugin-dialog";
+import { Glyph } from "../../ui/AudioPlayer";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -225,20 +226,38 @@ export const TtsSettings = () => {
             className="w-full"
           />
           <div className="flex gap-2 items-center flex-wrap">
-            <Button
-              onClick={speak}
-              disabled={text.trim().length === 0 || starting}
-            >
-              {t("tts.speak")}
-            </Button>
-            <Button variant="secondary" onClick={stopSpeaking}>
-              {t("tts.stop")}
-            </Button>
-            {canResume && (
-              <Button variant="secondary" onClick={resumeSpeaking}>
-                {t("tts.resume")}
-              </Button>
-            )}
+            {/* Transport per design system: round glyph buttons, exactly one
+                primary. Reading aloud is playback, so it gets the same family
+                as every audio player in the app — not text buttons. */}
+            <div className="mediabar mediabar--start">
+              <button
+                type="button"
+                className="mbtn mbtn--primary mbtn--lg"
+                onClick={speaking ? stopSpeaking : speak}
+                disabled={!speaking && (text.trim().length === 0 || starting)}
+                aria-label={speaking ? t("tts.stop") : t("tts.speak")}
+              >
+                <Glyph name={speaking ? "pause" : "play"} />
+              </button>
+              <button
+                type="button"
+                className="mbtn"
+                onClick={stopSpeaking}
+                aria-label={t("tts.stop")}
+              >
+                <Glyph name="stop" />
+              </button>
+              {canResume && (
+                <button
+                  type="button"
+                  className="mbtn"
+                  onClick={resumeSpeaking}
+                  aria-label={t("tts.resume")}
+                >
+                  <Glyph name="play" />
+                </button>
+              )}
+            </div>
             <Button
               variant="secondary"
               onClick={saveSpokenAudio}
