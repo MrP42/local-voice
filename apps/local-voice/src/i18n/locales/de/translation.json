@@ -115,7 +115,10 @@
       "discard": "Verwerfen",
       "preview": "Anhören",
       "previewMissing": "Die Hörprobe konnte nicht erzeugt werden.",
-      "previewGenerating": "Wird erzeugt…"
+      "previewGenerating": "Wird erzeugt…",
+      "deleteConfirmTitle": "Stimme löschen?",
+      "deleteConfirm": "„{{voice}}\" wird mitsamt ihrer Referenzaufnahme endgültig gelöscht. Um sie zurückzubekommen, muss sie jemand neu einsprechen.",
+      "cancelDelete": "Behalten"
     },
     "translate": {
       "title": "Audio-Übersetzung",

@@ -10,6 +10,7 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
+import { Dialog } from "../../ui/Dialog";
 import Badge from "../../ui/Badge";
 
 type Mode =
@@ -37,6 +38,10 @@ export const VoicesCard = () => {
     error?: string;
   } | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null);
+  // Deleting a voice throws away a recording that cannot be reproduced — the
+  // same person has to sit down and speak again. That deserves a question,
+  // especially since the button sits right next to "Activate".
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const activeVoice = getSetting("tts_voice") ?? null;
 
@@ -173,6 +178,7 @@ export const VoicesCard = () => {
   };
 
   const remove = async (id: string) => {
+    setDeleteTarget(null);
     setError(null);
     const result = await commands.ttsDeleteVoice(id);
     if (result.status === "error") {
@@ -239,7 +245,7 @@ export const VoicesCard = () => {
                   <Button
                     size="sm"
                     variant="danger-ghost"
-                    onClick={() => remove(id)}
+                    onClick={() => setDeleteTarget(id)}
                   >
                     {t("tts.voices.delete")}
                   </Button>
@@ -327,6 +333,32 @@ export const VoicesCard = () => {
           </div>
         )}
       </div>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title={t("tts.voices.deleteConfirmTitle")}
+        closeLabel={t("tts.voices.cancelDelete")}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteTarget(null)}>
+              {t("tts.voices.cancelDelete")}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => deleteTarget && void remove(deleteTarget)}
+            >
+              {t("tts.voices.delete")}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text/80">
+          {t("tts.voices.deleteConfirm", { voice: deleteTarget ?? "" })}
+        </p>
+      </Dialog>
     </SettingsGroup>
   );
 };

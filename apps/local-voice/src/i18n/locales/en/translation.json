@@ -115,7 +115,10 @@
       "discard": "Discard",
       "preview": "Listen",
       "previewMissing": "The preview could not be generated.",
-      "previewGenerating": "Generating…"
+      "previewGenerating": "Generating…",
+      "deleteConfirmTitle": "Delete voice?",
+      "deleteConfirm": "\"{{voice}}\" and its reference recording are deleted for good. To get this voice back, someone has to record it again.",
+      "cancelDelete": "Keep"
     },
     "translate": {
       "title": "Audio Translation",
