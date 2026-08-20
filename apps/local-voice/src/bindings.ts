@@ -1625,7 +1625,14 @@ export type MeetingEvent = { kind: "state"; meeting_id: string; status: string; 
  * new run's segments, which restart at index 0, would append to the old.
  */
 { kind: "reset"; meeting_id: string }
-export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
+export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean; 
+/**
+ * Whether the streaming look-ahead (`att_context_right`) can be chosen for
+ * this model. Only the cache-aware Parakeet family accepts it; sending it
+ * to any other engine makes the stream refuse to start, so this gates the
+ * control rather than letting the user discover the failure mid-dictation.
+ */
+supports_stream_lookahead: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
  * Where a model comes from and how Handy obtains it — the routing discriminant

@@ -12,7 +12,7 @@ Windows-Desktop-Anwendung (Tauri 2 · Rust · React), entwickelt von
 
 ## Installieren
 
-1. Auf der [**Releases-Seite**](https://github.com/MrP42/local-voice/releases/latest)
+1. Auf der [**Releases-Seite**](https://github.com/MrP42/local-voice-ai/releases/latest)
    die Datei `Local Voice AI_<version>_x64-setup.exe` herunterladen.
 2. Ausführen. Windows SmartScreen meldet einen unbekannten Herausgeber (das
    Paket ist nicht kommerziell code-signiert) → *Weitere Informationen* →
@@ -37,7 +37,7 @@ nötig.
 Automatische Prüfung abschalten: **Einstellungen → App → Updates**.
 
 > Technisch: die App liest
-> `https://github.com/MrP42/local-voice/releases/latest/download/latest.json`.
+> `https://github.com/MrP42/local-voice-ai/releases/latest/download/latest.json`.
 > Diese Datei entsteht im Release-Workflow und trägt die Minisign-Signatur des
 > Installers; ohne gültige Signatur verweigert die App die Installation.
 
@@ -92,7 +92,7 @@ Voraussetzungen: Rust (stable), Node 22+, pnpm, Visual Studio 2022 Build Tools,
 Vulkan SDK.
 
 ```bash
-git clone git@github.com:MrP42/local-voice.git
+git clone git@github.com:MrP42/local-voice-ai.git
 cd local-voice/apps/local-voice
 pnpm install
 

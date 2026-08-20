@@ -79,6 +79,11 @@ pub struct ModelInfo {
     pub is_custom: bool,            // Whether this is a user-provided custom model
     pub supports_streaming: bool, // Whether this model supports live streaming preview (transcribe-cpp)
     pub supports_language_detection: bool, // Whether the model can auto-detect language (gates the "Auto" option)
+    /// Whether the streaming look-ahead (`att_context_right`) can be chosen for
+    /// this model. Only the cache-aware Parakeet family accepts it; sending it
+    /// to any other engine makes the stream refuse to start, so this gates the
+    /// control rather than letting the user discover the failure mid-dictation.
+    pub supports_stream_lookahead: bool,
 }
 
 const CHINESE_LANGUAGE_CODE: &str = "zh";
@@ -248,6 +253,10 @@ impl ModelDescriptor {
             is_custom: false,
             supports_streaming: self.caps.supports_streaming.unwrap_or(false),
             supports_language_detection: self.caps.supports_language_detect.unwrap_or(false),
+            supports_stream_lookahead: supports_stream_lookahead(
+                self.caps.supports_streaming,
+                self.caps.architecture.as_deref(),
+            ),
         }
     }
 }
@@ -349,8 +358,18 @@ fn probed_display_name(probe: &CapabilityProbe) -> Option<String> {
 /// capability"; transcribe-cpp still reconciles the real values at load time.
 /// Shared by both local discovery paths (custom models dir + HF cache) so they
 /// surface capabilities identically.
+/// The cache-aware streaming look-ahead is a FastConformer/Parakeet feature.
+/// Everything else — Whisper, Moonshine, Voxtral — either has no such dial or
+/// rejects the option outright, and a rejected stream option kills the whole
+/// dictation (see `TranscriptionManager::stream`). One place decides it, so
+/// the catalog path and the on-disk path cannot drift apart.
+fn supports_stream_lookahead(streaming: Option<bool>, architecture: Option<&str>) -> bool {
+    streaming.unwrap_or(false) && architecture == Some("parakeet")
+}
+
 struct LocalCaps {
     supports_streaming: bool,
+    supports_stream_lookahead: bool,
     supports_translation: bool,
     supports_language_selection: bool,
     supports_language_detection: bool,
@@ -361,6 +380,10 @@ fn local_caps(probe: &CapabilityProbe) -> LocalCaps {
     let languages = canonicalize_supported_languages(probe.languages.clone().unwrap_or_default());
     LocalCaps {
         supports_streaming: probe.supports_streaming.unwrap_or(false),
+        supports_stream_lookahead: supports_stream_lookahead(
+            probe.supports_streaming,
+            probe.architecture.as_deref(),
+        ),
         supports_translation: probe.supports_translation.unwrap_or(false),
         // Only offer a language picker when there's more than one to choose.
         supports_language_selection: languages.len() > 1,
@@ -570,6 +593,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -603,6 +627,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -635,6 +660,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -667,6 +693,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -700,6 +727,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -733,6 +761,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -775,6 +804,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -807,6 +837,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -840,6 +871,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -873,6 +905,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -906,6 +939,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -945,6 +979,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -980,6 +1015,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -1020,6 +1056,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -1063,6 +1100,7 @@ impl ModelManager {
                 supports_streaming: false,
                 // Canary (NeMo) requires an explicit source language — no auto-detect.
                 supports_language_detection: false,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -1102,6 +1140,7 @@ impl ModelManager {
                 is_custom: false,
                 supports_streaming: false,
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 
@@ -1682,6 +1721,7 @@ impl ModelManager {
                     is_custom: true,
                     supports_streaming: caps.supports_streaming,
                     supports_language_detection: caps.supports_language_detection,
+                    supports_stream_lookahead: caps.supports_stream_lookahead,
                 },
             );
         }
@@ -1826,6 +1866,7 @@ impl ModelManager {
                         is_custom: false,
                         supports_streaming: caps.supports_streaming,
                         supports_language_detection: caps.supports_language_detection,
+                        supports_stream_lookahead: caps.supports_stream_lookahead,
                     },
                 );
             }
@@ -2711,6 +2752,7 @@ mod tests {
                 // Legacy entry: preserve the historical "Auto offered" behavior.
                 // (Catalog GGUFs and on-disk probes derive this from metadata.)
                 supports_language_detection: true,
+                supports_stream_lookahead: false,
             },
         );
 

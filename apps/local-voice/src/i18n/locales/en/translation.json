@@ -364,6 +364,14 @@
       "noModelsMatch": "No models match this filter.",
       "options": {
         "title": "Options for this model"
+      },
+      "lookahead": {
+        "title": "Quality vs. latency",
+        "description": "How long the model may listen ahead before it commits a word. Longer means fewer corrections and better text; shorter means text appears sooner. Only the steps the model was trained on can be offered.",
+        "modelDefault": "Model default",
+        "fast": "Fast (~240 ms)",
+        "balanced": "Balanced (~480 ms)",
+        "accurate": "Accurate (~1 s)"
       }
     },
     "sound": {

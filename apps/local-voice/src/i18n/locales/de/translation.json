@@ -323,6 +323,14 @@
       },
       "options": {
         "title": "Optionen dieses Modells"
+      },
+      "lookahead": {
+        "title": "Qualität und Verzögerung",
+        "description": "Wie weit das Modell vorhören darf, bevor es ein Wort festschreibt. Länger heißt weniger Korrekturen und besserer Text, kürzer heißt früher sichtbarer Text. Angeboten werden nur die Stufen, auf die das Modell trainiert ist.",
+        "modelDefault": "Modellvorgabe",
+        "fast": "Schnell (~240 ms)",
+        "balanced": "Ausgewogen (~480 ms)",
+        "accurate": "Genau (~1 s)"
       }
     },
     "general": {

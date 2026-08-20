@@ -10,7 +10,7 @@
 # The update path: `createUpdaterArtifacts` (tauri.conf.json) makes the bundler
 # emit an .exe + .sig per build; tauri-action collects them into `latest.json`
 # and attaches it to the release. The app polls
-# https://github.com/MrP42/local-voice/releases/latest/download/latest.json,
+# https://github.com/MrP42/local-voice-ai/releases/latest/download/latest.json,
 # which only resolves for a PUBLISHED, non-prerelease release of a PUBLIC repo
 # — hence `draft: false` below.
 name: "Release (Windows)"

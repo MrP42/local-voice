@@ -224,7 +224,7 @@ sondern schreibt den Bericht auch bei Fehlschlägen.
 
 ## Nächste Schritte
 
-Als Issues erfasst unter https://github.com/MrP42/local-voice/issues
+Als Issues erfasst unter https://github.com/MrP42/local-voice-ai/issues
 
 1. **#1** Abnahme gegen Browser, Word und VS Code nachziehen — Notepad, Explorer und
    erhöhter Task-Manager sind erledigt
@@ -237,6 +237,6 @@ Als Issues erfasst unter https://github.com/MrP42/local-voice/issues
 
 | | |
 |---|---|
-| `origin` | `git@github.com:MrP42/local-voice.git` — **privat** |
+| `origin` | `git@github.com:MrP42/local-voice-ai.git` — **privat** |
 | `upstream` | `https://github.com/cjpais/Handy.git` — fremdes Fork-Original, **niemals dorthin pushen** |
 | Arbeitsbranch | `feat/m3-stabilize-paste-path` |

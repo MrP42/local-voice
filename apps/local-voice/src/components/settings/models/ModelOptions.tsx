@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ModelInfo } from "@/bindings";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
+import { StreamLookahead } from "../StreamLookahead";
 import {
   CHINESE_LANGUAGE_CODE,
   getUniqueCapabilityLanguages,
@@ -13,7 +14,9 @@ import {
  * decide on the surrounding chrome (heading, separator) before rendering.
  */
 export const modelHasOptions = (model: ModelInfo): boolean =>
-  showsLanguageSelector(model) || model.supports_translation;
+  showsLanguageSelector(model) ||
+  model.supports_translation ||
+  model.supports_stream_lookahead;
 
 const showsLanguageSelector = (model: ModelInfo): boolean => {
   if (model.supports_language_selection) return true;
@@ -64,6 +67,7 @@ export const ModelOptions: React.FC<{ model: ModelInfo }> = ({ model }) => {
       {model.supports_translation && (
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
       )}
+      {model.supports_stream_lookahead && <StreamLookahead />}
     </div>
   );
 };
