@@ -188,6 +188,10 @@ will, löscht sie von Hand:
   waren nicht abrufbar (HTTP 403 auf drei URLs). Siehe `DECISIONS.md` D3. Der generische
   OpenAI-kompatible Client erreicht beide Anbieter auf dem erlaubten Weg per nutzereigenem
   API-Schlüssel.
+- **Der Direkt-Export nach mp3/opus (`tts_synthesize_to_file`) wird nicht auf gleiche
+  Lautheit gezogen.** Der Fish-Server encodiert dort selbst, und die fertige mp3 ließe sich
+  nur durch erneutes Decodieren und Encodieren pegeln. Vorlesen, WAV-Export und die
+  Referenzaufnahmen sind auf -20 LUFS ausgeglichen (ITU-R BS.1770-4), dieser eine Pfad nicht.
 - **Kein Benutzerkonto, keine Telemetrie, kein Update-Server.**
 - **Keine automatische LLM-Nachbearbeitung im Standardpfad.** Die Refinement-Stufe
   (`refine_enabled`) ist standardmäßig aus und für den stabilen Pfad nicht vorgesehen.

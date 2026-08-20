@@ -698,6 +698,14 @@ pub fn change_tts_voice_setting(app: AppHandle, value: Option<String>) -> Result
     let mut settings = settings::get_settings(&app);
     settings.tts_voice = value.filter(|v| !v.trim().is_empty());
     settings::write_settings(&app, settings);
+    // Läuft gerade eine Wiedergabe, wird sie sofort auf die neue Stimme
+    // umgestellt — sonst spräche noch die alte weiter, obwohl die Oberfläche
+    // die neue als aktiv anzeigt.
+    use tauri::Manager;
+    app.state::<std::sync::Arc<crate::managers::tts::TtsManager>>()
+        .inner()
+        .clone()
+        .apply_voice_change();
     Ok(())
 }
 

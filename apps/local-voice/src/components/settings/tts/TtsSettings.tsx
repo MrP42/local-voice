@@ -13,6 +13,7 @@ import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { Dialog } from "../../ui/Dialog";
 import { ToggleSwitch } from "../../ui/ToggleSwitch";
 import { Slider } from "../../ui/Slider";
 import { Select } from "../../ui/Select";
@@ -21,7 +22,7 @@ import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
-import { Dices, Download } from "lucide-react";
+import { Dices, Download, OctagonX, Server } from "lucide-react";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -47,6 +48,10 @@ export const TtsSettings = () => {
   const [text, setText] = usePersistentState<string>("tts.text", "");
   const [startingSeconds, setStartingSeconds] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
+  /** Rueckmeldung des harten Beendens — was gefunden und beendet wurde. */
+  const [killNotice, setKillNotice] = useState<string | null>(null);
+  /** Offene Rueckfrage vor dem Beenden des Servers. */
+  const [confirmStop, setConfirmStop] = useState(false);
   const [speakProgress, setSpeakProgress] = useState<{
     position: number;
     total: number;
@@ -227,8 +232,65 @@ export const TtsSettings = () => {
     if (result.status === "error") setLastError(result.error);
   };
 
+  /**
+   * Harter Ausweg: beendet, was auf dem TTS-Port lauscht, ohne vorher zu
+   * fragen, ob es antwortet. Meldet zurueck, was gefunden wurde — "nichts
+   * gefunden" ist ein Ergebnis und kein Fehler, deshalb steht es als Hinweis
+   * und nicht als Fehlermeldung.
+   */
+  const killServer = async () => {
+    setLastError(null);
+    const result = await commands.ttsServerKill();
+    if (result.status === "error") {
+      setLastError(result.error);
+      return;
+    }
+    setKillNotice(result.data);
+    window.setTimeout(() => setKillNotice(null), 4000);
+  };
+
   const stopServer = () => {
     void commands.ttsServerStop();
+  };
+
+  /**
+   * Farbe des Serversymbols. Nur Farbe, kein zweites Symbol: die Form soll
+   * ueber alle Zustaende gleich bleiben, damit man sie an derselben Stelle
+   * wiederfindet — was sich aendert, ist der Zustand, nicht die Sache.
+   *
+   * Der Fehlerzustand blinkt als einziger. Er ist der einzige, der eine
+   * Handlung verlangt, die nicht aufschiebbar ist.
+   */
+  const serverIconClass =
+    phase === "starting"
+      ? "text-yellow-400 animate-pulse"
+      : phase === "error"
+        ? "text-orange-500 animate-pulse"
+        : phase === "stopped"
+          ? "text-text/40"
+          : "text-green-500";
+
+  const serverTitle =
+    phase === "stopped"
+      ? t("tts.serverIconStart")
+      : phase === "starting"
+        ? t("tts.serverIconStarting")
+        : phase === "error"
+          ? (status?.message ?? t("tts.serverIconError"))
+          : t("tts.serverIconStop");
+
+  /**
+   * Ein Klick tut, was im jeweiligen Zustand ansteht. Beim laufenden Server
+   * ist das Beenden — und weil damit ein Modellstart von bis zu zwei Minuten
+   * verfaellt und laufendes Vorlesen abbricht, wird vorher gefragt.
+   */
+  const onServerIconClick = () => {
+    if (phase === "stopped" || phase === "error") {
+      void startServer();
+      return;
+    }
+    if (phase === "starting") return;
+    setConfirmStop(true);
   };
 
   const showVramHint =
@@ -243,31 +305,47 @@ export const TtsSettings = () => {
           grouped={true}
           layout="horizontal"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {/* Zustand und Bedienung sind EIN Element: die Farbe sagt, woran
+                man ist, der Klick tut das, was in diesem Zustand ansteht.
+                Grau = aus (starten), Gelb = faehrt hoch, Gruen = laeuft
+                (beenden, nach Rueckfrage), Orange blinkend = Fehler. */}
+            <button
+              type="button"
+              onClick={onServerIconClick}
+              title={serverTitle}
+              aria-label={serverTitle}
+              className="p-1.5 rounded-md hover:bg-mid-gray/20 transition-colors cursor-pointer"
+            >
+              <Server
+                width={18}
+                height={18}
+                className={serverIconClass}
+                aria-hidden="true"
+              />
+            </button>
+            {/* Der Notausgang. Bewusst IMMER sichtbar und nie gesperrt: sein
+                Zweck ist ja gerade, dass die gemeldete Phase falsch sein kann
+                — ein haengender Server meldet nichts mehr, haelt aber die
+                Grafikkarte fest. Ein Notausgang, der von derselben Anzeige
+                abhinge wie das Problem, waere keiner. */}
+            <button
+              type="button"
+              onClick={killServer}
+              title={t("tts.serverKillHint")}
+              aria-label={t("tts.serverKill")}
+              className="p-1.5 rounded-md text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors cursor-pointer"
+            >
+              <OctagonX width={18} height={18} aria-hidden="true" />
+            </button>
             <Badge variant={badgeVariant(phase)}>
               {t(`tts.status.${phase}`, { seconds: startingSeconds })}
             </Badge>
-            {phase === "stopped" || phase === "error" ? (
-              <Button size="sm" variant="secondary" onClick={startServer}>
-                {t("tts.serverStart")}
-              </Button>
-            ) : (
-              // Nicht mehr an `owns_server` gebunden: der Server belegt rund
-              // 17 GB VRAM, und wer ihn von Hand gestartet hat, musste bisher
-              // in den Taskmanager, um seine Grafikkarte zurueckzubekommen.
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={stopServer}
-                title={
-                  status?.owns_server ? undefined : t("tts.externalServerHint")
-                }
-              >
-                {t("tts.serverStop")}
-              </Button>
-            )}
           </div>
         </SettingContainer>
+        {killNotice && (
+          <p className="px-4 pb-2 text-sm text-text/70">{killNotice}</p>
+        )}
         {showVramHint && (
           <p className="px-4 pb-2 text-sm text-text/70">{t("tts.vramHint")}</p>
         )}
@@ -410,6 +488,14 @@ export const TtsSettings = () => {
           formatValue={(value) => `${Math.round(value * 100)}%`}
           label={t("tts.settings.volume")}
           description={t("tts.settings.volumeDescription")}
+          grouped={true}
+        />
+        <ToggleSwitch
+          checked={getSetting("tts_normalize") ?? true}
+          onChange={(checked) => updateSetting("tts_normalize", checked)}
+          isUpdating={isUpdating("tts_normalize")}
+          label={t("tts.settings.normalize")}
+          description={t("tts.settings.normalizeDescription")}
           grouped={true}
         />
         <Slider
@@ -577,6 +663,31 @@ export const TtsSettings = () => {
           />
         </SettingContainer>
       </SettingsGroup>
+
+      <Dialog
+        open={confirmStop}
+        onOpenChange={setConfirmStop}
+        title={t("tts.stopConfirmTitle")}
+        closeLabel={t("tts.stopConfirmCancel")}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmStop(false)}>
+              {t("tts.stopConfirmCancel")}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirmStop(false);
+                stopServer();
+              }}
+            >
+              {t("tts.stopConfirmAccept")}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text/80">{t("tts.stopConfirmBody")}</p>
+      </Dialog>
     </div>
   );
 };

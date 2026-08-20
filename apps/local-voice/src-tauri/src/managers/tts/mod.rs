@@ -5,6 +5,7 @@
 //! einen Mock-Server getestet; `TtsManager` ergänzt AppHandle-Belange:
 //! Settings, Events, Prozess-Spawn, Idle-Watchdog und Exit-Teardown.
 
+pub mod loudness;
 pub mod player;
 pub mod protocol;
 pub mod state;
@@ -31,6 +32,11 @@ pub fn single_voice(sentences: Vec<String>) -> Vec<Utterance> {
     sentences.into_iter().map(|text| (text, None)).collect()
 }
 const IDLE_WATCH_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Wie weit ein einzelner Satz vom Pegel seiner Stimme abweichen darf.
+/// Groß genug, damit jeder Satz den Zielpegel praktisch erreicht; klein
+/// genug, dass die Betonung eines Satzes erhalten bleibt.
+const SENTENCE_TRIM_DB: f32 = 3.0;
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct TtsStatus {
@@ -65,6 +71,19 @@ pub struct TtsCore {
     /// Persistenter Ableger des Caches auf Platte — bereits synthetisierte
     /// Bücher/Dokumente sind damit auch OHNE laufenden Fish-Server anhörbar.
     cache_dir: Mutex<Option<std::path::PathBuf>>,
+    /// Ob die Wiedergabe alle Stimmen auf denselben Pegel zieht.
+    normalize: AtomicBool,
+    /// Korrekturfaktor je Stimme, einmal je Sitzung aus dem ersten
+    /// synthetisierten Satz dieser Stimme gemessen. Schlüssel ist die
+    /// reference_id, leer für die Seed-Standardstimme.
+    ///
+    /// Warum nicht Satz für Satz: die Lautheit schwankt zwischen Sätzen
+    /// derselben Stimme absichtlich — ein Fragesatz ist anders betont als
+    /// eine Aufzählung. Wer jeden Satz einzeln auf denselben Wert zöge,
+    /// bügelte diese Betonung glatt und erzeugte hörbares Pumpen. Was
+    /// wirklich stört, ist der Sprung ZWISCHEN Stimmen; genau den nimmt ein
+    /// konstanter Faktor je Stimme heraus.
+    voice_gains: Mutex<std::collections::HashMap<String, f32>>,
     on_phase_change: Mutex<Option<Box<dyn Fn(TtsStatus) + Send + Sync>>>,
 }
 
@@ -139,6 +158,8 @@ impl TtsCore {
             voice: Mutex::new(None),
             wav_cache: Mutex::new(WavCache::new()),
             cache_dir: Mutex::new(None),
+            normalize: AtomicBool::new(true),
+            voice_gains: Mutex::new(std::collections::HashMap::new()),
             on_phase_change: Mutex::new(None),
         }
     }
@@ -369,6 +390,55 @@ impl TtsCore {
         Ok(bytes)
     }
 
+    /// Wiedergabefaktor für einen synthetisierten Satz.
+    ///
+    /// Zwei Stufen. Der Pegel der *Stimme* ist der gleitende Mittelwert aller
+    /// bisher gehörten Sätze dieser Stimme — nicht die Messung des ersten:
+    /// ein kurzer Einstiegssatz misst leicht daneben, und dieser Fehler
+    /// bliebe sonst für die ganze Sitzung stehen. Darauf kommt die Korrektur
+    /// des *Satzes*, gedämpft auf ±3 dB um den Stimmenpegel — so wird jeder
+    /// Satz auf den Zielpegel gezogen, ohne dass Betonung glattgebügelt wird
+    /// oder die Lautheit zwischen zwei Sätzen hörbar pumpt.
+    fn playback_gain(&self, voice: Option<&str>, wav: &[u8]) -> f32 {
+        if !self.normalize.load(Ordering::Acquire) {
+            return 1.0;
+        }
+        let key = match voice {
+            Some(explicit) => explicit.to_string(),
+            // "die eingestellte Stimme" muss denselben Schlüssel ergeben wie
+            // ihr expliziter Name — sonst bekäme dieselbe Stimme zwei Faktoren.
+            None => self.voice.lock().unwrap().clone().unwrap_or_default(),
+        };
+        let Some((mono, rate, peak)) = decode_wav(wav) else {
+            return 1.0;
+        };
+        let sentence = loudness::gain_to_target(&mono, rate, peak);
+
+        // Gemittelt wird in dB, nicht im Faktor: Lautheit ist logarithmisch,
+        // der arithmetische Mittelwert zweier Faktoren träfe die Mitte nicht.
+        let base = {
+            let mut gains = self.voice_gains.lock().unwrap();
+            let mixed = match gains.get(&key) {
+                Some(&previous) => {
+                    let db = |g: f32| 20.0 * g.max(1e-6).log10();
+                    10f32.powf((db(previous) * 0.75 + db(sentence) * 0.25) / 20.0)
+                }
+                None => sentence,
+            };
+            gains.insert(key, mixed);
+            mixed
+        };
+
+        let limit = 10f32.powf(SENTENCE_TRIM_DB / 20.0);
+        let corrected = sentence.clamp(base / limit, base * limit);
+        if peak <= f32::EPSILON {
+            return 1.0;
+        }
+        // Die Spitze hat immer das letzte Wort: die Dämpfung oben darf den
+        // Faktor wieder über die Aussteuerungsgrenze gehoben haben.
+        corrected.min(loudness::PEAK_CEILING / peak)
+    }
+
     /// Satz-Pipeline: Satz N wird abgespielt, während Satz N+1 bereits beim
     /// Server liegt. Die gefühlte Latenz ist damit die Synthese des ersten
     /// Satzes; bei RTF < 1 (compile) bleibt die Wiedergabe lückenlos.
@@ -446,7 +516,10 @@ impl TtsCore {
                     }
                     let player = self.player.clone();
                     let device = self.output_device.lock().unwrap().clone();
-                    let volume = *self.volume.lock().unwrap();
+                    // Stimmen gleich laut: der Nutzerregler skaliert den
+                    // ausgeglichenen Pegel, nicht den rohen des Servers.
+                    let volume =
+                        *self.volume.lock().unwrap() * self.playback_gain(voice.as_deref(), &bytes);
                     let speed = *self.speed.lock().unwrap();
                     let cancel_flag = cancelled.clone();
                     previous_playback = Some((
@@ -557,6 +630,113 @@ const READING_STORE: &str = "reading_progress.json";
 const DISK_CACHE_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// FIFO-Verdrängung nach Änderungszeit — läuft einmal beim App-Start.
+/// WAV-Blob zu Mono-Downmix, Abtastrate und Spitzenwert.
+///
+/// `None` bei allem, was `hound` nicht lesen kann — die Wiedergabe läuft dann
+/// ungeregelt weiter, statt am Pegelmessen zu scheitern.
+fn decode_wav(bytes: &[u8]) -> Option<(Vec<f32>, u32, f32)> {
+    let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes)).ok()?;
+    let spec = reader.spec();
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>().ok()?,
+        hound::SampleFormat::Int => {
+            let scale = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.map(|v| v as f32 / scale))
+                .collect::<Result<_, _>>()
+                .ok()?
+        }
+    };
+    let peak = loudness::peak(&samples);
+    let channels = spec.channels.max(1) as usize;
+    let mono = if channels == 1 {
+        samples
+    } else {
+        samples
+            .chunks(channels)
+            .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+            .collect()
+    };
+    Some((mono, spec.sample_rate, peak))
+}
+
+/// WAV-Blob auf `loudness::TARGET_LUFS` gezogen neu schreiben (16-bit PCM).
+///
+/// `None`, wenn der Blob nicht lesbar ist oder ohnehin schon passt — der
+/// Aufrufer behält dann das Original, statt am Pegeln zu scheitern.
+fn normalize_wav_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+    let (mono, rate, peak) = decode_wav(bytes)?;
+    let gain = loudness::gain_to_target(&mono, rate, peak);
+    if (gain - 1.0).abs() < 0.01 {
+        return None;
+    }
+    let reader = hound::WavReader::new(std::io::Cursor::new(bytes)).ok()?;
+    let spec = reader.spec();
+    let out_spec = hound::WavSpec {
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+        ..spec
+    };
+    // Kanäle bleiben, wie sie sind: gemessen wurde über den Downmix, der
+    // Faktor gilt für alle Kanäle gleichermaßen.
+    let mut out = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(&mut out, out_spec).ok()?;
+        let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes)).ok()?;
+        let scale = (1i64 << (spec.bits_per_sample - 1)) as f32;
+        match spec.sample_format {
+            hound::SampleFormat::Float => {
+                for sample in reader.samples::<f32>() {
+                    let v = (sample.ok()? * gain).clamp(-1.0, 1.0) * i16::MAX as f32;
+                    writer.write_sample(v as i16).ok()?;
+                }
+            }
+            hound::SampleFormat::Int => {
+                for sample in reader.samples::<i32>() {
+                    let v = (sample.ok()? as f32 / scale * gain).clamp(-1.0, 1.0) * i16::MAX as f32;
+                    writer.write_sample(v as i16).ok()?;
+                }
+            }
+        }
+        writer.finalize().ok()?;
+    }
+    Some(out.into_inner())
+}
+
+/// Marker, dass die Hörproben im Verzeichnis mit Pegelausgleich entstanden.
+const DEMOS_NORMALIZED_MARKER: &str = ".loudness-v2";
+
+/// Einmalig alle Hörproben löschen, die noch ohne Pegelausgleich entstanden
+/// sind. Sie werden beim nächsten Anhören neu erzeugt — das kostet einmal
+/// wenige Sekunden GPU-Zeit und ist der einzige Weg, sie loszuwerden, ohne
+/// ihnen anzusehen, wie sie entstanden sind.
+fn discard_stale_demos(dir: &std::path::Path) {
+    if dir.join(DEMOS_NORMALIZED_MARKER).exists() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut removed = 0usize;
+    for path in entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "wav"))
+    {
+        if std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    if let Err(e) = std::fs::write(dir.join(DEMOS_NORMALIZED_MARKER), b"") {
+        log::warn!("could not mark demo dir: {e}");
+        return;
+    }
+    if removed > 0 {
+        log::info!("{removed} Hörprobe(n) ohne Pegelausgleich verworfen");
+    }
+}
+
 fn prune_disk_cache(dir: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -635,6 +815,27 @@ impl TtsManager {
             }
         }
 
+        // Bestandsstimmen einmalig auf das Lautheitsmaß nachziehen. Im
+        // Hintergrund: der Lauf liest und schreibt Dateien und darf den
+        // App-Start nicht aufhalten.
+        {
+            let fish_dir = manager.fish_dir();
+            let demos = manager.demo_dir();
+            std::thread::spawn(move || {
+                let count = voices::renormalize_existing(&fish_dir);
+                if count > 0 {
+                    log::info!("{count} Referenzstimme(n) auf -20 LUFS nachgezogen");
+                }
+                // Hörproben aus der Zeit vor dem Ausgleich verwerfen. Sie
+                // entstehen sonst nie neu: nachgezogen wird eine Hörprobe nur,
+                // wenn die Referenz JÜNGER ist als sie — und das ist sie nach
+                // diesem Lauf gerade nicht mehr.
+                if let Some(dir) = demos {
+                    discard_stale_demos(&dir);
+                }
+            });
+        }
+
         // Idle-Watchdog: beendet einen selbst gestarteten Server nach der
         // konfigurierten Leerlaufzeit, damit die 17 GB VRAM wieder frei werden.
         let watchdog = Arc::downgrade(&manager);
@@ -670,6 +871,15 @@ impl TtsManager {
         *self.core.export_format.lock().unwrap() = settings.tts_export_format;
         *self.core.output_device.lock().unwrap() = settings.selected_output_device;
         *self.core.voice.lock().unwrap() = settings.tts_voice;
+        // Beim Umschalten die gemessenen Faktoren verwerfen: sonst hinge der
+        // Pegel an einer Messung aus der Zeit vor dem Umschalten.
+        let previous = self
+            .core
+            .normalize
+            .swap(settings.tts_normalize, Ordering::Release);
+        if previous != settings.tts_normalize {
+            self.core.voice_gains.lock().unwrap().clear();
+        }
     }
 
     pub fn status(&self) -> TtsStatus {
@@ -1194,7 +1404,18 @@ impl TtsManager {
         let dir = self
             .demo_dir()
             .ok_or_else(|| "Kein Ablageort für Hörproben".to_string())?;
-        let out = dir.join(format!("{voice_id}.wav"));
+        // Vor der Ablagefrage, weil der Dateiname der Standardstimme ihren
+        // Seed trägt: ein anderer Seed ist eine andere Stimme.
+        self.refresh_from_settings();
+        let seed = *self.core.seed.lock().unwrap();
+        // Leere Kennung = Standardstimme (Seed), die Stimme ohne Referenz.
+        // Sie ist so anhörbar wie jede andere — man wählt sie ja gegen die
+        // anderen aus, und das geht nur, wenn man sie auch hören kann.
+        let reference = (!voice_id.trim().is_empty()).then_some(voice_id);
+        let out = match reference {
+            Some(id) => dir.join(format!("{id}.wav")),
+            None => dir.join(format!("seed-{seed}.wav")),
+        };
 
         let reference_mtime = voices::voice_sample(&self.fish_dir(), voice_id)
             .and_then(|(wav, _)| std::fs::metadata(wav).ok())
@@ -1208,14 +1429,11 @@ impl TtsManager {
             return Ok(out);
         }
 
-        self.refresh_from_settings();
         self.ensure_server().await?;
         let port = *self.core.port.lock().unwrap();
-        let seed = *self.core.seed.lock().unwrap();
         // Immer WAV, unabhängig vom Export-Format des Nutzers: die Hörprobe ist
         // ein interner Cache mit vorhersagbarem Namen, kein Liefergegenstand.
-        let body =
-            protocol::tts_request_body_in_format(Self::DEMO_TEXT, seed, Some(voice_id), "wav");
+        let body = protocol::tts_request_body_in_format(Self::DEMO_TEXT, seed, reference, "wav");
         let resp = self
             .core
             .http
@@ -1232,6 +1450,11 @@ impl TtsManager {
         if !protocol::looks_like_audio(&audio, "wav") {
             return Err("TTS response is not valid wav audio".to_string());
         }
+        // Die Hörprobe ist eine eigene Datei, die ein <audio>-Element abspielt
+        // — sie geht den Wiedergabe-Pfad NICHT und bekäme dessen Ausgleich
+        // sonst nie. Ausgerechnet die Vorschau, an der man Stimmen
+        // vergleicht, wäre damit die einzige ungeregelte Stelle.
+        let audio = normalize_wav_bytes(&audio).unwrap_or(audio);
         std::fs::write(&out, &audio)
             .map_err(|e| format!("could not write {}: {e}", out.display()))?;
         *self.core.last_used.lock().unwrap() = Instant::now();
@@ -1290,6 +1513,9 @@ impl TtsManager {
                 .core
                 .fetch_wav(port, seed, &part.text, voice.as_deref())
                 .await?;
+            // Derselbe Ausgleich wie beim Hören: eine exportierte Datei mit
+            // wechselnden Stimmen soll nicht lauter und leiser werden.
+            let gain = self.core.playback_gain(voice.as_deref(), &bytes);
             let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
                 .map_err(|e| format!("Teilstueck nicht lesbar: {e}"))?;
             let spec = reader.spec();
@@ -1302,6 +1528,11 @@ impl TtsManager {
             let sink = writer.as_mut().expect("writer exists");
             for sample in reader.samples::<i16>() {
                 let sample = sample.map_err(|e| format!("Teilstueck beschaedigt: {e}"))?;
+                let sample = if gain == 1.0 {
+                    sample
+                } else {
+                    (sample as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32) as i16
+                };
                 sink.write_sample(sample)
                     .map_err(|e| format!("could not write {out_path}: {e}"))?;
                 written += 1;
@@ -1328,6 +1559,7 @@ impl TtsManager {
     /// ein Sprung um 15 Sekunden gaebe es hier gar nicht. Der Satz ist die
     /// Einheit, in der man sich in vorgelesenem Text bewegt.
     pub async fn speak_seek(self: &Arc<Self>, delta: i32) -> Result<usize, String> {
+        use tauri::Emitter;
         let (sentences, target) = {
             let mut guard = self.speak_session.lock().unwrap();
             let session = guard.as_mut().ok_or("nichts zum Springen")?;
@@ -1336,7 +1568,50 @@ impl TtsManager {
             session.position = next as usize;
             (session.sentences.clone(), next as usize)
         };
+        // Die neue Position melden. Ohne das erfuhr die Oberfläche vom Sprung
+        // nichts: ihr "Fortsetzen möglich" hängt am Fortschritt, und der kam
+        // bisher nur, wenn ein Satz VOLLSTÄNDIG gespielt wurde. Wer sprang und
+        // dann pausierte, bekam beim nächsten Druck auf Play einen Neustart
+        // von vorn statt der Fortsetzung an der Sprungmarke.
+        let _ = self.app.emit(
+            "tts-speak-progress",
+            serde_json::json!({ "position": target as u32, "total": sentences.len() as u32 }),
+        );
         self.run_speak_session(sentences, target).await
+    }
+
+    /// Die aktive Stimme hat sich geändert — sofort übernehmen.
+    ///
+    /// Während des Vorlesens genügt es NICHT, die Einstellung zu spiegeln: die
+    /// Satz-Pipeline holt den nächsten Satz bereits, während der aktuelle noch
+    /// spielt, ein Wechsel wäre also erst zwei Sätze später zu hören. Läuft
+    /// gerade eine Wiedergabe, beginnt sie deshalb beim aktuellen Satz neu —
+    /// der wird in der neuen Stimme wiederholt, und ab da gilt sie.
+    ///
+    /// Sätze mit ausdrücklicher Stimme (Dialogzeilen wie `olga:`) bleiben
+    /// unberührt: dort hat der Text die Stimme bestimmt, nicht die Einstellung.
+    pub fn apply_voice_change(self: &Arc<Self>) {
+        self.refresh_from_settings();
+        if self.core.phase() != TtsPhase::Speaking {
+            return;
+        }
+        let Some((sentences, position)) = ({
+            let guard = self.speak_session.lock().unwrap();
+            guard
+                .as_ref()
+                .map(|session| (session.sentences.clone(), session.position))
+        }) else {
+            return;
+        };
+        if position >= sentences.len() {
+            return;
+        }
+        let manager = Arc::clone(self);
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = manager.run_speak_session(sentences, position).await {
+                log::warn!("voice change restart failed: {e}");
+            }
+        });
     }
 
     /// Laufenden Datei-Export abbrechen.
@@ -1706,6 +1981,49 @@ impl TtsManager {
         Ok(())
     }
 
+    /// Hart beenden: alles abschießen, was auf dem TTS-Port lauscht — ohne
+    /// vorher zu fragen, ob es gesund ist.
+    ///
+    /// `stop_server_any` prüft bei einem fremd gestarteten Server erst die
+    /// Gesundheit und meldet „nichts zu beenden", wenn keine Antwort kommt.
+    /// Genau dann braucht man diesen Knopf aber: ein Server, der beim Starten
+    /// hängt oder nicht mehr antwortet, hält trotzdem rund 17 GB VRAM fest,
+    /// und der einzige Ausweg war bisher der Taskmanager.
+    ///
+    /// Rückgabe: was tatsächlich passiert ist, für die Rückmeldung an den
+    /// Nutzer — „nichts gefunden" ist ein Ergebnis, kein Fehler.
+    pub fn kill_server_hard(&self) -> Result<String, String> {
+        self.core.cancel_core();
+        let owned = self.core.owns_server();
+        if owned {
+            self.kill_owned_child();
+            self.core.owns_server.store(false, Ordering::Release);
+        }
+        let port = *self.core.port.lock().unwrap();
+        // Auch nach dem eigenen Kind noch auf dem Port nachsehen: ein
+        // Serverstart, der zweimal lief, hinterlässt einen Prozess, der uns
+        // nicht mehr gehört (beobachtet am 20.08.2026, drei Startzeilen).
+        let killed_foreign = match listening_pid(port) {
+            Some(pid) => match kill_pid(pid) {
+                Ok(()) => {
+                    log::info!("fish-speech auf Port {port} (PID {pid}) hart beendet");
+                    true
+                }
+                Err(e) => {
+                    self.core.set_phase(TtsPhase::Stopped, None);
+                    return Err(e);
+                }
+            },
+            None => false,
+        };
+        self.core.set_phase(TtsPhase::Stopped, None);
+        Ok(match (owned, killed_foreign) {
+            (_, true) => format!("Prozess auf Port {port} beendet"),
+            (true, false) => "Eigener Serverprozess beendet".to_string(),
+            (false, false) => format!("Kein Prozess auf Port {port} gefunden"),
+        })
+    }
+
     /// Nur den selbst gestarteten Prozess beenden (Idle-Watchdog, Herunterfahren).
     pub fn stop_server(&self) {
         if !self.core.owns_server() {
@@ -1732,15 +2050,32 @@ impl TtsManager {
 /// Ueber `netstat -ano` statt einer Crate: das Werkzeug gehoert zu Windows, die
 /// Ausgabe ist seit Jahrzehnten stabil, und der Alternativweg (IP Helper API)
 /// waere fuer eine einzige Abfrage viel unsafe-Code.
+/// PID des Prozesses, der auf `port` lauscht.
 fn listening_pid(port: u16) -> Option<u32> {
     let output = std::process::Command::new("netstat")
         .args(["-ano", "-p", "TCP"])
         .output()
         .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
+    parse_listening_pid(&String::from_utf8_lossy(&output.stdout), port)
+}
+
+/// Die Zeile eines lauschenden Sockets aus einer netstat-Ausgabe heraussuchen.
+///
+/// Erkannt wird an der STRUKTUR, nicht am Statuswort: `netstat` uebersetzt es
+/// (deutsch "ABHOEREN", englisch "LISTENING"). Der Vergleich mit "LISTENING"
+/// lief auf einem deutschen Windows deshalb immer ins Leere — beide
+/// Stopp-Wege der App taten schlicht nichts, und der Serverprozess hielt
+/// seine 17 GB VRAM weiter fest (beobachtet 20.08.2026).
+///
+/// Ein lauschender Socket hat keine Gegenstelle; seine Remoteadresse ist
+/// `0.0.0.0:0` bzw. `[::]:0`. Eine ausgehende Verbindung von demselben Port
+/// hat dort eine echte Adresse und wird dadurch ausgeschlossen. Das gilt in
+/// jeder Sprache, weil dort nur Zahlen stehen.
+fn parse_listening_pid(netstat_output: &str, port: u16) -> Option<u32> {
+    let wanted = format!(":{port}");
+    for line in netstat_output.lines() {
         let mut fields = line.split_whitespace();
-        let (Some(_proto), Some(local), Some(_remote), Some(state), Some(pid)) = (
+        let (Some(proto), Some(local), Some(remote), Some(_state), Some(pid)) = (
             fields.next(),
             fields.next(),
             fields.next(),
@@ -1749,15 +2084,14 @@ fn listening_pid(port: u16) -> Option<u32> {
         ) else {
             continue;
         };
-        if !state.eq_ignore_ascii_case("LISTENING") {
+        if !proto.eq_ignore_ascii_case("TCP") {
             continue;
         }
         // Nur die Loopback-Adresse: der Server der App laeuft auf 127.0.0.1,
         // und ein fremder Dienst auf 0.0.0.0 desselben Ports geht uns nichts an.
-        let matches_port = local
-            .rsplit_once(':')
-            .is_some_and(|(host, p)| p == port.to_string() && host.contains("127.0.0.1"));
-        if matches_port {
+        let local_matches = local.ends_with(&wanted) && local.contains("127.0.0.1");
+        let is_listening = remote.ends_with(":0");
+        if local_matches && is_listening {
             return pid.parse().ok();
         }
     }
@@ -1784,6 +2118,42 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    /// Der Statustext ist uebersetzt — die Erkennung darf nicht daran haengen.
+    /// Beide Ausgaben stammen von echten Systemen (de-DE und en-US).
+    #[test]
+    fn der_lauschende_prozess_wird_in_jeder_sprache_gefunden() {
+        let deutsch = concat!(
+            "Aktive Verbindungen\r\n\r\n",
+            "  Proto  Lokale Adresse         Remoteadresse          Status           PID\r\n",
+            "  TCP    0.0.0.0:135            0.0.0.0:0              ABHÖREN         2284\r\n",
+            "  TCP    127.0.0.1:8080         0.0.0.0:0              ABHÖREN         87820\r\n"
+        );
+        let englisch = concat!(
+            "Active Connections\r\n\r\n",
+            "  Proto  Local Address          Foreign Address        State           PID\r\n",
+            "  TCP    127.0.0.1:8080         0.0.0.0:0              LISTENING       4711\r\n"
+        );
+        assert_eq!(parse_listening_pid(deutsch, 8080), Some(87820));
+        assert_eq!(parse_listening_pid(englisch, 8080), Some(4711));
+    }
+
+    /// Eine ausgehende Verbindung VON diesem Port ist kein Server.
+    #[test]
+    fn eine_bestehende_verbindung_wird_nicht_fuer_den_server_gehalten() {
+        let text = "  TCP    127.0.0.1:8080         127.0.0.1:53318        HERGESTELLT     999\r\n";
+        assert_eq!(parse_listening_pid(text, 8080), None);
+    }
+
+    /// Ein anderer Port und ein Dienst auf allen Adressen gehen uns nichts an.
+    #[test]
+    fn fremde_ports_und_fremde_adressen_werden_uebergangen() {
+        let text = concat!(
+            "  TCP    127.0.0.1:8081         0.0.0.0:0              ABHÖREN         111\r\n",
+            "  TCP    0.0.0.0:8080           0.0.0.0:0              ABHÖREN         222\r\n"
+        );
+        assert_eq!(parse_listening_pid(text, 8080), None);
+    }
 
     /// Minimaler HTTP-Server: beantwortet GET /v1/health mit ok und
     /// POST /v1/tts mit einem RIFF-Blob. Zählt TTS-Aufrufe. Schließt jede

@@ -13,8 +13,11 @@ pub fn translation_prompt(target_lang: &str, text: &str) -> String {
     format!(
         "Translate the following text into {target_lang}. Reply with ONLY the \
          translation - no explanations, no quotation marks around it. Keep \
-         names, numbers and formatting unchanged and match the tone of the \
-         original.\n\n{text}"
+         names and numbers unchanged and match the tone of the original. \
+         Preserve the layout of the original exactly: the same line breaks, \
+         the same blank lines between paragraphs, one output paragraph for \
+         one input paragraph. Never merge paragraphs into a single block of \
+         text.\n\n{text}"
     )
 }
 
@@ -96,6 +99,17 @@ mod tests {
         assert!(p.contains("into German"));
         assert!(p.contains("ONLY the"));
         assert!(p.ends_with("Hello world"));
+    }
+
+    /// Absätze sind der Grund, warum ein vorgelesener Text lesbar bleibt.
+    /// Ohne diese Ansage lieferten Modelle eine einzige Textwand zurück.
+    #[test]
+    fn prompt_verlangt_die_absaetze_des_originals() {
+        let p = translation_prompt("English", "Erster Absatz.\n\nZweiter Absatz.");
+        assert!(p.contains("blank lines between paragraphs"));
+        assert!(p.contains("Never merge paragraphs"));
+        // Der Text selbst geht mit seinen Umbrüchen hinein, nicht geglättet.
+        assert!(p.ends_with("Erster Absatz.\n\nZweiter Absatz."));
     }
 
     /// Mock eines OpenAI-kompatiblen /chat/completions-Endpunkts.

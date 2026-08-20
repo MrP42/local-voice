@@ -250,6 +250,14 @@ pub async fn tts_extract_url(url: String) -> Result<String, String> {
     crate::media::extract_url_text(&url).await
 }
 
+/// Alles beenden, was auf dem TTS-Port lauscht — ohne Gesundheitsprüfung.
+/// Der Ausweg, wenn ein hängender Server die Grafikkarte festhält.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_server_kill(app: AppHandle) -> Result<String, String> {
+    app.state::<Arc<TtsManager>>().kill_server_hard()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn tts_voicechange_record_start(app: AppHandle) -> Result<(), String> {

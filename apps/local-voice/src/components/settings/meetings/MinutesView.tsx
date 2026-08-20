@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { commands, type MeetingDocument } from "@/bindings";
 import { Button } from "../../ui/Button";
 import { Alert } from "../../ui/Alert";
@@ -109,20 +108,26 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
     setSaved(null);
     const safeName =
       meetingTitle.replace(/[\\/:*?"<>|]/g, "_").trim() || "protokoll";
+    // Word zuerst: das Protokoll geht weiter an Menschen, nicht an einen
+    // Editor. Das Format ergibt sich aus der gewählten Endung — deshalb
+    // braucht es kein zweites Auswahlfeld neben dem Dialog.
     const target = await save({
       filters: [
-        { name: "Markdown", extensions: ["md"] },
+        { name: "Word", extensions: ["docx"] },
         { name: "Text", extensions: ["txt"] },
+        { name: "Markdown", extensions: ["md"] },
       ],
-      defaultPath: `${safeName}.md`,
+      defaultPath: `${safeName}.docx`,
     });
     if (typeof target !== "string") return;
-    try {
-      await writeTextFile(target, doc.body);
-      setSaved(target);
-    } catch (e) {
-      setError(t("meetings.minutes.exportError") + `: ${String(e)}`);
+    // Geschrieben wird im Backend: das fs-Plugin lässt nur $APPDATA zu und
+    // scheiterte an jedem Ziel, das der Dialog anbietet ("not allowed by ACL").
+    const result = await commands.meetingsExportDocument(target, doc.body);
+    if (result.status !== "ok") {
+      setError(t("meetings.minutes.exportError") + `: ${result.error}`);
+      return;
     }
+    setSaved(target);
   };
 
   if (loading) {

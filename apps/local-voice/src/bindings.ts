@@ -1133,6 +1133,22 @@ async meetingsMinutesFile(meetingId: string) : Promise<Result<string | null, str
     else return { status: "error", error: e  as any };
 }
 },
+async ttsServerKill() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_server_kill") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async meetingsExportDocument(path: string, body: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_export_document", { path, body }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsSpeakText(text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_text", { text }) };
@@ -1589,6 +1605,12 @@ tts_translate_lang?: string;
  * Feedback-Sounds.
  */
 tts_volume?: number; 
+/**
+ * Alle Stimmen auf denselben Pegel bringen (-20 LUFS nach ITU-R
+ * BS.1770-4) — beim Aufnehmen/Importieren einer Referenz und beim
+ * Vorlesen. Aus bedeutet: der rohe Pegel des Servers, wie er kommt.
+ */
+tts_normalize?: boolean; 
 /**
  * Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
  * Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).

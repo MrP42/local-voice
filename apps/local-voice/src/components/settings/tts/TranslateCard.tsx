@@ -139,16 +139,23 @@ export const TranslateCard = () => {
           )}
         </div>
 
+        {/* whitespace-pre-wrap, weil HTML Zeilenumbrueche sonst zu Leerzeichen
+            faltet: die Uebersetzung kommt mit den Absaetzen des Originals
+            zurueck, wurde hier aber als eine einzige Textwand ausgegeben.
+            Die Beschriftung steht ueber dem Text statt davor, damit der erste
+            Absatz an derselben Kante beginnt wie alle folgenden. */}
         {transcript && (
-          <div className="text-sm">
-            <span className="font-medium">{t("tts.translate.heard")}</span>{" "}
-            <span className="text-text/80">{transcript}</span>
+          <div className="text-sm space-y-1">
+            <div className="font-medium">{t("tts.translate.heard")}</div>
+            <div className="text-text/80 whitespace-pre-wrap">{transcript}</div>
           </div>
         )}
         {translation && (
-          <div className="text-sm">
-            <span className="font-medium">{t("tts.translate.result")}</span>{" "}
-            <span className="text-text/80">{translation}</span>
+          <div className="text-sm space-y-1">
+            <div className="font-medium">{t("tts.translate.result")}</div>
+            <div className="text-text/80 whitespace-pre-wrap">
+              {translation}
+            </div>
           </div>
         )}
         <p className="text-xs text-text/50">

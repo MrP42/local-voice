@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, Check, Download, Pencil, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { commands, type Meeting, type StoredSegment } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
@@ -124,15 +123,27 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
 
   const exportTranscript = async () => {
     setTranscriptError(null);
-    try {
-      const target = await save({
-        defaultPath: `${meetingTitle || "transkript"}.txt`,
-        filters: [{ name: "Text", extensions: ["txt", "md"] }],
-      });
-      if (!target) return;
-      await writeTextFile(target, transcriptText());
-    } catch (e) {
-      setTranscriptError(String(e));
+    const target = await save({
+      defaultPath: `${meetingTitle || "transkript"}.docx`,
+      filters: [
+        { name: "Word", extensions: ["docx"] },
+        { name: "Text", extensions: ["txt"] },
+        { name: "Markdown", extensions: ["md"] },
+      ],
+    });
+    if (typeof target !== "string") return;
+    // Wie beim Protokoll: geschrieben wird im Backend, weil das fs-Plugin
+    // nur $APPDATA zulaesst. Der Sprecher steht fett vor seinem Beitrag,
+    // damit die Word-Fassung als Mitschrift lesbar ist und nicht als Liste.
+    const body = segments
+      .map(
+        (s) =>
+          `**${t(channelLabelKey(s.channel))} [${formatMmSs(s.start_ms)}]:** ${s.text}`,
+      )
+      .join("\n\n");
+    const result = await commands.meetingsExportDocument(target, body);
+    if (result.status !== "ok") {
+      setTranscriptError(result.error);
     }
   };
 

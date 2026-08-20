@@ -542,6 +542,11 @@ pub struct AppSettings {
     /// Feedback-Sounds.
     #[serde(default = "default_tts_volume")]
     pub tts_volume: f32,
+    /// Alle Stimmen auf denselben Pegel bringen (-20 LUFS nach ITU-R
+    /// BS.1770-4) — beim Aufnehmen/Importieren einer Referenz und beim
+    /// Vorlesen. Aus bedeutet: der rohe Pegel des Servers, wie er kommt.
+    #[serde(default = "default_tts_normalize")]
+    pub tts_normalize: bool,
     /// Wiedergabegeschwindigkeit (0.5–2.0; verändert per Resampling auch die
     /// Tonhöhe leicht — kleiner Bereich um 1.0 klingt natürlich).
     #[serde(default = "default_tts_speed")]
@@ -590,6 +595,11 @@ fn default_tts_translate_lang() -> String {
 
 fn default_tts_volume() -> f32 {
     1.0
+}
+
+/// Standardmäßig an: ungleich laute Stimmen sind ein Fehler, kein Merkmal.
+fn default_tts_normalize() -> bool {
+    true
 }
 
 fn default_tts_speed() -> f32 {
@@ -1200,6 +1210,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_compile: default_tts_compile(),
         tts_translate_lang: default_tts_translate_lang(),
         tts_volume: default_tts_volume(),
+        tts_normalize: default_tts_normalize(),
         tts_speed: default_tts_speed(),
         tts_export_format: default_tts_export_format(),
         tts_context_menu: false,

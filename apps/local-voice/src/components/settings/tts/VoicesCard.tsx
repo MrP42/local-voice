@@ -18,6 +18,11 @@ type Mode =
   | { kind: "recording" }
   | { kind: "review"; source: "recording" | { wavPath: string } };
 
+/// Kennung der Standardstimme gegenueber dem Backend: kein Referenzname,
+/// also die leere Zeichenkette. Ein eigener Name waere ein Stimmenname, den
+/// jemand fuer eine echte Stimme vergeben koennte.
+const SEED_VOICE = "";
+
 export const VoicesCard = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
@@ -198,21 +203,54 @@ export const VoicesCard = () => {
         {error && <p className="text-sm text-red-500 break-words">{error}</p>}
 
         <div className="space-y-1">
-          <div className="flex items-center justify-between gap-2 py-1">
-            <span className="text-sm">{t("tts.voices.defaultVoice")}</span>
-            <div className="flex items-center gap-2">
-              {activeVoice === null ? (
-                <Badge variant="success">{t("tts.voices.active")}</Badge>
-              ) : (
+          {/* Die Standardstimme ist eine Stimme wie jede andere und wird
+              gegen die anderen ausgewaehlt — das geht nur, wenn man sie auch
+              hoeren kann. Leere Kennung heisst im Backend "Seed-Stimme". */}
+          <div className="py-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-sm">{t("tts.voices.defaultVoice")}</span>
+              <div className="flex items-center gap-2">
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => updateSetting("tts_voice", null)}
+                  onClick={() => void togglePreview(SEED_VOICE)}
+                  aria-expanded={sample?.id === SEED_VOICE}
+                  disabled={previewing !== null}
                 >
-                  {t("tts.voices.activate")}
+                  <Play width={14} height={14} />
+                  {previewing === SEED_VOICE
+                    ? t("tts.voices.previewGenerating")
+                    : t("tts.voices.preview")}
                 </Button>
-              )}
+                {activeVoice === null ? (
+                  <Badge variant="success">{t("tts.voices.active")}</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => updateSetting("tts_voice", null)}
+                  >
+                    {t("tts.voices.activate")}
+                  </Button>
+                )}
+              </div>
             </div>
+            {sample?.id === SEED_VOICE &&
+              (sample.data ? (
+                <div className="mt-2 space-y-1">
+                  <AudioPlayer
+                    src={convertFileSrc(sample.data.wav_path, "asset")}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-text/60 italic">
+                    {sample.data.transcript}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-red-400">
+                  {sample.error ?? t("tts.voices.previewMissing")}
+                </p>
+              ))}
           </div>
           {voices.map((id) => (
             <div key={id} className="py-1">

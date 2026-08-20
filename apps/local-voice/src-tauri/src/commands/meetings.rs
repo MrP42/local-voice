@@ -186,6 +186,23 @@ pub async fn meetings_minutes_file(
     Ok(path.exists().then(|| path.to_string_lossy().into_owned()))
 }
 
+/// Writes a document the user assembled in the app to a path they picked in
+/// the system save dialog — as Markdown, plain text or Word, chosen by the
+/// file extension.
+///
+/// This deliberately does NOT go through the fs plugin from the frontend:
+/// its capability scope is limited to `$APPDATA`, so saving into Documents —
+/// what the save dialog offers — failed with "not allowed by ACL". The path
+/// comes from the user's own choice in a system dialog; re-checking it
+/// against an allowlist protects nobody. Writing here also makes Word export
+/// possible at all, since a .docx is a ZIP archive rather than text.
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_export_document(path: String, body: String) -> Result<(), String> {
+    let target = std::path::PathBuf::from(&path);
+    crate::managers::meetings::export::write_document(&target, &body)
+}
+
 /// Imports a local audio/video file or a VTT/SRT subtitle file as a new
 /// meeting. Audio/video decoding and transcription can take a while, hence
 /// this stays `async` end to end rather than blocking the command task
