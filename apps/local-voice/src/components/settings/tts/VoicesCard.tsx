@@ -34,7 +34,9 @@ export const VoicesCard = () => {
   const [sample, setSample] = useState<{
     id: string;
     data: VoiceSample | null;
+    error?: string;
   } | null>(null);
+  const [previewing, setPreviewing] = useState<string | null>(null);
 
   const activeVoice = getSetting("tts_voice") ?? null;
 
@@ -71,8 +73,17 @@ export const VoicesCard = () => {
       setSample(null);
       return;
     }
-    const result = await commands.ttsVoiceSample(id);
-    setSample({ id, data: result.status === "ok" ? result.data : null });
+    setSample(null);
+    setPreviewing(id);
+    // Generated once per voice and cached; the first click for a voice has to
+    // wait for Fish Speech (and may have to start it), later ones are instant.
+    const result = await commands.ttsVoiceDemo(id);
+    setPreviewing(null);
+    setSample(
+      result.status === "ok"
+        ? { id, data: result.data }
+        : { id, data: null, error: result.error },
+    );
   };
 
   const startRecording = async () => {
@@ -207,9 +218,12 @@ export const VoicesCard = () => {
                     variant="secondary"
                     onClick={() => void togglePreview(id)}
                     aria-expanded={sample?.id === id}
+                    disabled={previewing !== null}
                   >
                     <Play width={14} height={14} />
-                    {t("tts.voices.preview")}
+                    {previewing === id
+                      ? t("tts.voices.previewGenerating")
+                      : t("tts.voices.preview")}
                   </Button>
                   {activeVoice === id ? (
                     <Badge variant="success">{t("tts.voices.active")}</Badge>
@@ -234,21 +248,19 @@ export const VoicesCard = () => {
               {sample?.id === id &&
                 (sample.data ? (
                   <div className="mt-2 space-y-1">
-                    {/* The reference recording itself — this IS the voice, not
-                        a synthesized imitation, and it needs no server. */}
+                    {/* The same sentence for every voice — otherwise you are
+                        comparing two recordings, not two voices. */}
                     <AudioPlayer
                       src={convertFileSrc(sample.data.wav_path, "asset")}
                       className="w-full"
                     />
-                    {sample.data.transcript && (
-                      <p className="text-xs text-text/60 italic">
-                        {sample.data.transcript}
-                      </p>
-                    )}
+                    <p className="text-xs text-text/60 italic">
+                      {sample.data.transcript}
+                    </p>
                   </div>
                 ) : (
-                  <p className="mt-2 text-xs text-text/60">
-                    {t("tts.voices.previewMissing")}
+                  <p className="mt-2 text-xs text-red-400">
+                    {sample.error ?? t("tts.voices.previewMissing")}
                   </p>
                 ))}
             </div>

@@ -19,6 +19,7 @@ import { Select } from "../../ui/Select";
 import { ReadingCard } from "./ReadingCard";
 import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
+import { save } from "@tauri-apps/plugin-dialog";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -49,6 +50,7 @@ export const TtsSettings = () => {
     total: number;
   } | null>(null);
   const [currentSentence, setCurrentSentence] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const startingTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -124,6 +126,24 @@ export const TtsSettings = () => {
   const resumeSpeaking = async () => {
     setLastError(null);
     const result = await commands.ttsSpeakResume();
+    if (result.status === "error") setLastError(result.error);
+  };
+
+  /**
+   * The whole text — speaker changes and all — written to one WAV instead of
+   * only played. Goes through the same segmentation as playback, so the file
+   * sounds like what you heard.
+   */
+  const saveSpokenAudio = async () => {
+    setLastError(null);
+    const target = await save({
+      filters: [{ name: "WAV", extensions: ["wav"] }],
+      defaultPath: "vorlesen.wav",
+    });
+    if (typeof target !== "string") return;
+    setSaving(true);
+    const result = await commands.ttsSpeakToFile(text, target);
+    setSaving(false);
     if (result.status === "error") setLastError(result.error);
   };
 
@@ -212,6 +232,13 @@ export const TtsSettings = () => {
                 {t("tts.resume")}
               </Button>
             )}
+            <Button
+              variant="secondary"
+              onClick={saveSpokenAudio}
+              disabled={saving || text.trim().length === 0}
+            >
+              {saving ? t("tts.savingAudio") : t("tts.saveAudio")}
+            </Button>
             {speakProgress && (
               <span className="text-xs text-text/60">
                 {t("tts.sentenceProgress", {
@@ -221,6 +248,9 @@ export const TtsSettings = () => {
               </span>
             )}
           </div>
+          {/* Sprecherwechsel sind eine Schreibregel, keine Einstellung — der
+              Hinweis steht deshalb bei dem Feld, in das man ihn tippt. */}
+          <p className="text-xs text-text/50">{t("tts.dialogHint")}</p>
           {speaking && currentSentence && (
             <p className="text-sm italic text-text/70 border-s-2 border-logo-primary ps-2">
               {currentSentence}

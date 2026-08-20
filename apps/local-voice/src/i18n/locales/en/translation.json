@@ -114,7 +114,8 @@
       "save": "Save voice",
       "discard": "Discard",
       "preview": "Listen",
-      "previewMissing": "No reference recording found for this voice."
+      "previewMissing": "The preview could not be generated.",
+      "previewGenerating": "Generating…"
     },
     "translate": {
       "title": "Audio Translation",
@@ -164,7 +165,10 @@
       "exportFormatDescription": "Format for saved audio files (voice changer, summaries). The server encodes directly.",
       "contextMenu": "Explorer context menu",
       "contextMenuDescription": "Adds \"Read with Local Voice AI\" to the right-click menu of TXT/MD/PDF/DOCX files. Note: Windows offers no system-wide menu for selected text — use the clipboard hotkey for that."
-    }
+    },
+    "saveAudio": "Save as audio…",
+    "savingAudio": "Generating…",
+    "dialogHint": "Dialogue: start a line with the name of a voice and a colon (e.g. \"olga:\") — everything up to the next such line is spoken in that voice."
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",

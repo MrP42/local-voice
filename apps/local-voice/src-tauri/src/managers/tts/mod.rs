@@ -20,6 +20,16 @@ use std::time::{Duration, Instant};
 pub const HEALTH_POLL_INTERVAL: Duration = Duration::from_secs(2);
 pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(180);
 pub const TTS_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Ein zu sprechender Satz und die Stimme dafür. `None` heißt „die
+/// eingestellte Stimme"; damit ist einstimmiges Vorlesen der Sonderfall
+/// „überall None" und braucht keinen eigenen Pfad.
+pub type Utterance = (String, Option<String>);
+
+/// Sätze, die alle die eingestellte Stimme sprechen.
+pub fn single_voice(sentences: Vec<String>) -> Vec<Utterance> {
+    sentences.into_iter().map(|text| (text, None)).collect()
+}
 const IDLE_WATCH_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
@@ -218,7 +228,7 @@ impl TtsCore {
         if prepared.truncated {
             log::warn!("TTS text truncated to {max_chars} chars");
         }
-        let sentences = protocol::split_sentences(&prepared.text);
+        let sentences = single_voice(protocol::split_sentences(&prepared.text));
         self.speak_sentence_run(sentences, 0, None, None).await
     }
 
@@ -228,7 +238,7 @@ impl TtsCore {
     /// persistente Fortschrittsanzeige.
     pub async fn speak_sentence_run(
         &self,
-        sentences: Vec<String>,
+        sentences: Vec<Utterance>,
         start_index: usize,
         on_playing: Option<Arc<dyn Fn(usize) + Send + Sync>>,
         on_played: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -277,9 +287,21 @@ impl TtsCore {
 
     /// WAV vom Server holen, validieren; `play` ist optional, damit der
     /// Selbsttest (Task 8) denselben Pfad ohne Soundkarte messen kann.
-    async fn fetch_wav(&self, port: u16, seed: i64, text: &str) -> Result<Vec<u8>, String> {
+    /// `voice = None` heisst "die eingestellte Stimme" — so bleibt der
+    /// einstimmige Pfad exakt wie vorher. Ein `Some(..)` uebersteuert sie fuer
+    /// genau diesen Satz; das ist die Grundlage des Dialog-Vorlesens.
+    async fn fetch_wav(
+        &self,
+        port: u16,
+        seed: i64,
+        text: &str,
+        voice: Option<&str>,
+    ) -> Result<Vec<u8>, String> {
         let url = format!("{}/v1/tts", protocol::base_url(port));
-        let voice = self.voice.lock().unwrap().clone();
+        let voice = match voice {
+            Some(explicit) => Some(explicit.to_string()),
+            None => self.voice.lock().unwrap().clone(),
+        };
         // Unveränderter Satz + gleiche Stimme/Seed → aus dem Cache, ohne Server.
         let cache_key = WavCache::key(text, seed, voice.as_deref());
         if let Some(cached) = self.wav_cache.lock().unwrap().get(cache_key) {
@@ -335,7 +357,7 @@ impl TtsCore {
         &self,
         port: u16,
         seed: i64,
-        sentences: &[String],
+        sentences: &[Utterance],
         start_index: usize,
         cancelled: Arc<AtomicBool>,
         on_playing: Option<Arc<dyn Fn(usize) + Send + Sync>>,
@@ -358,7 +380,7 @@ impl TtsCore {
             }
         };
 
-        for (offset, sentence) in sentences.iter().enumerate().skip(start_index) {
+        for (offset, (sentence, voice)) in sentences.iter().enumerate().skip(start_index) {
             if cancelled.load(Ordering::Acquire) {
                 break;
             }
@@ -367,7 +389,14 @@ impl TtsCore {
                 notify(offset, cancelled.load(Ordering::Acquire));
                 continue;
             };
-            match self.fetch_wav(port, seed, &prepared.text).await {
+            // Der naechste Satz wird geholt, WAEHREND der vorige noch spielt
+            // (siehe `previous_playback` unten) — deshalb faellt ein
+            // Stimmwechsel nicht als Pause auf, solange der Server die
+            // Referenz im Speicher haelt (`use_memory_cache`).
+            match self
+                .fetch_wav(port, seed, &prepared.text, voice.as_deref())
+                .await
+            {
                 Ok(bytes) => {
                     total_bytes += bytes.len();
                     // Vorherigen Satz zu Ende spielen lassen (Reihenfolge!).
@@ -471,7 +500,9 @@ pub struct TtsManager {
 }
 
 struct SpeakSession {
-    sentences: Vec<String>,
+    /// Satz samt Stimme — sonst spraeche ein "Fortsetzen" den Rest eines
+    /// Dialogs mit der falschen Stimme weiter.
+    sentences: Vec<Utterance>,
     position: usize,
 }
 
@@ -628,12 +659,34 @@ impl TtsManager {
         let max_chars = *self.core.max_chars.lock().unwrap();
         let prepared =
             protocol::prepare_text(raw, max_chars).ok_or_else(|| "empty text".to_string())?;
-        let sentences = protocol::split_sentences(&prepared.text);
+        let sentences = self.utterances(&prepared.text);
         *self.speak_session.lock().unwrap() = Some(SpeakSession {
             sentences: sentences.clone(),
             position: 0,
         });
         self.run_speak_session(sentences, 0).await
+    }
+
+    /// Vorlesetext in Saetze samt Stimme zerlegen.
+    ///
+    /// Beginnt eine Zeile mit dem Namen einer vorhandenen Stimme und einem
+    /// Doppelpunkt (`olga:`), spricht diese Stimme bis zur naechsten solchen
+    /// Zeile — daraus entsteht ein Dialog. Ohne jede Markierung ist das
+    /// Ergebnis Satz fuer Satz dasselbe wie vorher, nur mit `None` als Stimme.
+    ///
+    /// Satztrennung passiert INNERHALB eines Sprecherabschnitts: ein Satz darf
+    /// nie zwei Sprecher enthalten, und die Pipeline holt den naechsten Satz
+    /// bereits waehrend der vorige spielt — deshalb klingt der Wechsel fluessig.
+    fn utterances(&self, text: &str) -> Vec<Utterance> {
+        let known = self.list_voice_ids();
+        protocol::split_voice_segments(text, &known)
+            .into_iter()
+            .flat_map(|segment| {
+                protocol::split_sentences(&segment.text)
+                    .into_iter()
+                    .map(move |sentence| (sentence, segment.voice.clone()))
+            })
+            .collect()
     }
 
     /// Pausiertes Freitext-Vorlesen ab dem letzten vollständig gehörten Satz
@@ -663,13 +716,16 @@ impl TtsManager {
 
     async fn run_speak_session(
         self: &Arc<Self>,
-        sentences: Vec<String>,
+        sentences: Vec<Utterance>,
         start: usize,
     ) -> Result<usize, String> {
         use tauri::Emitter;
         self.refresh_from_settings();
-        self.ensure_server_for(&sentences[start.min(sentences.len())..])
-            .await?;
+        let texts: Vec<String> = sentences[start.min(sentences.len())..]
+            .iter()
+            .map(|(text, _)| text.clone())
+            .collect();
+        self.ensure_server_for(&texts).await?;
         let total = sentences.len() as u32;
         let cb_manager = Arc::clone(self);
         let on_played: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
@@ -683,7 +739,7 @@ impl TtsManager {
         });
         // Live-Anzeige des Satzes, der gerade zu hören ist.
         let now_manager = Arc::clone(self);
-        let now_sentences = sentences.clone();
+        let now_sentences: Vec<String> = sentences.iter().map(|(text, _)| text.clone()).collect();
         let on_playing: Arc<dyn Fn(usize) + Send + Sync> = Arc::new(move |idx| {
             let _ = now_manager.app.emit(
                 "tts-current-sentence",
@@ -794,12 +850,6 @@ impl TtsManager {
 
     pub fn list_voice_ids(&self) -> Vec<String> {
         voices::list_voices(&self.fish_dir())
-    }
-
-    /// Hoerprobe einer Stimme: Pfad zur Referenzaufnahme und der gesprochene
-    /// Text dazu.
-    pub fn voice_sample(&self, id: &str) -> Option<(std::path::PathBuf, String)> {
-        voices::voice_sample(&self.fish_dir(), id)
     }
 
     /// Referenzaufnahme starten (VAD aus — auch leise Passagen gehören in die
@@ -1072,6 +1122,144 @@ impl TtsManager {
         Ok(audio.len())
     }
 
+    /// Derselbe Satz für jede Stimme — nur so vergleicht man Stimmen und nicht
+    /// zwei verschiedene Aufnahmen. Bewusst kurz und vollständig: Klangfarbe,
+    /// Tempo und Satzmelodie hört man an einem Satz, nicht an einem Wort.
+    pub const DEMO_TEXT: &'static str = "Guten Tag. So klingt diese Stimme:         ein kurzer Satz, damit Sie Klangfarbe, Tempo und Betonung vergleichen können.";
+
+    /// Wo die Hörproben liegen. Eigenes Verzeichnis neben `tts_cache`, damit
+    /// `prune_disk_cache` sie nicht wegräumt — der Cache ist nach Größe
+    /// begrenzt, die Hörproben sind wenige Dateien, die bleiben sollen.
+    fn demo_dir(&self) -> Option<std::path::PathBuf> {
+        use tauri::Manager;
+        let base = crate::portable::data_dir()
+            .cloned()
+            .or_else(|| self.app.path().app_local_data_dir().ok())?;
+        let dir = base.join("voice_demos");
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir)
+    }
+
+    /// Hörprobe einer Stimme: `DEMO_TEXT`, mit genau dieser Stimme erzeugt und
+    /// als WAV zwischengespeichert.
+    ///
+    /// Erzeugt wird nur beim ersten Mal — und erneut, wenn die Referenzaufnahme
+    /// der Stimme jünger ist als die Hörprobe: wer eine Stimme unter demselben
+    /// Namen neu aufnimmt, soll nicht die alte hören.
+    ///
+    /// Anders als `synthesize_to_file` hängt das NICHT an der aktiven Stimme —
+    /// man will ja gerade die anderen hören, ohne umzuschalten.
+    pub async fn synthesize_voice_demo(
+        &self,
+        voice_id: &str,
+    ) -> Result<std::path::PathBuf, String> {
+        let dir = self
+            .demo_dir()
+            .ok_or_else(|| "Kein Ablageort für Hörproben".to_string())?;
+        let out = dir.join(format!("{voice_id}.wav"));
+
+        let reference_mtime = voices::voice_sample(&self.fish_dir(), voice_id)
+            .and_then(|(wav, _)| std::fs::metadata(wav).ok())
+            .and_then(|meta| meta.modified().ok());
+        let demo_mtime = std::fs::metadata(&out).ok().and_then(|m| m.modified().ok());
+        if let (Some(demo), Some(reference)) = (demo_mtime, reference_mtime) {
+            if demo >= reference {
+                return Ok(out);
+            }
+        } else if demo_mtime.is_some() && reference_mtime.is_none() {
+            return Ok(out);
+        }
+
+        self.refresh_from_settings();
+        self.ensure_server().await?;
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+        // Immer WAV, unabhängig vom Export-Format des Nutzers: die Hörprobe ist
+        // ein interner Cache mit vorhersagbarem Namen, kein Liefergegenstand.
+        let body =
+            protocol::tts_request_body_in_format(Self::DEMO_TEXT, seed, Some(voice_id), "wav");
+        let resp = self
+            .core
+            .http
+            .post(format!("{}/v1/tts", protocol::base_url(port)))
+            .json(&body)
+            .timeout(TTS_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| format!("TTS request failed: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("TTS server answered {}", resp.status()));
+        }
+        let audio = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+        if !protocol::looks_like_audio(&audio, "wav") {
+            return Err("TTS response is not valid wav audio".to_string());
+        }
+        std::fs::write(&out, &audio)
+            .map_err(|e| format!("could not write {}: {e}", out.display()))?;
+        *self.core.last_used.lock().unwrap() = Instant::now();
+        Ok(out)
+    }
+
+    /// Den ganzen Vorlesetext — Dialog eingeschlossen — in EINE WAV-Datei
+    /// schreiben, statt ihn nur zu hören.
+    ///
+    /// Geht bewusst durch dieselbe Zerlegung wie das Abspielen
+    /// (`utterances`), damit die Datei Satz für Satz klingt wie das, was man
+    /// vorher gehört hat. Zusammengefügt wird mit `hound`: die Teile kommen
+    /// als eigenständige WAVs vom Server, und ein simples Aneinanderhängen der
+    /// Bytes ergäbe eine Datei mit Kopfdaten mitten im Ton.
+    pub async fn speak_to_file(
+        self: &Arc<Self>,
+        raw: &str,
+        out_path: &str,
+    ) -> Result<usize, String> {
+        let max_chars = *self.core.max_chars.lock().unwrap();
+        let prepared =
+            protocol::prepare_text(raw, max_chars).ok_or_else(|| "empty text".to_string())?;
+        let utterances = self.utterances(&prepared.text);
+        if utterances.is_empty() {
+            return Err("empty text".to_string());
+        }
+        self.refresh_from_settings();
+        self.ensure_server().await?;
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+
+        let mut writer: Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>> = None;
+        let mut written = 0usize;
+        for (sentence, voice) in &utterances {
+            let Some(part) = protocol::prepare_text(sentence, max_chars) else {
+                continue;
+            };
+            let bytes = self
+                .core
+                .fetch_wav(port, seed, &part.text, voice.as_deref())
+                .await?;
+            let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes))
+                .map_err(|e| format!("Teilstueck nicht lesbar: {e}"))?;
+            let spec = reader.spec();
+            if writer.is_none() {
+                writer = Some(
+                    hound::WavWriter::create(out_path, spec)
+                        .map_err(|e| format!("could not write {out_path}: {e}"))?,
+                );
+            }
+            let sink = writer.as_mut().expect("writer exists");
+            for sample in reader.samples::<i16>() {
+                let sample = sample.map_err(|e| format!("Teilstueck beschaedigt: {e}"))?;
+                sink.write_sample(sample)
+                    .map_err(|e| format!("could not write {out_path}: {e}"))?;
+                written += 1;
+            }
+        }
+        writer
+            .ok_or_else(|| "nichts zu schreiben".to_string())?
+            .finalize()
+            .map_err(|e| format!("could not finish {out_path}: {e}"))?;
+        *self.core.last_used.lock().unwrap() = Instant::now();
+        Ok(written)
+    }
+
     /// Aktuell konfiguriertes Export-Format ("wav" | "mp3" | "opus") — für
     /// den Save-Dialog des Frontends.
     pub fn export_format(&self) -> String {
@@ -1226,7 +1414,12 @@ impl TtsManager {
             });
             let result = manager
                 .core
-                .speak_sentence_run(sentences, start as usize, Some(on_playing), Some(on_played))
+                .speak_sentence_run(
+                    single_voice(sentences),
+                    start as usize,
+                    Some(on_playing),
+                    Some(on_played),
+                )
                 .await;
             if let Err(e) = result {
                 log::warn!("reading: playback ended with error: {e}");
@@ -1369,7 +1562,10 @@ impl TtsManager {
         let port = *self.core.port.lock().unwrap();
         let seed = *self.core.seed.lock().unwrap();
         let tts_start = Instant::now();
-        let wav = self.core.fetch_wav(port, seed, &prepared.text).await?;
+        let wav = self
+            .core
+            .fetch_wav(port, seed, &prepared.text, None)
+            .await?;
         let tts_ms = tts_start.elapsed().as_millis() as u64;
         Ok((wav, server_start_ms, tts_ms))
     }

@@ -111,6 +111,39 @@ pub fn voice_sample(fish_dir: &Path, id: &str) -> Option<(PathBuf, String)> {
     Some((wav, transcript))
 }
 
+/// Zielpegel der Referenzaufnahmen: RMS bei -20 dBFS.
+///
+/// Warum RMS und nicht Spitze: Spitzennormalisierung richtet sich nach dem
+/// lautesten Knacken der Aufnahme, nicht nach der Stimme. Zwei Sprecher mit
+/// gleicher Spitze klingen trotzdem verschieden laut — RMS trifft die
+/// empfundene Lautheit deutlich besser.
+const TARGET_RMS: f32 = 0.1;
+/// Aussteuerungsgrenze: -1 dBFS. Deckelt die Verstärkung, damit eine leise
+/// Aufnahme mit einem einzelnen lauten Einsatz nicht ins Clipping gehoben wird.
+const PEAK_CEILING: f32 = 0.891;
+
+/// Verstärkungsfaktor, der `samples` auf `TARGET_RMS` bringt, ohne die
+/// Aussteuerungsgrenze zu überschreiten.
+///
+/// Rein rechnerisch und ohne Seiteneffekt, damit die Regel prüfbar ist:
+/// stille Aufnahmen bleiben unverändert (Faktor 1), zu laute werden leiser,
+/// zu leise lauter — aber nie so weit, dass die Spitze anschlägt.
+pub fn normalize_gain(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 1.0;
+    }
+    let sum_squares: f64 = samples.iter().map(|s| (*s as f64) * (*s as f64)).sum();
+    let rms = (sum_squares / samples.len() as f64).sqrt() as f32;
+    let peak = samples.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
+    // Nichts als Signal da: unverändert lassen statt Rauschen hochzuziehen.
+    if rms <= f32::EPSILON || peak <= f32::EPSILON {
+        return 1.0;
+    }
+    let wanted = TARGET_RMS / rms;
+    let allowed = PEAK_CEILING / peak;
+    wanted.min(allowed)
+}
+
 /// Aufnahme (16 kHz mono f32) als Referenz speichern: sample.wav (16-bit PCM)
 /// plus sample.lab (Transkript, UTF-8 ohne BOM).
 pub fn save_voice(
@@ -140,8 +173,11 @@ pub fn save_voice(
     let wav_path = dir.join("sample.wav");
     let mut writer = hound::WavWriter::create(&wav_path, spec)
         .map_err(|e| format!("could not write {}: {e}", wav_path.display()))?;
+    // Alle Stimmen auf denselben Pegel: sonst ist in einem Dialog eine
+    // Sprecherin dauernd zu leise und die nächste zu laut.
+    let gain = normalize_gain(samples);
     for &s in samples {
-        let clamped = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        let clamped = ((s * gain).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
         writer
             .write_sample(clamped)
             .map_err(|e| format!("wav write failed: {e}"))?;
@@ -153,8 +189,9 @@ pub fn save_voice(
     write_lab(&dir, transcript)
 }
 
-/// Vorhandene WAV-Datei unverändert übernehmen (der Fish-Server resampled
-/// selbst — Studioqualität bleibt erhalten) plus Transkript als .lab.
+/// Vorhandene WAV-Datei übernehmen — Abtastrate und Kanäle bleiben, wie sie
+/// sind (der Fish-Server resampled selbst, Studioqualität bleibt erhalten),
+/// nur der Pegel wird auf `TARGET_RMS` gezogen. Plus Transkript als .lab.
 pub fn import_voice(
     fish_dir: &Path,
     id: &str,
@@ -164,13 +201,46 @@ pub fn import_voice(
     if transcript.trim().is_empty() {
         return Err("transcript must not be empty".into());
     }
-    // Frühe Validierung: muss als WAV lesbar sein, bevor irgendetwas kopiert wird.
-    hound::WavReader::open(source_wav)
+    // Frühe Validierung: muss als WAV lesbar sein, bevor irgendetwas entsteht.
+    let mut reader = hound::WavReader::open(source_wav)
         .map_err(|e| format!("not a readable WAV file ({}): {e}", source_wav.display()))?;
+    let spec = reader.spec();
+    let scale = (1i64 << (spec.bits_per_sample - 1)) as f32;
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("WAV nicht lesbar: {e}"))?,
+        hound::SampleFormat::Int => reader
+            .samples::<i32>()
+            .map(|s| s.map(|v| v as f32 / scale))
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("WAV nicht lesbar: {e}"))?,
+    };
+    let gain = normalize_gain(&samples);
+
     let dir = voice_dir(fish_dir, id);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
-    std::fs::copy(source_wav, dir.join("sample.wav")).map_err(|e| format!("copy failed: {e}"))?;
+    let wav_path = dir.join("sample.wav");
+    // Immer 16-bit Int geschrieben: das ist das Format, das auch die eigene
+    // Aufnahme erzeugt, und der Server verlangt nichts anderes.
+    let out_spec = hound::WavSpec {
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+        ..spec
+    };
+    let mut writer = hound::WavWriter::create(&wav_path, out_spec)
+        .map_err(|e| format!("could not write {}: {e}", wav_path.display()))?;
+    for sample in samples {
+        let value = ((sample * gain).clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        writer
+            .write_sample(value)
+            .map_err(|e| format!("wav write failed: {e}"))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| format!("wav finalize failed: {e}"))?;
     write_lab(&dir, transcript)
 }
 
@@ -242,6 +312,39 @@ pub fn delete_voice(fish_dir: &Path, id: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn leise_aufnahmen_werden_lauter_laute_leiser() {
+        let quiet: Vec<f32> = (0..1000).map(|i| 0.01 * ((i as f32) * 0.1).sin()).collect();
+        let loud: Vec<f32> = (0..1000).map(|i| 0.9 * ((i as f32) * 0.1).sin()).collect();
+        assert!(
+            super::normalize_gain(&quiet) > 1.0,
+            "eine leise Aufnahme muss angehoben werden"
+        );
+        assert!(
+            super::normalize_gain(&loud) < 1.0,
+            "eine laute Aufnahme muss abgesenkt werden"
+        );
+    }
+
+    #[test]
+    fn die_verstaerkung_treibt_nie_ins_clipping() {
+        // Sehr leise Grundlage mit einem einzelnen lauten Einsatz: der
+        // RMS-Wunsch waere gross, die Spitze verbietet es.
+        let mut samples = vec![0.001f32; 1000];
+        samples[500] = 0.95;
+        let gain = super::normalize_gain(&samples);
+        let peak = samples
+            .iter()
+            .fold(0.0f32, |acc, s| acc.max((s * gain).abs()));
+        assert!(peak <= 1.0, "Spitze nach Normalisierung: {peak}");
+    }
+
+    #[test]
+    fn stille_bleibt_stille() {
+        assert_eq!(super::normalize_gain(&[0.0; 100]), 1.0);
+        assert_eq!(super::normalize_gain(&[]), 1.0);
+    }
+
     use super::*;
 
     #[test]

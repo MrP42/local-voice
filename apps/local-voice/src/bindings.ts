@@ -1189,9 +1189,15 @@ async ttsListVoices() : Promise<Result<string[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async ttsVoiceSample(voiceId: string) : Promise<Result<VoiceSample | null, string>> {
+/**
+ * Erzeugt die Hoerprobe beim ersten Aufruf (und erneut, wenn die Stimme
+ * neu aufgenommen wurde); danach kommt sie aus dem Cache. Braucht den
+ * Fish-Speech-Server, der bei Bedarf gestartet wird — der erste Aufruf kann
+ * deshalb dauern.
+ */
+async ttsVoiceDemo(voiceId: string) : Promise<Result<VoiceSample, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("tts_voice_sample", { voiceId }) };
+    return { status: "ok", data: await TAURI_INVOKE("tts_voice_demo", { voiceId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1376,6 +1382,17 @@ async ttsVoicechangeRecordStop() : Promise<Result<string, string>> {
 async ttsVoicechangeFile(wavPath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_voicechange_file", { wavPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Den Vorlesetext samt Sprecherwechseln in eine WAV-Datei schreiben.
+ */
+async ttsSpeakToFile(text: string, outPath: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_to_file", { text, outPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1766,8 +1783,7 @@ export type TtsPhase = "stopped" | "starting" | "ready" | "speaking" | "error"
 export type TtsStatus = { phase: TtsPhase; owns_server: boolean; message: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 /**
- * Hoerprobe einer Stimme. `None`, wenn die Stimme keine lesbare
- * Referenzaufnahme (mehr) hat.
+ * Hoerprobe einer Stimme: derselbe Demotext, mit dieser Stimme erzeugt.
  */
 export type VoiceSample = { 
 /**
@@ -1776,7 +1792,8 @@ export type VoiceSample = {
  */
 wav_path: string; 
 /**
- * Der Satz, der in der Aufnahme gesprochen wird.
+ * Der gesprochene Satz. Fuer alle Stimmen derselbe, sonst vergleicht man
+ * Aufnahmen statt Stimmen.
  */
 transcript: string }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

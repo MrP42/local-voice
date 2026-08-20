@@ -88,6 +88,75 @@ pub fn looks_like_wav(bytes: &[u8]) -> bool {
 /// Ein Schnitt passiert nur an `.!?…` vor Whitespace UND wenn das bisherige
 /// Stück mindestens 15 Zeichen hat — das lässt deutsche Abkürzungen
 /// („z. B.", „Dr.") zusammen, statt sie als Mini-Sätze vorzulesen.
+/// Ein Stück Vorlesetext mit der Stimme, die es sprechen soll.
+/// `voice == None` heißt „die eingestellte Stimme" — so klingt ein Text ohne
+/// jede Sprechermarkierung genau wie vorher.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VoiceSegment {
+    pub voice: Option<String>,
+    pub text: String,
+}
+
+/// Zerlegt Vorlesetext in Abschnitte je Sprecher.
+///
+/// Eine Zeile, die mit dem Namen einer **bekannten** Stimme und einem
+/// Doppelpunkt beginnt (`olga: Guten Morgen.`), schaltet auf diese Stimme um;
+/// sie gilt bis zur nächsten solchen Zeile. Text vor der ersten Markierung
+/// gehört der eingestellten Stimme.
+///
+/// Der Abgleich gegen die *vorhandenen* Stimmen ist der Kern: „Achtung: nicht
+/// vergessen" fängt genauso an, ist aber keine Sprecherzeile. Ohne diese
+/// Prüfung würde jeder Doppelpunkt am Zeilenanfang Text verschlucken.
+/// Groß-/Kleinschreibung ist egal, damit `Olga:` und `olga:` dasselbe tun.
+pub fn split_voice_segments(text: &str, known_voices: &[String]) -> Vec<VoiceSegment> {
+    let mut segments: Vec<VoiceSegment> = Vec::new();
+    let mut current: Option<String> = None;
+    let mut buffer = String::new();
+
+    let flush = |segments: &mut Vec<VoiceSegment>, voice: &Option<String>, buffer: &mut String| {
+        if !buffer.trim().is_empty() {
+            segments.push(VoiceSegment {
+                voice: voice.clone(),
+                text: buffer.trim().to_string(),
+            });
+        }
+        buffer.clear();
+    };
+
+    for line in text.lines() {
+        match speaker_marker(line, known_voices) {
+            Some((voice, rest)) => {
+                flush(&mut segments, &current, &mut buffer);
+                current = Some(voice);
+                if !rest.trim().is_empty() {
+                    buffer.push_str(rest.trim());
+                    buffer.push('\n');
+                }
+            }
+            None => {
+                buffer.push_str(line);
+                buffer.push('\n');
+            }
+        }
+    }
+    flush(&mut segments, &current, &mut buffer);
+    segments
+}
+
+/// `("olga", " Guten Morgen.")` für `olga: Guten Morgen.`, sonst `None`.
+fn speaker_marker(line: &str, known_voices: &[String]) -> Option<(String, String)> {
+    let trimmed = line.trim_start();
+    let (name, rest) = trimmed.split_once(':')?;
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let matched = known_voices
+        .iter()
+        .find(|voice| voice.eq_ignore_ascii_case(name))?;
+    Some((matched.clone(), rest.to_string()))
+}
+
 pub fn split_sentences(text: &str) -> Vec<String> {
     const MIN_CHUNK_CHARS: usize = 15;
     let mut sentences = Vec::new();
@@ -186,6 +255,68 @@ mod tests {
             vec!["Nur ein Satz ohne Ende"]
         );
         assert!(split_sentences("   ").is_empty());
+    }
+
+    #[test]
+    fn sprecherzeilen_schalten_die_stimme_um() {
+        let voices = vec!["olga".to_string(), "patrick".to_string()];
+        let text = "Vorspann ohne Sprecher.
+olga: Guten Morgen.
+Wie geht es dir?
+patrick: Danke, gut.";
+        let segments = split_voice_segments(text, &voices);
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].voice, None, "Text vor der ersten Markierung");
+        assert_eq!(segments[0].text, "Vorspann ohne Sprecher.");
+        assert_eq!(segments[1].voice.as_deref(), Some("olga"));
+        assert_eq!(
+            segments[1].text,
+            "Guten Morgen.
+Wie geht es dir?",
+            "die Folgezeile gehoert noch olga"
+        );
+        assert_eq!(segments[2].voice.as_deref(), Some("patrick"));
+        assert_eq!(segments[2].text, "Danke, gut.");
+    }
+
+    #[test]
+    fn ein_gewoehnlicher_doppelpunkt_ist_keine_sprecherzeile() {
+        let voices = vec!["olga".to_string()];
+        let segments = split_voice_segments("Achtung: nicht vergessen.", &voices);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].voice, None);
+        assert_eq!(
+            segments[0].text, "Achtung: nicht vergessen.",
+            "der Text darf nicht angeknabbert werden"
+        );
+    }
+
+    #[test]
+    fn sprechernamen_sind_gross_klein_egal_und_duerfen_leer_ausgehen() {
+        let voices = vec!["Olga".to_string()];
+        let segments = split_voice_segments(
+            "OLGA:
+Erste Zeile.",
+            &voices,
+        );
+        assert_eq!(segments.len(), 1);
+        assert_eq!(
+            segments[0].voice.as_deref(),
+            Some("Olga"),
+            "gemeldet wird die Stimme, wie sie wirklich heisst"
+        );
+        assert_eq!(segments[0].text, "Erste Zeile.");
+    }
+
+    #[test]
+    fn ohne_bekannte_stimmen_bleibt_alles_ein_stueck() {
+        let segments = split_voice_segments(
+            "olga: Hallo.
+patrick: Hi.",
+            &[],
+        );
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].voice, None);
     }
 
     #[test]

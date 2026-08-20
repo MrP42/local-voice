@@ -63,27 +63,30 @@ pub fn tts_list_voices(app: AppHandle) -> Result<Vec<String>, String> {
     Ok(app.state::<Arc<TtsManager>>().list_voice_ids())
 }
 
-/// Hoerprobe einer Stimme. `None`, wenn die Stimme keine lesbare
-/// Referenzaufnahme (mehr) hat.
+/// Hoerprobe einer Stimme: derselbe Demotext, mit dieser Stimme erzeugt.
 #[derive(serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct VoiceSample {
     /// Absoluter Pfad zur WAV — die Oberflaeche spielt sie ueber das
     /// asset-Protokoll ab, ohne sie zu kopieren.
     pub wav_path: String,
-    /// Der Satz, der in der Aufnahme gesprochen wird.
+    /// Der gesprochene Satz. Fuer alle Stimmen derselbe, sonst vergleicht man
+    /// Aufnahmen statt Stimmen.
     pub transcript: String,
 }
 
+/// Erzeugt die Hoerprobe beim ersten Aufruf (und erneut, wenn die Stimme
+/// neu aufgenommen wurde); danach kommt sie aus dem Cache. Braucht den
+/// Fish-Speech-Server, der bei Bedarf gestartet wird — der erste Aufruf kann
+/// deshalb dauern.
 #[tauri::command]
 #[specta::specta]
-pub fn tts_voice_sample(app: AppHandle, voice_id: String) -> Result<Option<VoiceSample>, String> {
-    Ok(app
-        .state::<Arc<TtsManager>>()
-        .voice_sample(&voice_id)
-        .map(|(wav, transcript)| VoiceSample {
-            wav_path: wav.to_string_lossy().into_owned(),
-            transcript,
-        }))
+pub async fn tts_voice_demo(app: AppHandle, voice_id: String) -> Result<VoiceSample, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    let wav = tts.synthesize_voice_demo(&voice_id).await?;
+    Ok(VoiceSample {
+        wav_path: wav.to_string_lossy().into_owned(),
+        transcript: TtsManager::DEMO_TEXT.to_string(),
+    })
 }
 
 #[tauri::command]
@@ -265,6 +268,18 @@ pub async fn tts_voicechange_record_stop(app: AppHandle) -> Result<String, Strin
 pub async fn tts_voicechange_file(app: AppHandle, wav_path: String) -> Result<String, String> {
     let tts = app.state::<Arc<TtsManager>>().inner().clone();
     tts.respeak_file(&wav_path).await
+}
+
+/// Den Vorlesetext samt Sprecherwechseln in eine WAV-Datei schreiben.
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_speak_to_file(
+    app: AppHandle,
+    text: String,
+    out_path: String,
+) -> Result<(), String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.speak_to_file(&text, &out_path).await.map(|_| ())
 }
 
 #[tauri::command]

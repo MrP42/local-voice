@@ -114,7 +114,8 @@
       "save": "Stimme speichern",
       "discard": "Verwerfen",
       "preview": "Anhören",
-      "previewMissing": "Zu dieser Stimme wurde keine Referenzaufnahme gefunden."
+      "previewMissing": "Die Hörprobe konnte nicht erzeugt werden.",
+      "previewGenerating": "Wird erzeugt…"
     },
     "translate": {
       "title": "Audio-Übersetzung",
@@ -164,7 +165,10 @@
       "exportFormatDescription": "Format für gespeicherte Audiodateien (Stimmwechsler, Zusammenfassungen). Der Server encodiert direkt.",
       "contextMenu": "Explorer-Kontextmenü",
       "contextMenuDescription": "Ergänzt „Mit Local Voice AI vorlesen“ im Rechtsklick-Menü von TXT/MD/PDF/DOCX-Dateien. Hinweis: Für markierten Text bietet Windows kein systemweites Menü — dafür gibt es den Zwischenablage-Hotkey."
-    }
+    },
+    "saveAudio": "Als Audio speichern…",
+    "savingAudio": "Wird erzeugt…",
+    "dialogHint": "Dialog: eine Zeile mit dem Namen einer Stimme und Doppelpunkt beginnen (z. B. „olga:\") — alles bis zur nächsten solchen Zeile spricht diese Stimme."
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",
