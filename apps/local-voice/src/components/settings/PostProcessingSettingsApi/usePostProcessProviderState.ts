@@ -205,7 +205,10 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     `post_process_models_fetch:${selectedProviderId}`,
   );
 
-  const isCustomProvider = selectedProvider?.id === "custom";
+  // "Basis-URL selbst setzen" ist eine Eigenschaft des Providers, kein
+  // Sonderfall der Id "custom": Ollama und vLLM laufen auf einem Host und
+  // Port, den nur der Nutzer kennt. Am Flag haengen, nicht am Namen.
+  const isCustomProvider = selectedProvider?.allow_base_url_edit ?? false;
 
   // No automatic fetching - user must click refresh button
 

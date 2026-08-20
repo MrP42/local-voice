@@ -37,8 +37,8 @@ pub async fn translate(
         .unwrap_or_default();
     if model.trim().is_empty() {
         return Err(format!(
-            "Für Provider '{}' ist kein Modell konfiguriert — für lokale Übersetzung: Provider 'Custom' (Ollama) plus Modellname",
-            provider.id
+            "Für '{}' ist kein Modell eingetragen (Einstellungen → Nachbearbeitung → Modell). Ganz lokal geht es mit dem Anbieter 'Ollama (lokal)' oder 'vLLM (lokal)'.",
+            provider.label
         ));
     }
     let api_key = settings
@@ -172,10 +172,17 @@ mod tests {
             .post_process_models
             .insert("custom".into(), "".into());
         let err = translate(&settings, "Hello", "German").await.unwrap_err();
-        assert!(err.contains("kein Modell konfiguriert"), "war: {err}");
+        assert!(err.contains("kein Modell eingetragen"), "war: {err}");
+        assert!(
+            err.contains("Einstellungen → Nachbearbeitung"),
+            "Fehlermeldung nennt den Ort zum Nachtragen: {err}"
+        );
         assert!(
             err.contains("Ollama"),
-            "Fehlermeldung nennt den lokalen Weg"
+            "Fehlermeldung nennt den lokalen Weg: {err}"
         );
+        // Der Anbieter steht mit seiner Beschriftung da, nicht mit der internen
+        // Id — 'Custom' findet der Nutzer in der Liste, 'custom' nicht.
+        assert!(err.contains("'Custom'"), "war: {err}");
     }
 }

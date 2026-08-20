@@ -129,8 +129,8 @@ async fn ask_llm(settings: &AppSettings, prompt: String) -> Result<String, Strin
         .unwrap_or_default();
     if model.trim().is_empty() {
         return Err(format!(
-            "Für Provider '{}' ist kein Modell konfiguriert — für lokal: Provider 'Custom' (Ollama) plus Modellname",
-            provider.id
+            "Für '{}' ist kein Modell eingetragen (Einstellungen → Nachbearbeitung → Modell). Ganz lokal geht es mit dem Anbieter 'Ollama (lokal)' oder 'vLLM (lokal)'.",
+            provider.label
         ));
     }
     let api_key = settings

@@ -476,9 +476,11 @@ fn resolve_provider(
         .cloned()
         .unwrap_or_default();
     if model.trim().is_empty() {
+        // Der Hinweis nannte frueher den Umweg ueber 'Custom'; seit es eigene
+        // Eintraege fuer Ollama und vLLM gibt, ist der falsch.
         return Err(format!(
-            "Für Provider '{}' ist kein Modell konfiguriert — für lokal: Provider 'Custom' (Ollama) plus Modellname",
-            provider.id
+            "Für '{}' ist kein Modell eingetragen (Einstellungen → Nachbearbeitung → Modell). Ganz lokal geht es mit dem Anbieter 'Ollama (lokal)' oder 'vLLM (lokal)'.",
+            provider.label
         ));
     }
     let api_key = settings
