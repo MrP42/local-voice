@@ -271,11 +271,15 @@ export const TtsSettings = () => {
    * verfaellt und laufendes Vorlesen abbricht, wird vorher gefragt.
    */
   const onServerIconClick = () => {
-    if (phase === "stopped" || phase === "error") {
+    if (phase === "stopped") {
       void startServer();
       return;
     }
-    if (phase === "starting") return;
+    // JEDE andere Phase fuehrt zum Dialog, auch "startet gerade" und
+    // "Fehler". Vorher tat ein Klick waehrend des Starts gar nichts — also
+    // genau in dem Moment, in dem man den Server am dringendsten stoppen
+    // will, weil er gerade den Grafikspeicher fuellt. Ein Notausgang, der
+    // sich waehrend des Notfalls verschliesst, ist keiner.
     setConfirmStop(true);
   };
 
@@ -401,23 +405,19 @@ export const TtsSettings = () => {
                   ist, nicht vorher. Dieselbe Einstellung wie unten, nur hier
                   erreichbar. Bereich bewusst eng — Tempo entsteht per
                   Resampling und zieht die Tonhoehe mit. */}
-              <label className="flex items-center gap-1 text-xs text-text/60">
-                <span className="sr-only">{t("tts.settings.speed")}</span>
-                <select
+              <div className="w-28" title={t("tts.settings.speedDescription")}>
+                <Select
                   value={String(getSetting("tts_speed") ?? 1.0)}
-                  onChange={(e) =>
-                    updateSetting("tts_speed", Number(e.target.value))
+                  options={SPEEDS.map((value) => ({
+                    value: String(value),
+                    label: `${value.toFixed(2).replace(".", ",")}×`,
+                  }))}
+                  onChange={(value) =>
+                    value && updateSetting("tts_speed", Number(value))
                   }
-                  title={t("tts.settings.speedDescription")}
-                  className="bg-transparent border border-mid-gray/40 rounded-md px-1.5 py-1 text-xs cursor-pointer hover:border-logo-primary focus:outline-none focus:border-logo-primary"
-                >
-                  {SPEEDS.map((value) => (
-                    <option key={value} value={value}>
-                      {value.toFixed(2).replace(".", ",")}×
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  isClearable={false}
+                />
+              </div>
             </div>
             {/* Nur das Symbol: die Zeile ist eine Transportleiste, und ein
                 Wort neben lauter Glyphen zieht das Auge auf die unwichtigste
@@ -709,7 +709,11 @@ export const TtsSettings = () => {
           </>
         }
       >
-        <p className="text-sm text-text/80">{t("tts.stopConfirmBody")}</p>
+        <p className="text-sm text-text/80">
+          {phase === "starting"
+            ? t("tts.stopConfirmBodyStarting")
+            : t("tts.stopConfirmBody")}
+        </p>
       </Dialog>
     </div>
   );

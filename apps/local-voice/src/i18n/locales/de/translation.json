@@ -94,6 +94,7 @@
     "serverIconError": "Der Server ist auf einen Fehler gelaufen. Klicken, um ihn erneut zu starten.",
     "stopConfirmTitle": "Was soll mit dem Server geschehen?",
     "stopConfirmBody": "Der Fish-Speech-Server läuft und hält rund 17 GB Grafikspeicher belegt. Beenden gibt den Speicher frei; eine laufende Wiedergabe bricht dabei sofort ab. Neu starten beendet ihn ebenfalls und fährt ihn gleich wieder hoch — der Weg, wenn er zwar läuft, aber nicht mehr vernünftig antwortet. Beides kostet beim nächsten Sprechen bis zu zwei Minuten, weil das Modell erneut geladen werden muss. Bereits vorgelesene Sätze bleiben im Zwischenspeicher und lassen sich auch ohne Server anhören.",
+    "stopConfirmBodyStarting": "Der Server fährt gerade hoch und belegt dabei zunehmend Grafikspeicher — bis zu rund 17 GB. Ein Abbruch jetzt beendet den Startvorgang sofort und gibt alles Belegte wieder frei. Verloren geht nur die bereits verstrichene Ladezeit; ein späterer Start beginnt von vorn.",
     "stopConfirmAccept": "Server beenden",
     "stopConfirmRestart": "Neu starten",
     "stopConfirmCancel": "Weiterlaufen lassen",
@@ -1012,5 +1013,9 @@
     "title": "Mikrofon: {{device}}",
     "default": "Systemvorgabe",
     "level": "Pegel"
+  },
+  "progress": {
+    "downloading": "Wird geladen …",
+    "downloadingCount": "{{count}} werden geladen"
   }
 }

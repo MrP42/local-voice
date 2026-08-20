@@ -5,6 +5,7 @@
 //! einen Mock-Server getestet; `TtsManager` ergänzt AppHandle-Belange:
 //! Settings, Events, Prozess-Spawn, Idle-Watchdog und Exit-Teardown.
 
+pub mod compile_cache;
 pub mod loudness;
 pub mod player;
 pub mod protocol;
@@ -71,6 +72,17 @@ pub struct TtsCore {
     /// Persistenter Ableger des Caches auf Platte — bereits synthetisierte
     /// Bücher/Dokumente sind damit auch OHNE laufenden Fish-Server anhörbar.
     cache_dir: Mutex<Option<std::path::PathBuf>>,
+    /// Genau EIN Startversuch zur Zeit. Bewusst atomar und nicht ueber die
+    /// Phase geprueft: die Phasenpruefung lag VOR dem Spawn, das Setzen der
+    /// Phase danach — dazwischen lagen eine Gesundheitsabfrage und ein
+    /// Prozessstart. Zwei Ausloeser in diesem Fenster (etwa Vorlesen und ein
+    /// Stimmwechsel) starteten beide einen Server; der zweite belegte weitere
+    /// 17 GB VRAM und gehoerte niemandem. Beobachtet am 21.08.2026.
+    start_claim: AtomicBool,
+    /// Der Nutzer hat waehrend eines laufenden Starts abgebrochen. Dann darf
+    /// kein Wiederholungsversuch anlaufen — sonst startet die App genau das
+    /// wieder, was gerade beendet wurde.
+    stop_requested: AtomicBool,
     /// Ob die Wiedergabe alle Stimmen auf denselben Pegel zieht.
     normalize: AtomicBool,
     /// Korrekturfaktor je Stimme, einmal je Sitzung aus dem ersten
@@ -158,6 +170,8 @@ impl TtsCore {
             voice: Mutex::new(None),
             wav_cache: Mutex::new(WavCache::new()),
             cache_dir: Mutex::new(None),
+            start_claim: AtomicBool::new(false),
+            stop_requested: AtomicBool::new(false),
             normalize: AtomicBool::new(true),
             voice_gains: Mutex::new(std::collections::HashMap::new()),
             on_phase_change: Mutex::new(None),
@@ -630,6 +644,18 @@ const READING_STORE: &str = "reading_progress.json";
 const DISK_CACHE_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// FIFO-Verdrängung nach Änderungszeit — läuft einmal beim App-Start.
+/// Haelt die Startsperre, solange ein Startversuch laeuft, und gibt sie beim
+/// Verlassen wieder frei — auch auf jedem Fehlerpfad. Genau deshalb ein
+/// Drop-Typ und kein Flag von Hand: ein vergessener Ruecksetzer bedeutete,
+/// dass der Server nie wieder startet.
+struct StartClaim<'a>(&'a AtomicBool);
+
+impl Drop for StartClaim<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 /// Die aussagekraeftigsten Zeilen aus dem Startprotokoll des Servers.
 ///
 /// Der Kindprozess schrieb seine Ausgabe bisher nach `Stdio::null()`. Faellt
@@ -1039,21 +1065,87 @@ impl TtsManager {
             .await
     }
 
-    /// Server sicherstellen: adoptieren, sonst spawnen und Health pollen.
+    /// Server sicherstellen — mit einem zweiten Anlauf, wenn der erste an
+    /// einem zerstoerten Compile-Cache gescheitert ist.
+    ///
+    /// Ein Systemabsturz waehrend des Kompilierens hinterlaesst im Cache von
+    /// TorchInductor Dateien, die nur noch aus Nullbytes bestehen. Der Server
+    /// stirbt daran beim Aufwaermen, und zwar bei JEDEM weiteren Start —
+    /// heilen tut sich das nie von selbst. Bis v0.8.8 half nur, die Dateien
+    /// von Hand zu suchen und zu loeschen; das ist keine Zumutung, die man
+    /// einem Nutzer stellen darf, und die Bedingung dafuer (Nullbytes bei
+    /// korrekter Laenge) ist maschinell pruefbar.
+    ///
+    /// Deshalb: EIN Versuch, bei Verdacht Reparatur, dann EIN zweiter
+    /// Versuch. Nicht mehr — schlaegt auch der fehl, liegt es an etwas
+    /// anderem, und eine Schleife machte es nur langsamer, nicht besser.
     pub async fn ensure_server(&self) -> Result<(), String> {
+        let first = self.try_start_server().await;
+        let Err(error) = first else {
+            return Ok(());
+        };
+        let log = self
+            .startup_log_path()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+        if self.core.stop_requested.load(Ordering::Acquire) {
+            // Der Nutzer hat den Start abgebrochen. Kein zweiter Anlauf.
+            return Err(error);
+        }
+        if !compile_cache::looks_like_broken_compile_cache(&log) {
+            return Err(error);
+        }
+        let Some(dir) = compile_cache::cache_dir() else {
+            return Err(error);
+        };
+        let removed = match compile_cache::repair(&dir) {
+            Ok(removed) => removed,
+            Err(e) => {
+                log::warn!("compile cache repair refused: {e}");
+                return Err(error);
+            }
+        };
+        if removed.is_empty() {
+            // Der Verdacht stimmte, aber es gibt nichts zu loeschen — ein
+            // zweiter Anlauf brauchte nur Zeit und endete gleich.
+            return Err(error);
+        }
+        log::warn!(
+            "{} zerstoerte Datei(en) im Compile-Cache entfernt, zweiter Startversuch",
+            removed.len()
+        );
+        self.core.set_phase(
+            TtsPhase::Starting,
+            Some(format!(
+                "Beschaedigter Compile-Cache bereinigt ({} Datei(en)) — starte erneut",
+                removed.len()
+            )),
+        );
+        self.try_start_server().await
+    }
+
+    /// Ein Startversuch: adoptieren, sonst spawnen und Health pollen.
+    async fn try_start_server(&self) -> Result<(), String> {
+        // Die Sperre wird VOR allem anderen atomar beansprucht und beim
+        // Verlassen der Funktion wieder freigegeben. Vorher wurde die Phase
+        // geprueft und erst nach dem Spawn gesetzt — dazwischen lagen eine
+        // Gesundheitsabfrage und ein Prozessstart. Zwei Ausloeser in diesem
+        // Fenster starteten beide einen Server. Der zweite belegte weitere
+        // 17 GB VRAM und gehoerte niemandem; die App konnte ihn nicht mehr
+        // beenden, weil sie ihn nicht als ihren kannte.
+        let _claim = match self.core.start_claim.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => StartClaim(&self.core.start_claim),
+            Err(_) => return Err("Der Server startet bereits — bitte warten.".to_string()),
+        };
+        self.core.stop_requested.store(false, Ordering::Release);
+
         if self.core.ensure_server_core().await.is_ok() {
             return Ok(());
-        }
-
-        // Ein Start laeuft bereits. Fish Speech braucht bis zu zwei Minuten,
-        // bis es gesund meldet — ohne diese Sperre spawnt jeder weitere
-        // Versuch in der Zwischenzeit einen ZWEITEN Serverprozess auf denselben
-        // Port. Beobachtet am 20.08.2026: drei Startzeilen im Protokoll
-        // (17:01:30, 17:02:00, 17:10:23), ein einziges "ready"; die
-        // ueberzaehligen Prozesse belegen VRAM und koennen von der App nicht
-        // mehr beendet werden, weil sie ihr nicht gehoeren.
-        if self.core.phase() == TtsPhase::Starting {
-            return Err("Der Server startet bereits — bitte warten.".to_string());
         }
 
         let settings = crate::settings::get_settings(&self.app);
@@ -1121,6 +1213,14 @@ impl TtsManager {
         let started = Instant::now();
         let mut hint_sent = false;
         loop {
+            // Ein Abbruch waehrend des Startens muss sofort wirken: genau
+            // dann will man ihn, weil der Start gerade den Speicher fuellt.
+            if self.core.stop_requested.load(Ordering::Acquire) {
+                self.kill_owned_child();
+                self.core.owns_server.store(false, Ordering::Release);
+                self.core.set_phase(TtsPhase::Stopped, None);
+                return Err("Start abgebrochen".to_string());
+            }
             if self.core.health_ok(port).await {
                 self.core.set_phase(TtsPhase::Ready, None);
                 *self.core.last_used.lock().unwrap() = Instant::now();
@@ -2169,6 +2269,9 @@ impl TtsManager {
     /// Rückgabe: was tatsächlich passiert ist, für die Rückmeldung an den
     /// Nutzer — „nichts gefunden" ist ein Ergebnis, kein Fehler.
     pub fn kill_server_hard(&self) -> Result<String, String> {
+        // Zuerst: ein laufender Startversuch soll nicht weiterlaufen und
+        // hinterher auch nicht wiederholt werden.
+        self.core.stop_requested.store(true, Ordering::Release);
         self.core.cancel_core();
         let owned = self.core.owns_server();
         if owned {
@@ -2202,19 +2305,38 @@ impl TtsManager {
 
     /// Nur den selbst gestarteten Prozess beenden (Idle-Watchdog, Herunterfahren).
     pub fn stop_server(&self) {
-        if !self.core.owns_server() {
-            return;
-        }
+        self.core.stop_requested.store(true, Ordering::Release);
         self.core.cancel_core();
         self.kill_owned_child();
+        // Auch das, was uns nicht gehoert: beim Beenden der Anwendung darf
+        // kein Serverprozess ueberleben, egal wer ihn gestartet hat. Ein
+        // verwaister Prozess haelt 17 GB VRAM, die niemand mehr freigibt —
+        // die App kann ihn danach nicht einmal mehr finden.
+        let port = *self.core.port.lock().unwrap();
+        if let Some(pid) = listening_pid(port) {
+            if let Err(e) = kill_pid(pid) {
+                log::warn!("Could not stop server on port {port}: {e}");
+            }
+        }
         self.core.owns_server.store(false, Ordering::Release);
         self.core.set_phase(TtsPhase::Stopped, None);
     }
 
+    /// Den eigenen Serverprozess beenden — samt seiner Kinder.
+    ///
+    /// `Child::kill` beendet unter Windows NUR den direkten Prozess. Der
+    /// Fish-API-Server startet aber einen Arbeitsprozess, und der haelt das
+    /// Modell: gemessen am 21.08.2026 7,92 GB, die nach einem vermeintlich
+    /// erfolgreichen Stopp weiterliefen. Deshalb erst den Baum ueber
+    /// `taskkill /T`, danach der uebliche Weg als Rueckfallebene.
     fn kill_owned_child(&self) {
         if let Some(mut child) = self.child.lock().unwrap().take() {
+            #[cfg(windows)]
+            if let Err(e) = kill_pid(child.id()) {
+                log::warn!("Could not kill fish-speech process tree: {e}");
+            }
             if let Err(e) = child.kill() {
-                log::warn!("Could not kill fish-speech child: {e}");
+                log::debug!("fish-speech child already gone: {e}");
             }
             let _ = child.wait();
         }

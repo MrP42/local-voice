@@ -1853,8 +1853,12 @@ pub fn run(cli_args: CliArgs) {
                 if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                     let _ = tm.unload_model();
                 }
-                // Einen selbst gestarteten Fish-Speech-Server nie verwaisen
-                // lassen (17 GB VRAM); fremde Server bleiben unberührt.
+                // Kein Serverprozess ueberlebt die Anwendung — auch keiner,
+                // den wir nur adoptiert haben. Er haelt rund 17 GB VRAM, und
+                // nach dem Ende der App gibt es niemanden mehr, der ihn
+                // beenden koennte: der Nutzer muesste in den Taskmanager.
+                // `stop_server` beendet den eigenen Prozessbaum UND alles,
+                // was noch auf dem TTS-Port lauscht.
                 if let Some(tts) = app.try_state::<Arc<managers::tts::TtsManager>>() {
                     tts.stop_server();
                 }

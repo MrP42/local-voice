@@ -94,6 +94,7 @@
     "serverIconError": "The server ran into an error. Click to start it again.",
     "stopConfirmTitle": "What should happen to the server?",
     "stopConfirmBody": "The Fish Speech server is running and holds roughly 17 GB of graphics memory. Stopping frees it; any playback in progress ends at once. Restarting stops it as well and brings it straight back up — the way to go when it is running but no longer answering properly. Either way the next sentence takes up to two minutes, because the model has to load again. Sentences already spoken stay in the cache and can still be played without a server.",
+    "stopConfirmBodyStarting": "The server is starting up and taking more graphics memory as it goes — up to roughly 17 GB. Stopping now ends the startup at once and frees everything it has taken. All you lose is the loading time spent so far; a later start begins again from scratch.",
     "stopConfirmAccept": "Stop the server",
     "stopConfirmRestart": "Restart",
     "stopConfirmCancel": "Keep it running",
@@ -1012,5 +1013,9 @@
     "title": "Microphone: {{device}}",
     "default": "System default",
     "level": "Level"
+  },
+  "progress": {
+    "downloading": "Downloading…",
+    "downloadingCount": "{{count}} downloading"
   }
 }
