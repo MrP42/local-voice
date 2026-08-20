@@ -567,6 +567,12 @@ pub struct AppSettings {
     /// ein Defekt).
     #[serde(default = "default_meeting_language")]
     pub meeting_language: String,
+    /// M8 Meetings: eigenes Transkriptionsmodell fuer Besprechungen/Importe.
+    /// None/leer = wie das Diktat (`selected_model`). Streaming-Modelle sind
+    /// fuers Diktat optimiert; Meetings transkribieren in Batches und
+    /// profitieren von Batch-Modellen (z. B. Parakeet V3).
+    #[serde(default)]
+    pub meeting_model: Option<String>,
 }
 
 fn default_meeting_language() -> String {
@@ -1178,6 +1184,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_context_menu: false,
         meeting_audio_retention: default_meeting_audio_retention(),
         meeting_language: default_meeting_language(),
+        meeting_model: None,
     }
 }
 

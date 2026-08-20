@@ -558,6 +558,14 @@ async changeMeetingLanguageSetting(language: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeMeetingModelSetting(model: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_meeting_model_setting", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Start key recording mode
  */
@@ -1519,7 +1527,14 @@ meeting_audio_retention?: MeetingAudioRetention;
  * Protokoll, das wegen einer Diktat-Einstellung englisch erscheint, ist
  * ein Defekt).
  */
-meeting_language?: string }
+meeting_language?: string; 
+/**
+ * M8 Meetings: eigenes Transkriptionsmodell fuer Besprechungen/Importe.
+ * None/leer = wie das Diktat (`selected_model`). Streaming-Modelle sind
+ * fuers Diktat optimiert; Meetings transkribieren in Batches und
+ * profitieren von Batch-Modellen (z. B. Parakeet V3).
+ */
+meeting_model?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

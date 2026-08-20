@@ -162,8 +162,12 @@ fn run_import(
         // decodes; `transcribe_segments` then waits on the load condvar instead
         // of failing with "Model is not loaded" — the live recorder does the
         // same in start() (recorder.rs). Without this, any import after the
-        // idle unload (default 5 min) failed immediately.
-        tm.initiate_model_load();
+        // idle unload (default 5 min) failed immediately. Meetings may use
+        // their own model (`meeting_model`, dictation model as fallback).
+        let target = crate::managers::transcription::TranscriptionManager::meeting_model_target(
+            &crate::settings::get_settings(app),
+        );
+        tm.initiate_model_load_target(&target);
         let (wav_path, _tmp_guard) = media::ensure_wav(path, 16_000)?;
         let samples = read_wav_i16_mono_16k(&wav_path)?;
 
@@ -184,7 +188,7 @@ fn run_import(
         Ok(duration_ms)
     })();
 
-    match outcome {
+    let result = match outcome {
         Ok(duration_ms) => {
             mark_import_ready(store, meeting_id)?;
             // Imports have no separate "recording ended" moment, so `now`
@@ -217,7 +221,14 @@ fn run_import(
             emit_error(app, meeting_id, "import_failed");
             Err(e)
         }
-    }
+    };
+
+    // Restore the dictation model (no-op when meeting and dictation model
+    // are the same) — mirrors the live recorder's stop().
+    let dictation_model = crate::settings::get_settings(app).selected_model;
+    tm.initiate_model_load_target(&dictation_model);
+
+    result
 }
 
 /// Success half of the "always reach a terminal status" contract.

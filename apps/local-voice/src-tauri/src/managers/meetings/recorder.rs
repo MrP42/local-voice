@@ -341,7 +341,12 @@ impl MeetingRecorderManager {
         let (work_tx, work_rx) = mpsc::channel::<WorkItem>();
         let worker = self.spawn_worker(meeting_id.clone(), work_rx);
 
-        self.transcription.initiate_model_load();
+        // Load the meeting model (dedicated `meeting_model` or the dictation
+        // model as fallback); transcribe_segments waits on the load condvar.
+        let target = crate::managers::transcription::TranscriptionManager::meeting_model_target(
+            &crate::settings::get_settings(&self.app),
+        );
+        self.transcription.initiate_model_load_target(&target);
 
         let mic_capture = MeetingMicCapture::start(
             crate::settings::get_settings(&self.app).selected_microphone,
@@ -595,6 +600,12 @@ impl MeetingRecorderManager {
         if let Some(handle) = worker {
             let _ = handle.join();
         }
+
+        // Restore the dictation model so the next hotkey dictation does not
+        // silently run on the meeting model (no-op when they are the same).
+        let dictation_model = crate::settings::get_settings(&self.app).selected_model;
+        self.transcription
+            .initiate_model_load_target(&dictation_model);
 
         let mic_ms = finalize_sink(&mic_sink).unwrap_or(0);
         let system_ms = system_sink.as_ref().and_then(finalize_sink).unwrap_or(0);

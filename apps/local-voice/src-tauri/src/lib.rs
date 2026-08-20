@@ -1309,6 +1309,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::get_available_accelerators,
             shortcut::change_meeting_audio_retention_setting,
             shortcut::change_meeting_language_setting,
+            shortcut::change_meeting_model_setting,
             shortcut::handy_keys::start_handy_keys_recording,
             shortcut::handy_keys::stop_handy_keys_recording,
             trigger_update_check,

@@ -809,6 +809,55 @@ impl TranscriptionManager {
         Ok(())
     }
 
+    /// The model meetings should transcribe with: the dedicated
+    /// `meeting_model` when set, otherwise the dictation model. Pure so the
+    /// fallback rule is testable (empty/whitespace counts as "not set").
+    pub fn meeting_model_target(settings: &AppSettings) -> String {
+        match settings.meeting_model.as_deref().map(str::trim) {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => settings.selected_model.clone(),
+        }
+    }
+
+    /// Like `initiate_model_load`, but for an explicit target: swaps the
+    /// loaded engine when a DIFFERENT model is active. Used by the meetings
+    /// paths (load the meeting model before transcription, restore the
+    /// dictation model afterwards). `transcribe`/`transcribe_segments` wait on
+    /// the loading condvar, so callers just kick this and proceed.
+    /// Known edge (documented, accepted): a dictation running WHILE an import
+    /// starts would be transcribed by the meeting model — live meetings
+    /// themselves block dictation via the recorder guard.
+    pub fn initiate_model_load_target(&self, model_id: &str) {
+        let mut is_loading = self.is_loading.lock().unwrap();
+        if *is_loading {
+            return;
+        }
+        let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
+        if !reload_pending
+            && self.is_model_loaded()
+            && self.get_current_model().as_deref() == Some(model_id)
+        {
+            return;
+        }
+
+        *is_loading = true;
+        let self_clone = self.clone();
+        let target = model_id.to_string();
+        thread::spawn(move || {
+            if reload_pending {
+                self_clone
+                    .reload_model_on_next_use
+                    .store(false, Ordering::Release);
+            }
+            if let Err(e) = self_clone.load_model(&target) {
+                error!("Failed to load model: {}", e);
+            }
+            let mut is_loading = self_clone.is_loading.lock().unwrap();
+            *is_loading = false;
+            self_clone.loading_condvar.notify_all();
+        });
+    }
+
     /// Kicks off the model loading in a background thread if it's not already loaded
     pub fn initiate_model_load(&self) {
         let mut is_loading = self.is_loading.lock().unwrap();
@@ -2746,6 +2795,28 @@ mod tests {
         assert!(
             !translate,
             "Diktat-Uebersetzung darf nie in Meeting-Transkripte durchgreifen"
+        );
+    }
+
+    #[test]
+    fn meetings_use_their_own_model_and_fall_back_to_dictation() {
+        let mut settings = crate::settings::get_default_settings();
+        settings.selected_model = "diktat-modell".into();
+        assert_eq!(
+            TranscriptionManager::meeting_model_target(&settings),
+            "diktat-modell",
+            "ohne eigenes Meeting-Modell gilt das Diktat-Modell"
+        );
+        settings.meeting_model = Some("  ".into());
+        assert_eq!(
+            TranscriptionManager::meeting_model_target(&settings),
+            "diktat-modell",
+            "leere Eintraege zaehlen als nicht gesetzt"
+        );
+        settings.meeting_model = Some("parakeet-v3".into());
+        assert_eq!(
+            TranscriptionManager::meeting_model_target(&settings),
+            "parakeet-v3"
         );
     }
 

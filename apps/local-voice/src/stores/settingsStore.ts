@@ -185,6 +185,8 @@ const settingUpdaters: {
   meeting_audio_retention: (value) =>
     commands.changeMeetingAudioRetentionSetting(value as MeetingAudioRetention),
   meeting_language: (value) => commands.changeMeetingLanguageSetting(value as string),
+  meeting_model: (value) =>
+    commands.changeMeetingModelSetting((value as string | null) ?? null),
 };
 
 export const useSettingsStore = create<SettingsStore>()(

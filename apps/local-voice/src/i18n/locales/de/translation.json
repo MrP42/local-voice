@@ -890,7 +890,10 @@
       "save": "Speichern",
       "cancel": "Abbrechen",
       "shares": "Redeanteile",
-      "back": "Zurück zur Liste"
+      "back": "Zurück zur Liste",
+      "copyTranscript": "Transkript kopieren",
+      "copied": "Kopiert!",
+      "exportTranscript": "Als Datei speichern…"
     },
     "status": {
       "recording": "Aufnahme läuft",
@@ -923,6 +926,11 @@
         "import": "Datei-Import",
         "subtitle": "Untertitel-Import"
       }
+    },
+    "model": {
+      "title": "Transkriptionsmodell",
+      "likeDictation": "Wie Diktat (Standard)",
+      "description": "Eigenes Modell für Besprechungen und Importe. Streaming-Modelle sind fürs Live-Diktat optimiert — Besprechungen transkribieren in Blöcken und profitieren von Batch-Modellen wie Parakeet V3."
     }
   }
 }

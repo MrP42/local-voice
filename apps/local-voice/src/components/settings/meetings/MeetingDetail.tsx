@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pencil, ArrowLeft } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { commands, type Meeting, type StoredSegment } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
@@ -48,6 +50,8 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   const [segments, setSegments] = useState<StoredSegment[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -65,6 +69,38 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
   useEffect(() => {
     void loadSegments();
   }, [loadSegments]);
+
+  const transcriptText = () =>
+    segments
+      .map(
+        (s) =>
+          `${t(channelLabelKey(s.channel))} [${formatMmSs(s.start_ms)}]: ${s.text}`,
+      )
+      .join("\n");
+
+  const copyTranscript = async () => {
+    try {
+      await navigator.clipboard.writeText(transcriptText());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      setTranscriptError(String(e));
+    }
+  };
+
+  const exportTranscript = async () => {
+    setTranscriptError(null);
+    try {
+      const target = await save({
+        defaultPath: `${meetingTitle || "transkript"}.txt`,
+        filters: [{ name: "Text", extensions: ["txt", "md"] }],
+      });
+      if (!target) return;
+      await writeTextFile(target, transcriptText());
+    } catch (e) {
+      setTranscriptError(String(e));
+    }
+  };
 
   const startEdit = (segment: StoredSegment) => {
     setEditingIndex(segment.segment_index);
@@ -230,6 +266,21 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
           </button>
         </div>
 
+        {tab === "transcript" && segments.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={copyTranscript}>
+              {copied
+                ? t("meetings.detail.copied")
+                : t("meetings.detail.copyTranscript")}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={exportTranscript}>
+              {t("meetings.detail.exportTranscript")}
+            </Button>
+          </div>
+        )}
+        {tab === "transcript" && transcriptError && (
+          <p className="text-sm text-red-400">{transcriptError}</p>
+        )}
         {tab === "transcript" ? (
           loading ? (
             <p className="text-sm text-text/60 text-center py-3">

@@ -890,7 +890,10 @@
       "save": "Save",
       "cancel": "Cancel",
       "shares": "Speaking shares",
-      "back": "Back to list"
+      "back": "Back to list",
+      "copyTranscript": "Copy transcript",
+      "copied": "Copied!",
+      "exportTranscript": "Save as file…"
     },
     "status": {
       "recording": "Recording",
@@ -923,6 +926,11 @@
         "import": "File import",
         "subtitle": "Subtitle import"
       }
+    },
+    "model": {
+      "title": "Transcription model",
+      "likeDictation": "Same as dictation (default)",
+      "description": "Dedicated model for meetings and imports. Streaming models are tuned for live dictation — meetings transcribe in batches and profit from batch models like Parakeet V3."
     }
   }
 }
