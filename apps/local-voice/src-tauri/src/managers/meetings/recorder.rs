@@ -41,6 +41,8 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(200);
 /// `LoopbackCapture::start` can block indefinitely on a wedged audio driver
 /// (known finding from Task 4). We give it this long, then continue mic-only.
 const LOOPBACK_START_TIMEOUT: Duration = Duration::from_secs(5);
+/// How often the watchdog checks whether the loopback thread has died.
+const LOOPBACK_WATCH_INTERVAL: Duration = Duration::from_millis(500);
 /// How many meetings `recover_orphans` scans per page.
 const RECOVERY_PAGE: u32 = 100;
 
@@ -427,7 +429,10 @@ impl MeetingRecorderManager {
             .ok()?;
 
         match rx.recv_timeout(LOOPBACK_START_TIMEOUT) {
-            Ok(Ok(capture)) => Some(capture),
+            Ok(Ok(capture)) => {
+                self.watch_loopback(meeting_id, &capture);
+                Some(capture)
+            }
             Ok(Err(e)) => {
                 warn!("meetings: loopback start failed ({e}) — continuing mic-only");
                 self.emit_error(meeting_id, "loopback_start_failed");
@@ -439,6 +444,36 @@ impl MeetingRecorderManager {
                 None
             }
         }
+    }
+
+    /// Worst failure mode of the system channel: the loopback thread dies
+    /// AFTER a successful start (endpoint removed, driver error). The callback
+    /// simply goes quiet, the meeting keeps recording and half the minutes are
+    /// missing without anyone noticing. This watchdog turns that silence into
+    /// an error event; it ends with the capture (stop flag) or right after it
+    /// reported the failure.
+    fn watch_loopback(&self, meeting_id: &str, capture: &LoopbackCapture) {
+        let (stopped, failed) = capture.watch_flags();
+        let app = self.app.clone();
+        let meeting_id = meeting_id.to_string();
+        let _ = std::thread::Builder::new()
+            .name("meeting-loopback-watch".to_string())
+            .spawn(move || {
+                while !stopped.load(Ordering::Relaxed) {
+                    if failed.load(Ordering::Relaxed) {
+                        warn!(
+                            "meetings: loopback capture died mid-meeting ({meeting_id})                              - system audio is gone, the meeting continues mic-only"
+                        );
+                        let _ = (MeetingEvent::Error {
+                            meeting_id,
+                            message: "loopback_died".to_string(),
+                        })
+                        .emit(&app);
+                        return;
+                    }
+                    std::thread::sleep(LOOPBACK_WATCH_INTERVAL);
+                }
+            });
     }
 
     /// One background thread per meeting: chunk in, segments out. A failed
@@ -581,6 +616,12 @@ impl MeetingRecorderManager {
             capture.stop();
         }
         if let Some(capture) = loopback {
+            // The watchdog above has already reported this while the meeting
+            // was running; the log line here is what makes it visible in the
+            // evidence of a finished meeting.
+            if capture.had_error() {
+                warn!("meetings: loopback capture had ended with an error ({meeting_id})");
+            }
             capture.stop();
         }
 

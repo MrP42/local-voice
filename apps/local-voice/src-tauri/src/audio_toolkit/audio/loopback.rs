@@ -53,6 +53,11 @@ mod windows_impl {
     /// Callback, bis `stop()` gerufen wird.
     pub struct LoopbackCapture {
         stop: Arc<AtomicBool>,
+        /// Wird gesetzt, wenn der Capture-Thread NACH erfolgreichem Start mit
+        /// einem Fehler endet (Endpoint entfernt, Treiberfehler). Ohne dieses
+        /// Flag verstummt der Callback still und die Aufnahme laeuft ohne
+        /// Systemton weiter, ohne dass es jemand merkt.
+        error: Arc<AtomicBool>,
         handle: Option<JoinHandle<()>>,
     }
 
@@ -60,6 +65,8 @@ mod windows_impl {
         pub fn start(on_samples: impl FnMut(&[i16]) + Send + 'static) -> Result<Self> {
             let stop = Arc::new(AtomicBool::new(false));
             let thread_stop = Arc::clone(&stop);
+            let error = Arc::new(AtomicBool::new(false));
+            let thread_error = Arc::clone(&error);
             // Der COM-Init und das Öffnen des Endpoints müssen IM Thread passieren
             // (MTA gilt pro Thread); das Ergebnis kommt über diesen Kanal zurück,
             // damit start() echte Fehler melden kann statt still zu scheitern.
@@ -70,6 +77,7 @@ mod windows_impl {
                 .spawn(move || {
                     if let Err(e) = capture_loop(thread_stop, on_samples, &init_tx) {
                         log::error!("loopback capture ended with error: {e:#}");
+                        thread_error.store(true, Ordering::Relaxed);
                         // Falls der Fehler vor der Init-Meldung auftrat, hier melden.
                         let _ = init_tx.send(Err(format!("{e:#}")));
                     }
@@ -78,6 +86,7 @@ mod windows_impl {
             match init_rx.recv() {
                 Ok(Ok(())) => Ok(LoopbackCapture {
                     stop,
+                    error,
                     handle: Some(handle),
                 }),
                 Ok(Err(e)) => {
@@ -89,6 +98,18 @@ mod windows_impl {
                     Err(anyhow!("loopback capture thread died before startup"))
                 }
             }
+        }
+
+        /// True, sobald der Capture-Thread mit einem Fehler geendet ist.
+        pub fn had_error(&self) -> bool {
+            self.error.load(Ordering::Relaxed)
+        }
+
+        /// Beide Flags fuer einen Beobachter (Stop, Fehler) - damit ein
+        /// Wachthread den stillen Ausfall bemerken kann, ohne die Capture
+        /// selbst zu besitzen.
+        pub fn watch_flags(&self) -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+            (Arc::clone(&self.stop), Arc::clone(&self.error))
         }
 
         pub fn stop(mut self) {
@@ -234,6 +255,8 @@ pub use windows_impl::LoopbackCapture;
 #[cfg(not(target_os = "windows"))]
 mod stub_impl {
     use anyhow::{anyhow, Result};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
 
     /// Auf Nicht-Windows-Plattformen gibt es in M8 keinen Loopback-Capture.
     pub struct LoopbackCapture {
@@ -246,6 +269,17 @@ mod stub_impl {
         }
 
         pub fn stop(self) {}
+
+        pub fn had_error(&self) -> bool {
+            false
+        }
+
+        pub fn watch_flags(&self) -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+            (
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(AtomicBool::new(false)),
+            )
+        }
     }
 }
 

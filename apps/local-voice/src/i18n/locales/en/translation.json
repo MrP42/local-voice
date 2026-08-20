@@ -905,6 +905,7 @@
       "chunkTranscriptionFailed": "A chunk could not be transcribed. The recording keeps running.",
       "loopbackStartTimeout": "System audio could not be started — the recording continues with the microphone only.",
       "loopbackStartFailed": "System audio failed to start — the recording continues with the microphone only.",
+      "loopbackDied": "System audio failed during the recording — the meeting continues with the microphone only.",
       "micStreamError": "The microphone stream reported an error during recording — some audio may be missing.",
       "importFailed": "The file could not be imported.",
       "alreadyRecording": "A recording is already running.",

@@ -15,6 +15,7 @@ const ERROR_KEY_MAP: Record<string, string> = {
   chunk_transcription_failed: "meetings.errors.chunkTranscriptionFailed",
   loopback_start_timeout: "meetings.errors.loopbackStartTimeout",
   loopback_start_failed: "meetings.errors.loopbackStartFailed",
+  loopback_died: "meetings.errors.loopbackDied",
   mic_stream_error: "meetings.errors.micStreamError",
   import_failed: "meetings.errors.importFailed",
   already_recording: "meetings.errors.alreadyRecording",
