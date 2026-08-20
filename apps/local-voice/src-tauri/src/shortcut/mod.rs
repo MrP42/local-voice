@@ -612,6 +612,11 @@ pub fn change_tts_seed_setting(app: AppHandle, value: i64) -> Result<(), String>
     let mut settings = settings::get_settings(&app);
     settings.tts_seed = value;
     settings::write_settings(&app, settings);
+    // Der Seed IST die Standardstimme: ein anderer Seed ist eine andere
+    // Person. Er muss deshalb genauso sofort wirken wie ein Stimmwechsel —
+    // eine laufende Wiedergabe stellt am aktuellen Satz um, und die neue
+    // Referenz wird beim ersten Satz einmalig erzeugt.
+    apply_voice_change(&app);
     Ok(())
 }
 
@@ -667,6 +672,15 @@ pub fn change_tts_speed_setting(app: AppHandle, value: f32) -> Result<(), String
 pub fn change_tts_normalize_setting(app: AppHandle, value: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.tts_normalize = value;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_tts_prewarm_setting(app: AppHandle, value: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.tts_prewarm = value;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -749,12 +763,18 @@ pub fn change_tts_voice_setting(app: AppHandle, value: Option<String>) -> Result
     // Läuft gerade eine Wiedergabe, wird sie sofort auf die neue Stimme
     // umgestellt — sonst spräche noch die alte weiter, obwohl die Oberfläche
     // die neue als aktiv anzeigt.
-    use tauri::Manager;
-    app.state::<std::sync::Arc<crate::managers::tts::TtsManager>>()
-        .inner()
-        .clone()
-        .apply_voice_change();
+    apply_voice_change(&app);
     Ok(())
+}
+
+/// Eine laufende Wiedergabe auf die jetzt eingestellte Stimme umstellen.
+///
+/// Gemeinsam für den Stimmwechsel und den Seed: beide bestimmen, wer spricht.
+fn apply_voice_change(app: &AppHandle) {
+    use tauri::Manager;
+    if let Some(tts) = app.try_state::<std::sync::Arc<crate::managers::tts::TtsManager>>() {
+        tts.inner().clone().apply_voice_change();
+    }
 }
 
 #[tauri::command]

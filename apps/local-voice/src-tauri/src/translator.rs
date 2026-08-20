@@ -27,6 +27,24 @@ pub async fn translate(
     text: &str,
     target_lang: &str,
 ) -> Result<String, String> {
+    translate_on(settings, text, target_lang, false).await
+}
+
+/// Wie [`translate`], aber mit der Wahl, die GPU freizulassen.
+///
+/// `cpu_only` greift nur bei einem lokalen Ollama: dessen nativer Endpunkt
+/// `/api/chat` nimmt `num_gpu: 0` entgegen, der OpenAI-kompatible Pfad kennt
+/// keine Geräteauswahl. Bei entfernten Anbietern stellt sich die Frage nicht,
+/// bei vLLM gibt es die Möglichkeit nicht — dort läuft alles wie bisher.
+///
+/// Der Grund: der Fish-Speech-Server belegt rund 17 GB Grafikspeicher. Ein
+/// Übersetzungsmodell daneben bringt beide zum Straucheln.
+pub async fn translate_on(
+    settings: &AppSettings,
+    text: &str,
+    target_lang: &str,
+    cpu_only: bool,
+) -> Result<String, String> {
     let provider = settings
         .active_post_process_provider()
         .cloned()
@@ -63,6 +81,27 @@ pub async fn translate(
         ),
         _ => (None, None),
     };
+    // Auf der CPU nur ueber den nativen Weg — und wenn der nicht antwortet,
+    // lieber uebersetzen als scheitern: dann eben auf der GPU.
+    let native = cpu_only
+        .then(|| crate::llm_client::ollama_native_url(&provider.base_url))
+        .flatten();
+    if let Some(url) = native {
+        match crate::llm_client::send_ollama_native(&url, &model, prompt.clone(), true).await {
+            Ok(Some(content)) => {
+                let trimmed = content.trim().to_string();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed);
+                }
+                log::warn!("Ollama (CPU) lieferte leere Uebersetzung — versuche den ueblichen Weg");
+            }
+            Ok(None) => log::warn!("Ollama (CPU) ohne Inhalt — versuche den ueblichen Weg"),
+            Err(e) => {
+                log::warn!("Ollama (CPU) nicht erreichbar ({e}) — versuche den ueblichen Weg")
+            }
+        }
+    }
+
     match crate::llm_client::send_chat_completion(
         &provider,
         api_key,
@@ -92,6 +131,23 @@ mod tests {
     use crate::settings::get_default_settings;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    /// Der native Endpunkt ist der einzige, der die GPU abwaehlen laesst.
+    #[test]
+    fn der_native_ollama_endpunkt_wird_richtig_abgeleitet() {
+        use crate::llm_client::ollama_native_url;
+        assert_eq!(
+            ollama_native_url("http://localhost:11434/v1").as_deref(),
+            Some("http://localhost:11434/api/chat")
+        );
+        assert_eq!(
+            ollama_native_url("http://127.0.0.1:11434/v1/").as_deref(),
+            Some("http://127.0.0.1:11434/api/chat")
+        );
+        // Entfernte Anbieter: die Frage stellt sich nicht.
+        assert_eq!(ollama_native_url("https://api.openai.com/v1"), None);
+        assert_eq!(ollama_native_url("https://api.groq.com/openai/v1"), None);
+    }
 
     #[test]
     fn prompt_names_the_target_language_and_forbids_chatter() {

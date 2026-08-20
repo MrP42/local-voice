@@ -276,3 +276,70 @@ pub async fn fetch_models(
 
     Ok(models)
 }
+
+// ---------------------------------------------------- Ollama, nativ, auf CPU --
+
+/// Ollamas eigener Endpunkt aus einer OpenAI-kompatiblen Basis-URL.
+///
+/// Der kompatible Pfad ist `…/v1/chat/completions`, der native
+/// `…/api/chat`. Nur der native nimmt `options` entgegen — und nur dort
+/// lässt sich die GPU abwählen.
+///
+/// `None`, wenn die Basis nicht nach einem lokalen Dienst aussieht: bei
+/// OpenAI oder Groq stellt sich die Frage nicht, und vLLM kennt `/api/chat`
+/// gar nicht.
+pub fn ollama_native_url(base_url: &str) -> Option<String> {
+    let base = base_url.trim_end_matches('/');
+    if !(base.contains("localhost") || base.contains("127.0.0.1")) {
+        return None;
+    }
+    let root = base.strip_suffix("/v1").unwrap_or(base);
+    Some(format!("{root}/api/chat"))
+}
+
+/// Eine Anfrage über Ollamas nativen Endpunkt — wahlweise ohne GPU.
+///
+/// `num_gpu: 0` verlegt das Modell vollständig in den Arbeitsspeicher. Das
+/// ist langsamer, aber der Fish-Speech-Server belegt rund 17 GB
+/// Grafikspeicher; ein zweites Modell daneben bringt beide zum Straucheln
+/// oder den Treiber zum Absturz.
+///
+/// `keep_alive` hält es danach im RAM geladen, damit ein Sprachwechsel nicht
+/// jedes Mal das Laden bezahlt.
+pub async fn send_ollama_native(
+    url: &str,
+    model: &str,
+    prompt: String,
+    cpu_only: bool,
+) -> Result<Option<String>, String> {
+    let mut options = serde_json::json!({});
+    if cpu_only {
+        options["num_gpu"] = serde_json::json!(0);
+    }
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": prompt }],
+        "stream": false,
+        "keep_alive": "10m",
+        "options": options,
+    });
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Ollama answered {}", response.status()));
+    }
+    let value: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Ollama response not JSON: {e}"))?;
+    Ok(value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string()))
+}

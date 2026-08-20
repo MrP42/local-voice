@@ -170,3 +170,22 @@ export const getUniqueCapabilityLanguages = (
 
 export const getLanguageLabel = (languageCode: string): string | undefined =>
   LANGUAGE_LABELS.get(languageCode);
+
+/// Zielsprachen der Übersetzung, als englische Namen — so erwartet sie der
+/// Übersetzungs-Prompt. Die Beschriftungen sind Eigennamen der Sprachen und
+/// deshalb keine UI-Texte, die übersetzt würden.
+///
+/// An dieser Stelle, weil zwei Bildschirme sie brauchen: das Vorlesen (Reiter
+/// Übersetzung) und die Audio-Übersetzung.
+export const TTS_TARGET_LANGS = [
+  { value: "German", label: "Deutsch" },
+  { value: "English", label: "English" },
+  { value: "French", label: "Français" },
+  { value: "Spanish", label: "Español" },
+  { value: "Italian", label: "Italiano" },
+  { value: "Portuguese", label: "Português" },
+  { value: "Dutch", label: "Nederlands" },
+  { value: "Polish", label: "Polski" },
+  { value: "Japanese", label: "日本語" },
+  { value: "Chinese", label: "中文" },
+];

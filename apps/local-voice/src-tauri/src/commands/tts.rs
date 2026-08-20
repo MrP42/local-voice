@@ -145,6 +145,44 @@ pub async fn tts_translate_speak(
     tts.translate_and_speak(&text, &target_lang).await
 }
 
+/// Text uebersetzen, ohne ihn abzuspielen. Zwischengespeichert je Text und
+/// Sprache; laeuft der Fish-Server, rechnet die Uebersetzung auf der CPU.
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_translate(
+    app: AppHandle,
+    text: String,
+    target_lang: String,
+) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.translate_text(&text, &target_lang).await
+}
+
+/// Liegt fuer diesen Text in dieser Sprache schon eine Uebersetzung bereit?
+/// Damit die Oberflaeche beim Umschalten zwischen Sprachen sofort zeigen
+/// kann, was da ist, ohne eine Uebersetzung anzustossen.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_cached_translation(app: AppHandle, text: String, target_lang: String) -> Option<String> {
+    app.state::<Arc<TtsManager>>()
+        .cached_translation(text.trim(), &target_lang)
+}
+
+/// Diktat fuer das Vorlesefeld: Aufnahme starten.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_dictate_start(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().record_dictate_start()
+}
+
+/// Diktat beenden und den erkannten Text zurueckgeben.
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_dictate_stop(app: AppHandle) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.record_dictate_stop().await
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn tts_record_translate_start(app: AppHandle) -> Result<(), String> {

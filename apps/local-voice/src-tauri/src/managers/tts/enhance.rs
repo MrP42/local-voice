@@ -271,6 +271,68 @@ fn apply_gain_curve(samples: &mut [f32], gains: &[f32], frame: usize) {
     }
 }
 
+/// Länge der Ein- und Ausblendung an den Rändern: 8 ms.
+///
+/// Kurz genug, dass kein Laut verlorengeht — ein Konsonant dauert 30 bis
+/// 100 ms —, lang genug, um einen Sprung unhörbar zu machen.
+const EDGE_FADE_MS: f64 = 8.0;
+
+/// Ränder entschärfen: Gleichspannung entfernen, Anfang und Ende sanft
+/// ein- und ausblenden.
+///
+/// Warum das nötig ist: ein Tonstück, das bei einem Wert ungleich null
+/// beginnt, ist für den Lautsprecher ein Sprung — und ein Sprung ist ein
+/// Knacken. Beim Vorlesen ist jeder Satz ein eigenes Tonstück, also gibt es
+/// diese Stelle bei jedem Satz. Am deutlichsten bei der Standardstimme, die
+/// bis v0.8.7 ohne Referenz erzeugt wurde und deshalb bei jedem Satz an
+/// einer anderen Stelle der Schwingung begann.
+///
+/// Zusätzlich wird der Gleichanteil abgezogen: ein Tonstück, dessen Mittelwert
+/// nicht null ist, springt schon beim ersten Sample — und beim Übergang zum
+/// nächsten Satz noch einmal.
+///
+/// Läuft IMMER, unabhängig von der Klangbearbeitung: ein Knacken ist kein
+/// Geschmacksfrage, und niemand schaltet eine Verbesserung ab, um es zu
+/// bekommen.
+pub fn soften_edges(samples: &mut [f32], channels: usize, sample_rate: u32) {
+    let channels = channels.max(1);
+    let frames = samples.len() / channels;
+    if frames == 0 {
+        return;
+    }
+
+    // Gleichanteil je Kanal abziehen.
+    for channel in 0..channels {
+        let mut sum = 0.0f64;
+        for frame in 0..frames {
+            sum += samples[frame * channels + channel] as f64;
+        }
+        let offset = (sum / frames as f64) as f32;
+        if offset.abs() > 1e-5 {
+            for frame in 0..frames {
+                samples[frame * channels + channel] -= offset;
+            }
+        }
+    }
+
+    // Erhobener Kosinus statt einer Geraden: die Steigung ist an beiden
+    // Enden null, der Übergang also auch in der Ableitung stetig. Eine
+    // lineare Blende hat an ihrem Beginn einen Knick, und Knicke hört man.
+    let fade = (((EDGE_FADE_MS / 1000.0) * sample_rate as f64) as usize).min(frames / 2);
+    if fade == 0 {
+        return;
+    }
+    for i in 0..fade {
+        let phase = std::f64::consts::PI * i as f64 / fade as f64;
+        let factor = (0.5 - 0.5 * phase.cos()) as f32;
+        for channel in 0..channels {
+            samples[i * channels + channel] *= factor;
+            let tail = (frames - 1 - i) * channels + channel;
+            samples[tail] *= factor;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +382,89 @@ mod tests {
             }
         }
         out
+    }
+
+    /// Der Knacks-Test: ein Tonstueck, das mitten in der Schwingung beginnt
+    /// und endet. Danach muessen beide Raender bei praktisch null liegen.
+    #[test]
+    fn die_raender_beginnen_und_enden_bei_null() {
+        let rate = 16_000u32;
+        // Kosinus ohne Phasenverschiebung: beginnt beim Maximum, also im
+        // schlimmstmoeglichen Fall — genau dort knackt es am lautesten.
+        let mut samples: Vec<f32> = (0..rate as usize)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                0.8 * (2.0 * std::f32::consts::PI * 200.0 * t).cos()
+            })
+            .collect();
+        assert!(
+            samples[0].abs() > 0.7,
+            "Testsignal beginnt nicht am Maximum"
+        );
+        soften_edges(&mut samples, 1, rate);
+        assert!(samples[0].abs() < 0.01, "Anfang bei {}", samples[0]);
+        assert!(
+            samples[samples.len() - 1].abs() < 0.01,
+            "Ende bei {}",
+            samples[samples.len() - 1]
+        );
+    }
+
+    /// Die Mitte bleibt unangetastet — geblendet wird nur an den Raendern.
+    #[test]
+    fn die_mitte_bleibt_unveraendert() {
+        let rate = 16_000u32;
+        let original: Vec<f32> = (0..rate as usize)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                0.5 * (2.0 * std::f32::consts::PI * 200.0 * t).sin()
+            })
+            .collect();
+        let mut samples = original.clone();
+        soften_edges(&mut samples, 1, rate);
+        let middle = rate as usize / 2;
+        assert!(
+            (samples[middle] - original[middle]).abs() < 1e-4,
+            "Mitte veraendert: {} statt {}",
+            samples[middle],
+            original[middle]
+        );
+    }
+
+    /// Ein Gleichanteil ist ein Sprung schon beim ersten Sample.
+    #[test]
+    fn der_gleichanteil_wird_entfernt() {
+        let rate = 16_000u32;
+        let mut samples: Vec<f32> = (0..rate as usize)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                0.3 * (2.0 * std::f32::consts::PI * 200.0 * t).sin() + 0.2
+            })
+            .collect();
+        soften_edges(&mut samples, 1, rate);
+        let mean: f64 = samples.iter().map(|v| *v as f64).sum::<f64>() / samples.len() as f64;
+        assert!(mean.abs() < 0.01, "Gleichanteil blieb: {mean}");
+    }
+
+    /// Bei Stereo muss jeder Kanal fuer sich behandelt werden.
+    #[test]
+    fn stereo_wird_kanalweise_behandelt() {
+        let rate = 16_000u32;
+        let frames = rate as usize;
+        let mut samples: Vec<f32> = (0..frames * 2)
+            .map(|i| if i % 2 == 0 { 0.8 } else { -0.6 })
+            .collect();
+        soften_edges(&mut samples, 2, rate);
+        assert!(samples[0].abs() < 0.01, "links: {}", samples[0]);
+        assert!(samples[1].abs() < 0.01, "rechts: {}", samples[1]);
+    }
+
+    #[test]
+    fn ein_leeres_signal_bringt_nichts_zum_absturz() {
+        let mut leer: Vec<f32> = Vec::new();
+        soften_edges(&mut leer, 1, 16_000);
+        let mut winzig = vec![0.5f32; 3];
+        soften_edges(&mut winzig, 1, 16_000);
     }
 
     #[test]

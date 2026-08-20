@@ -510,13 +510,12 @@ impl TtsCore {
                 .await
             {
                 Ok(bytes) => {
-                    // Klangbearbeitung vor der Wiedergabe. Sie laeuft, waehrend
-                    // der vorige Satz noch spielt (siehe Pipeline unten), faellt
-                    // also nicht als Wartezeit auf.
-                    let bytes = match *self.enhance.lock().unwrap() {
-                        Some(strength) => enhance_wav_bytes(&bytes, strength).unwrap_or(bytes),
-                        None => bytes,
-                    };
+                    // Aufbereitung vor der Wiedergabe: Raender entschaerfen
+                    // (immer) und Klangbearbeitung (wenn eingeschaltet). Sie
+                    // laeuft, waehrend der vorige Satz noch spielt (siehe
+                    // Pipeline unten), faellt also nicht als Wartezeit auf.
+                    let strength = *self.enhance.lock().unwrap();
+                    let bytes = prepare_sentence_audio(bytes, strength);
                     total_bytes += bytes.len();
                     // Vorherigen Satz zu Ende spielen lassen (Reihenfolge!).
                     if let Some((done_idx, handle)) = previous_playback.take() {
@@ -743,6 +742,82 @@ fn decode_wav(bytes: &[u8]) -> Option<(Vec<f32>, u32, f32)> {
     Some((mono, spec.sample_rate, peak))
 }
 
+/// Einen synthetisierten Satz für die Ausgabe aufbereiten.
+///
+/// Zwei Dinge, und nur das zweite ist optional:
+///
+/// 1. **Ränder entschärfen — immer.** Jeder Satz ist ein eigenes Tonstück.
+///    Beginnt es bei einem Wert ungleich null, ist das für den Lautsprecher
+///    ein Sprung, und ein Sprung knackt. Das gehört nicht hinter einen
+///    Schalter: niemand schaltet eine Verbesserung ab, um ein Knacken zu
+///    bekommen.
+/// 2. **Klangbearbeitung — wenn eingeschaltet.**
+///
+/// Lässt sich der Blob nicht lesen, kommt er unverändert zurück. Eine
+/// Aufbereitung ist es nicht wert, an ihr zu scheitern.
+fn prepare_sentence_audio(bytes: Vec<u8>, strength: Option<enhance::Strength>) -> Vec<u8> {
+    let Ok(reader) = hound::WavReader::new(std::io::Cursor::new(bytes.as_slice())) else {
+        return bytes;
+    };
+    let spec = reader.spec();
+    let channels = spec.channels.max(1) as usize;
+    // Mehrkanaliges bleibt der Klangbearbeitung fern — die Kette ist für eine
+    // Sprachspur gebaut und auch nur dafür geprüft —, bekommt aber die
+    // Randbehandlung, denn Knacken hat mit der Kanalzahl nichts zu tun.
+    if channels > 1 {
+        let Some(mut interleaved) = decode_interleaved(&bytes) else {
+            return bytes;
+        };
+        enhance::soften_edges(&mut interleaved, channels, spec.sample_rate);
+        return write_wav_interleaved(&interleaved, spec).unwrap_or(bytes);
+    }
+    let Some((mut samples, rate, _)) = decode_wav(&bytes) else {
+        return bytes;
+    };
+    if let Some(strength) = strength {
+        enhance::process(&mut samples, rate, strength);
+    }
+    enhance::soften_edges(&mut samples, 1, rate);
+    write_wav_pcm16(&samples, spec).unwrap_or(bytes)
+}
+
+/// WAV-Blob als Interleave lesen, ohne Downmix.
+fn decode_interleaved(bytes: &[u8]) -> Option<Vec<f32>> {
+    let mut reader = hound::WavReader::new(std::io::Cursor::new(bytes)).ok()?;
+    let spec = reader.spec();
+    match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().collect::<Result<_, _>>().ok(),
+        hound::SampleFormat::Int => {
+            let scale = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.map(|v| v as f32 / scale))
+                .collect::<Result<_, _>>()
+                .ok()
+        }
+    }
+}
+
+/// Interleave als 16-bit-PCM-WAV schreiben, Kanalzahl bleibt erhalten.
+fn write_wav_interleaved(samples: &[f32], spec: hound::WavSpec) -> Option<Vec<u8>> {
+    let out_spec = hound::WavSpec {
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+        ..spec
+    };
+    let mut out = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(&mut out, out_spec).ok()?;
+        for &s in samples {
+            writer
+                .write_sample((s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+                .ok()?;
+        }
+        writer.finalize().ok()?;
+    }
+    Some(out.into_inner())
+}
+
 /// WAV-Blob durch die Klangbearbeitung schicken und neu schreiben.
 ///
 /// `None`, wenn der Blob nicht lesbar ist — der Aufrufer behaelt dann das
@@ -898,6 +973,9 @@ const TRANSLATE_BINDING: &str = "translate_input";
 /// Binding-Id des Stimmwechsler-Flows.
 const VOICECHANGE_BINDING: &str = "voicechange_input";
 
+/// Binding-Id des Diktats fuer das Vorlesefeld.
+const DICTATE_BINDING: &str = "dictate_input";
+
 impl TtsManager {
     pub fn new(app: &tauri::AppHandle) -> Arc<Self> {
         use tauri::Emitter;
@@ -938,6 +1016,10 @@ impl TtsManager {
             }
         }
 
+        // Compile-Cache aus %TEMP% holen, bevor der Server das erste Mal
+        // startet — dort raeumt die Datentraegerbereinigung ihn irgendwann weg.
+        manager.migrate_inductor_cache();
+
         // Bestandsstimmen einmalig auf das Lautheitsmaß nachziehen. Im
         // Hintergrund: der Lauf liest und schreibt Dateien und darf den
         // App-Start nicht aufhalten.
@@ -955,6 +1037,20 @@ impl TtsManager {
                 // diesem Lauf gerade nicht mehr.
                 if let Some(dir) = demos {
                     discard_stale_demos(&dir);
+                }
+            });
+        }
+
+        // Vorwärmen: den Server im Hintergrund hochfahren, damit die gut
+        // eine Minute Ladezeit ablaeuft, waehrend der Nutzer ohnehin einen
+        // Text einfuegt oder eine Stimme waehlt. Standardmaessig aus — 17 GB
+        // Grafikspeicher sind nichts, was man ungefragt belegt.
+        if crate::settings::get_settings(app).tts_prewarm {
+            let warming = Arc::clone(&manager);
+            tauri::async_runtime::spawn(async move {
+                log::info!("Vorwaermen: starte den TTS-Server im Hintergrund");
+                if let Err(e) = warming.ensure_server().await {
+                    log::warn!("Vorwaermen fehlgeschlagen: {e}");
                 }
             });
         }
@@ -1164,7 +1260,7 @@ impl TtsManager {
         if !compile_cache::looks_like_broken_compile_cache(&log) {
             return Err(error);
         }
-        let Some(dir) = compile_cache::cache_dir() else {
+        let Some(dir) = self.inductor_cache_dir().or_else(compile_cache::cache_dir) else {
             return Err(error);
         };
         let removed = match compile_cache::repair(&dir) {
@@ -1252,6 +1348,12 @@ impl TtsManager {
         ])
         .current_dir(&fish_dir)
         .env("HF_HUB_DISABLE_TELEMETRY", "1");
+        // Compile-Cache an einen Ort, den keine Datenträgerbereinigung leert.
+        if let Some(cache) = self.inductor_cache_dir() {
+            if std::fs::create_dir_all(&cache).is_ok() {
+                cmd.env("TORCHINDUCTOR_CACHE_DIR", &cache);
+            }
+        }
         match log_handles {
             Some((out, err)) => {
                 cmd.stdout(std::process::Stdio::from(out))
@@ -1474,6 +1576,117 @@ impl TtsManager {
         Ok(translation)
     }
 
+    /// Text übersetzen — ohne ihn abzuspielen.
+    ///
+    /// Bewusst getrennt vom Vorlesen: ein Knopf, der zwei Dinge tut, nimmt
+    /// die Entscheidung ab, welches der beiden man wollte. Abspielen gibt es
+    /// bereits; hier entsteht nur der Text.
+    ///
+    /// Zwischengespeichert je Originaltext UND Zielsprache, auf Platte.
+    /// Zwischen zwei Sprachen hin und her zu wechseln kostet damit nach dem
+    /// ersten Mal nichts mehr — und ein Neustart der App wirft es nicht weg.
+    ///
+    /// Läuft der Fish-Server, weicht die Übersetzung auf die CPU aus: er hält
+    /// rund 17 GB Grafikspeicher, und ein zweites Modell daneben bringt beide
+    /// zum Straucheln.
+    pub async fn translate_text(&self, text: &str, target_lang: &str) -> Result<String, String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err("kein Text zum Übersetzen".to_string());
+        }
+        if let Some(hit) = self.cached_translation(trimmed, target_lang) {
+            return Ok(hit);
+        }
+        let settings = crate::settings::get_settings(&self.app);
+        // Nicht "gehört der Server uns", sondern "läuft überhaupt einer":
+        // ein fremd gestarteter belegt dieselbe Grafikkarte.
+        let gpu_busy = self.core.phase() != TtsPhase::Stopped;
+        let translated =
+            crate::translator::translate_on(&settings, trimmed, target_lang, gpu_busy).await?;
+        self.store_translation(trimmed, target_lang, &translated);
+        Ok(translated)
+    }
+
+    /// Liegt für diesen Text in dieser Sprache schon eine Übersetzung?
+    pub fn cached_translation(&self, text: &str, target_lang: &str) -> Option<String> {
+        let path = self.translation_path(text, target_lang)?;
+        std::fs::read_to_string(path).ok().filter(|s| !s.is_empty())
+    }
+
+    fn store_translation(&self, text: &str, target_lang: &str, translation: &str) {
+        let Some(path) = self.translation_path(text, target_lang) else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                log::warn!("translation cache unavailable: {e}");
+                return;
+            }
+        }
+        if let Err(e) = std::fs::write(&path, translation) {
+            log::warn!("could not cache translation: {e}");
+        }
+    }
+
+    /// Ablageort einer Übersetzung. Der Dateiname ist der Streuwert aus Text
+    /// und Sprache — ändert sich das Original, zeigt er woandershin, und die
+    /// alte Übersetzung wird nie fälschlich ausgeliefert.
+    fn translation_path(&self, text: &str, target_lang: &str) -> Option<std::path::PathBuf> {
+        use std::hash::{Hash, Hasher};
+        use tauri::Manager;
+        let base = crate::portable::data_dir()
+            .cloned()
+            .or_else(|| self.app.path().app_local_data_dir().ok())?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        target_lang.hash(&mut hasher);
+        let key = hasher.finish();
+        Some(base.join("translations").join(format!("{key:016x}.txt")))
+    }
+
+    /// Diktat für das Vorlesefeld: Aufnahme starten.
+    ///
+    /// Eigener Weg neben `record_translate_*` und `record_voicechange_*`,
+    /// weil er als Einziger NUR aufnimmt und transkribiert — kein Übersetzen,
+    /// kein Sprechen. Was mit dem Text geschieht, entscheidet danach der
+    /// Nutzer.
+    pub fn record_dictate_start(&self) -> Result<(), String> {
+        use tauri::Manager;
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        tm.initiate_model_load();
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        rm.try_start_recording(DICTATE_BINDING, crate::audio_toolkit::VadPolicy::Offline)
+    }
+
+    /// Diktat beenden: Aufnahme transkribieren und den Text zurückgeben.
+    pub async fn record_dictate_stop(&self) -> Result<String, String> {
+        use tauri::Manager;
+        let rm = self
+            .app
+            .state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+        let generation = rm.cancel_generation();
+        let samples = rm
+            .stop_recording(DICTATE_BINDING, generation)
+            .ok_or("Keine Aufnahme erhalten")?;
+        if samples.is_empty() {
+            return Err("Aufnahme enthielt keine Sprache".into());
+        }
+        let tm = self
+            .app
+            .state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        let transcript = tm
+            .transcribe(samples)
+            .map_err(|e| format!("Transkription fehlgeschlagen: {e}"))?;
+        if transcript.trim().is_empty() {
+            return Err("Es wurde keine Sprache erkannt".into());
+        }
+        Ok(transcript)
+    }
+
     /// Aufnahme für die Sprach-zu-Sprach-Übersetzung starten (VAD wie beim
     /// Diktat; STT-Modell wird parallel geladen).
     pub fn record_translate_start(&self) -> Result<(), String> {
@@ -1634,6 +1847,61 @@ impl TtsManager {
     /// zwei verschiedene Aufnahmen. Bewusst kurz und vollständig: Klangfarbe,
     /// Tempo und Satzmelodie hört man an einem Satz, nicht an einem Wort.
     pub const DEMO_TEXT: &'static str = "Guten Tag. So klingt diese Stimme:         ein kurzer Satz, damit Sie Klangfarbe, Tempo und Betonung vergleichen können.";
+
+    /// Wo der Compile-Cache von TorchInductor liegen soll.
+    ///
+    /// Nicht mehr in `%TEMP%`. Dort legt PyTorch ihn von sich aus ab — und
+    /// genau dieses Verzeichnis leeren die Windows-Datenträgerbereinigung und
+    /// die Speicheroptimierung. Ist der Cache weg, wird aus 25 Sekunden
+    /// Aufwärmen ein Vielfaches, ohne dass irgendetwas kaputt wäre.
+    ///
+    /// Der Name behält das Präfix `torchinductor_`, weil die Reparatur in
+    /// [`compile_cache`] nur in solchen Verzeichnissen etwas löscht.
+    fn inductor_cache_dir(&self) -> Option<std::path::PathBuf> {
+        use tauri::Manager;
+        let base = crate::portable::data_dir()
+            .cloned()
+            .or_else(|| self.app.path().app_local_data_dir().ok())?;
+        Some(base.join("torchinductor_cache"))
+    }
+
+    /// Einen vorhandenen Cache aus `%TEMP%` an den neuen Ort holen.
+    ///
+    /// Ein Umzug statt eines Neuanfangs: das dort liegende Kompilat ist
+    /// gemessene 231 MB und mehrere Minuten Rechenzeit wert. Beide Orte
+    /// liegen auf demselben Laufwerk, das Umbenennen kostet also nichts.
+    ///
+    /// Nur, wenn am Ziel noch nichts liegt — ein bestehender Cache wird
+    /// niemals überschrieben.
+    fn migrate_inductor_cache(&self) {
+        let Some(target) = self.inductor_cache_dir() else {
+            return;
+        };
+        if target.exists() {
+            return;
+        }
+        let Some(old) = compile_cache::default_temp_cache_dir() else {
+            return;
+        };
+        if !old.is_dir() {
+            return;
+        }
+        if let Some(parent) = target.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return;
+            }
+        }
+        match std::fs::rename(&old, &target) {
+            Ok(()) => log::info!(
+                "Compile-Cache aus {} nach {} verschoben",
+                old.display(),
+                target.display()
+            ),
+            // Kein Fehler, der jemanden interessieren muss: dann wird eben
+            // neu kompiliert, einmalig.
+            Err(e) => log::warn!("Compile-Cache liess sich nicht verschieben: {e}"),
+        }
+    }
 
     /// Wohin der Serverprozess seine Ausgabe schreibt. Eine Datei, bei jedem
     /// Start ueberschrieben: interessant ist immer der letzte Versuch.
@@ -1878,12 +2146,10 @@ impl TtsManager {
                 .core
                 .fetch_wav(port, seed, &part.text, voice.as_deref())
                 .await?;
-            // Dieselbe Klangbearbeitung wie beim Hoeren — die Datei soll
-            // klingen wie das, was man vorher gehoert hat.
-            let bytes = match *self.core.enhance.lock().unwrap() {
-                Some(strength) => enhance_wav_bytes(&bytes, strength).unwrap_or(bytes),
-                None => bytes,
-            };
+            // Dieselbe Aufbereitung wie beim Hoeren — die Datei soll klingen
+            // wie das, was man vorher gehoert hat.
+            let strength = *self.core.enhance.lock().unwrap();
+            let bytes = prepare_sentence_audio(bytes, strength);
             // Derselbe Ausgleich wie beim Hören: eine exportierte Datei mit
             // wechselnden Stimmen soll nicht lauter und leiser werden.
             let gain = self.core.playback_gain(voice.as_deref(), &bytes);

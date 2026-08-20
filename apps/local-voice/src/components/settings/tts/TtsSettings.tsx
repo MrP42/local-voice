@@ -5,7 +5,6 @@ import { commands, type TtsStatus } from "@/bindings";
 import { useSettings } from "../../../hooks/useSettings";
 import { ShortcutInput } from "../ShortcutInput";
 import { VoicesCard } from "./VoicesCard";
-import { TranslateCard } from "./TranslateCard";
 import { VoiceChangerCard } from "./VoiceChangerCard";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
@@ -19,9 +18,10 @@ import { Select } from "../../ui/Select";
 import { ReadingCard } from "./ReadingCard";
 import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
+import { TTS_TARGET_LANGS } from "../../../lib/constants/languages";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
-import { Dices, Download, Server } from "lucide-react";
+import { Dices, Download, Languages, Mic, Server } from "lucide-react";
 
 /// Abspieltempo der Transportleiste. Bewusst grob gestuft: feiner regelt der
 /// Schieber in den Einstellungen, hier will man im Hoeren einmal schneller
@@ -36,6 +36,14 @@ export const TtsSettings = () => {
   // losing a pasted article because you glanced at the model list is the
   // kind of loss nobody forgives.
   const [text, setText] = usePersistentState<string>("tts.text", "");
+  /** Zielsprache der Uebersetzung — dieselbe Einstellung wie in der
+   *  Audio-Uebersetzung, damit man sie nicht an zwei Stellen pflegt. */
+  const targetLang = getSetting("tts_translate_lang") ?? "English";
+  /** Welcher Reiter offen ist. Das Original bleibt immer erhalten. */
+  const [tab, setTab] = useState<"original" | "translation">("original");
+  const [translation, setTranslation] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [dictating, setDictating] = useState(false);
   const [startingSeconds, setStartingSeconds] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   /** Rueckmeldung des harten Beendens — was gefunden und beendet wurde. */
@@ -121,6 +129,23 @@ export const TtsSettings = () => {
     };
   }, []);
 
+  // Beim Wechsel der Sprache (oder des Originaltexts) zeigen, was schon da
+  // ist — ohne eine neue Uebersetzung anzustossen. Genau dafuer liegt der
+  // Zwischenspeicher auf Platte: hin und her schalten kostet nichts.
+  useEffect(() => {
+    let abandoned = false;
+    if (!text.trim()) {
+      setTranslation(null);
+      return;
+    }
+    void commands.ttsCachedTranslation(text, targetLang).then((hit) => {
+      if (!abandoned) setTranslation(hit);
+    });
+    return () => {
+      abandoned = true;
+    };
+  }, [text, targetLang]);
+
   // Sekundenzähler nur während des Serverstarts.
   useEffect(() => {
     if (status?.phase === "starting") {
@@ -156,7 +181,7 @@ export const TtsSettings = () => {
     setLastError(null);
     setSpeakProgress(null);
     setTruncated(null);
-    const result = await commands.ttsSpeakText(text);
+    const result = await commands.ttsSpeakText(spokenText);
     if (result.status === "error") setLastError(result.error);
   };
 
@@ -207,7 +232,7 @@ export const TtsSettings = () => {
     setSaving(true);
     setExportProgress({ position: 0, total: 0 });
     // Returns at once; the run reports itself through tts-export-progress.
-    const result = await commands.ttsSpeakToFile(text, target);
+    const result = await commands.ttsSpeakToFile(spokenText, target);
     if (result.status === "error") {
       setSaving(false);
       setExportProgress(null);
@@ -277,6 +302,61 @@ export const TtsSettings = () => {
         : phase === "error"
           ? (status?.message ?? t("tts.serverIconError"))
           : t("tts.serverIconStop");
+
+  /**
+   * Welcher Text gerade im Feld steht — und damit auch, was das Abspielen
+   * spricht. Das Original wird NIE ueberschrieben: die Uebersetzung liegt
+   * daneben, nicht darin.
+   */
+  const spokenText = tab === "original" ? text : (translation ?? "");
+
+  /**
+   * Uebersetzen — nur uebersetzen. Kein Abspielen, kein Aufnehmen.
+   *
+   * Das Ergebnis liegt im Zwischenspeicher des Backends, je Originaltext UND
+   * Sprache. Zwischen zwei Sprachen hin und her zu wechseln kostet nach dem
+   * ersten Mal nichts mehr, auch nach einem Neustart nicht.
+   */
+  const translateText = async () => {
+    if (!text.trim()) return;
+    setLastError(null);
+    setTranslating(true);
+    const result = await commands.ttsTranslate(text, targetLang);
+    setTranslating(false);
+    if (result.status === "error") {
+      setLastError(result.error);
+      return;
+    }
+    setTranslation(result.data);
+    setTab("translation");
+  };
+
+  /**
+   * Diktieren — nur diktieren. Der erkannte Text landet im Feld; was damit
+   * geschieht, entscheidet danach der Nutzer.
+   */
+  const toggleDictation = async () => {
+    setLastError(null);
+    if (dictating) {
+      setDictating(false);
+      const result = await commands.ttsDictateStop();
+      if (result.status === "error") {
+        setLastError(result.error);
+        return;
+      }
+      // An den vorhandenen Text anhaengen statt ihn zu ersetzen: Diktieren
+      // ist Weiterschreiben, nicht Neuanfangen.
+      setTab("original");
+      setText(text.trim() ? `${text.trim()}\n\n${result.data}` : result.data);
+      return;
+    }
+    const result = await commands.ttsDictateStart();
+    if (result.status === "error") {
+      setLastError(result.error);
+      return;
+    }
+    setDictating(true);
+  };
 
   /**
    * Ein Klick tut, was im jeweiligen Zustand ansteht. Beim laufenden Server
@@ -367,13 +447,83 @@ export const TtsSettings = () => {
           </p>
         )}
         <div className="px-4 pb-4 space-y-2">
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={t("tts.inputPlaceholder")}
-            rows={5}
-            className="w-full"
-          />
+          {/* Zwei Reiter, ein Feld. Das Original wird nie ueberschrieben —
+              die Uebersetzung liegt daneben, nicht darin. Wer zurueckschaltet,
+              findet seinen Text unveraendert vor. */}
+          <div className="flex items-center gap-1 border-b border-mid-gray/20">
+            <button
+              type="button"
+              onClick={() => setTab("original")}
+              className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors cursor-pointer ${
+                tab === "original"
+                  ? "border-logo-primary text-text"
+                  : "border-transparent text-text/50 hover:text-text/80"
+              }`}
+            >
+              {t("tts.tabOriginal")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("translation")}
+              className={`px-3 py-1.5 text-sm border-b-2 -mb-px transition-colors cursor-pointer ${
+                tab === "translation"
+                  ? "border-logo-primary text-text"
+                  : "border-transparent text-text/50 hover:text-text/80"
+              }`}
+            >
+              {t("tts.tabTranslation")}
+            </button>
+          </div>
+
+          {tab === "original" ? (
+            <Textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={t("tts.inputPlaceholder")}
+              rows={5}
+              className="w-full"
+            />
+          ) : (
+            <Textarea
+              value={translation ?? ""}
+              onChange={(e) => setTranslation(e.target.value)}
+              placeholder={t("tts.translationPlaceholder")}
+              rows={5}
+              className="w-full"
+            />
+          )}
+
+          {/* Sprachwahl und Uebersetzen — getrennt vom Abspielen. Ein Knopf,
+              der beides taete, naehme die Entscheidung ab, welches von beiden
+              man wollte; abspielen kann man den Text danach jederzeit. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="w-40">
+              <Select
+                value={targetLang}
+                options={TTS_TARGET_LANGS}
+                onChange={(value) =>
+                  value && updateSetting("tts_translate_lang", value)
+                }
+                isClearable={false}
+              />
+            </div>
+            <Button
+              variant="secondary"
+              onClick={translateText}
+              disabled={translating || !text.trim()}
+            >
+              <Languages width={16} height={16} />
+              {translating ? t("tts.translating") : t("tts.translate")}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={toggleDictation}
+              title={t("tts.dictateHint")}
+            >
+              <Mic width={16} height={16} />
+              {dictating ? t("tts.dictateStop") : t("tts.dictate")}
+            </Button>
+          </div>
           <div className="flex gap-2 items-center flex-wrap">
             {/* Transport per design system: round glyph buttons, exactly one
                 primary. Reading aloud is playback, so it gets the same family
@@ -397,7 +547,7 @@ export const TtsSettings = () => {
                 type="button"
                 className="mbtn mbtn--primary mbtn--lg"
                 onClick={speaking ? pauseSpeaking : speak}
-                disabled={!speaking && text.trim().length === 0}
+                disabled={!speaking && spokenText.trim().length === 0}
                 aria-label={speaking ? t("tts.pause") : t("tts.speak")}
               >
                 <Glyph name={speaking ? "pause" : "play"} />
@@ -446,7 +596,7 @@ export const TtsSettings = () => {
             <Button
               variant="secondary"
               onClick={saveSpokenAudio}
-              disabled={saving || text.trim().length === 0}
+              disabled={saving || spokenText.trim().length === 0}
               title={saving ? t("tts.savingAudio") : t("tts.saveAudio")}
               aria-label={saving ? t("tts.savingAudio") : t("tts.saveAudio")}
             >
@@ -508,8 +658,6 @@ export const TtsSettings = () => {
 
       <VoicesCard />
 
-      <TranslateCard />
-
       <VoiceChangerCard />
 
       <SettingsGroup title={t("tts.settingsTitle")}>
@@ -531,6 +679,14 @@ export const TtsSettings = () => {
           isUpdating={isUpdating("tts_normalize")}
           label={t("tts.settings.normalize")}
           description={t("tts.settings.normalizeDescription")}
+          grouped={true}
+        />
+        <ToggleSwitch
+          checked={getSetting("tts_prewarm") ?? false}
+          onChange={(checked) => updateSetting("tts_prewarm", checked)}
+          isUpdating={isUpdating("tts_prewarm")}
+          label={t("tts.settings.prewarm")}
+          description={t("tts.settings.prewarmDescription")}
           grouped={true}
         />
         <ToggleSwitch

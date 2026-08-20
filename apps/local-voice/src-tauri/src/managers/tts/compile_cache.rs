@@ -81,6 +81,16 @@ pub fn cache_dir() -> Option<PathBuf> {
             return Some(PathBuf::from(dir));
         }
     }
+    default_temp_cache_dir()
+}
+
+/// Der Ort, an den PyTorch von sich aus schreibt: `%TEMP%/torchinductor_<user>`.
+///
+/// Die App legt ihren Cache bewusst woanders ab (siehe
+/// `TtsManager::inductor_cache_dir`), weil `%TEMP%` von der
+/// Datenträgerbereinigung geleert wird. Dieser Pfad wird nur noch gebraucht,
+/// um einen dort liegenden Bestand einmalig abzuholen.
+pub fn default_temp_cache_dir() -> Option<PathBuf> {
     let user = std::env::var("USERNAME")
         .or_else(|_| std::env::var("USER"))
         .ok()?;

@@ -1141,6 +1141,14 @@ async changeTtsNormalizeSetting(value: boolean) : Promise<Result<null, string>> 
     else return { status: "error", error: e  as any };
 }
 },
+async changeTtsPrewarmSetting(value: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_tts_prewarm_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeTtsEnhanceSetting(value: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_tts_enhance_setting", { value }) };
@@ -1152,6 +1160,33 @@ async changeTtsEnhanceSetting(value: boolean) : Promise<Result<null, string>> {
 async changeTtsEnhanceStrengthSetting(value: EnhanceStrength) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_tts_enhance_strength_setting", { value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsTranslate(text: string, targetLang: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_translate", { text, targetLang }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsCachedTranslation(text: string, targetLang: string) : Promise<string | null> {
+    return await TAURI_INVOKE("tts_cached_translation", { text, targetLang });
+},
+async ttsDictateStart() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_dictate_start") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsDictateStop() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_dictate_stop") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1641,6 +1676,7 @@ tts_normalize?: boolean;
  * Klangbearbeitung der Sprache: Hochpass, Rauschgatter, Kompressor,
  * Begrenzer.
  */
+tts_prewarm?: boolean; 
 tts_enhance?: boolean; 
 /**
  * Wie stark die Klangbearbeitung eingreift.

@@ -547,6 +547,14 @@ pub struct AppSettings {
     /// Vorlesen. Aus bedeutet: der rohe Pegel des Servers, wie er kommt.
     #[serde(default = "default_tts_normalize")]
     pub tts_normalize: bool,
+    /// Den Fish-Speech-Server schon beim Start der App hochfahren.
+    ///
+    /// Verkürzt die Wartezeit nicht — sie verlagert sie dorthin, wo man
+    /// ohnehin etwas anderes tut. Standardmäßig aus: der Server belegt rund
+    /// 17 GB Grafikspeicher, und wer die App nur zum Diktieren öffnet, will
+    /// das nicht.
+    #[serde(default)]
+    pub tts_prewarm: bool,
     /// Klangbearbeitung der Sprache: Hochpass, Rauschgatter, Kompressor,
     /// Begrenzer. Wirkt an drei Stellen — beim Aufnehmen und Importieren
     /// einer Referenzstimme, beim Vorlesen und beim Datei-Export. Am meisten
@@ -1227,6 +1235,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_translate_lang: default_tts_translate_lang(),
         tts_volume: default_tts_volume(),
         tts_normalize: default_tts_normalize(),
+        tts_prewarm: false,
         tts_enhance: default_tts_enhance(),
         tts_enhance_strength: crate::managers::tts::enhance::Strength::default(),
         tts_speed: default_tts_speed(),

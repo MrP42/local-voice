@@ -128,6 +128,7 @@ const settingUpdaters: {
   tts_speed: (value) => commands.changeTtsSpeedSetting(value as number),
   tts_normalize: (value) =>
     commands.changeTtsNormalizeSetting(value as boolean),
+  tts_prewarm: (value) => commands.changeTtsPrewarmSetting(value as boolean),
   tts_enhance: (value) => commands.changeTtsEnhanceSetting(value as boolean),
   tts_enhance_strength: (value) =>
     commands.changeTtsEnhanceStrengthSetting(
