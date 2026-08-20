@@ -174,7 +174,13 @@ export const ModelsSettings: React.FC = () => {
         if (!modelSupportsLanguage(model, languageFilter)) return false;
       }
       if (q) {
-        const haystack = `${model.name} ${model.description}`.toLowerCase();
+        // The id carries the upstream repo name — that is where "ASR", the
+        // parameter count and the vendor's own spelling live. Searching only
+        // name+description meant looking up a model by the name NVIDIA gave it
+        // ("nemotron-3.5-asr") found nothing, because the catalog calls it
+        // something shorter.
+        const haystack =
+          `${model.name} ${model.description} ${model.id}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;

@@ -59,7 +59,7 @@ Automatische Prüfung abschalten: **Einstellungen → App → Updates**.
 | Modell | Wofür |
 |---|---|
 | **Parakeet TDT 0.6B primeLine** | Deutsch. Auf Deutsch nachtrainiert, WER 6,0 auf FLEURS-DE, 25 europäische Sprachen. Kein Streaming. |
-| **Nemotron Streaming 3.5** | Mehrsprachiges Live-Diktat, 28 Sprachen. Schreibt beim Sprechen mit. |
+| **Nemotron 3.5 ASR Streaming** | Mehrsprachiges Live-Diktat, 28 Sprachen. Schreibt beim Sprechen mit. |
 | **Parakeet Unified EN 0.6B** | Schnelles englisches Live-Diktat. |
 | **Whisper Large v3 Turbo** | Größte Sprachabdeckung (100 Sprachen), dafür langsamer. |
 

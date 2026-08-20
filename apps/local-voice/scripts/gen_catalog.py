@@ -46,7 +46,7 @@ def acc_from_wer(wer):
 # the German-tuned model leads and the English-only one drops behind it.
 CURATION = {
     "parakeet-primeline":              {"rank": 1, "rec": True, "desc": "German-tuned, the most accurate model here for German"},
-    "nemotron-3.5-asr-streaming-0.6b": {"rank": 2, "rec": True, "desc": "Live multilingual transcription across 28 languages"},
+    "nemotron-3.5-asr-streaming-0.6b": {"rank": 2, "rec": True, "name": "Nemotron 3.5 ASR Streaming", "desc": "Live multilingual transcription across 28 languages"},
     "parakeet-unified-en-0.6b":        {"rank": 3, "rec": True, "desc": "Fast, accurate live English transcription"},
     "canary-180m-flash":               {"rank": 4, "rec": True, "desc": "Tiny and instant, runs well on any hardware"},
     "cohere-transcribe-03-2026":       {"rank": 5, "rec": True, "desc": "Highest accuracy, 14 languages, slower"},
@@ -244,7 +244,10 @@ def build(repo):
         # stays repo+filename; the pin only scopes acquisition.
         "revision": info.sha,
         "slug": s,
-        "name": gg.get("general.name") or pretty(s),         # friendly name (from GGUF)
+        # CURATION wins: a few GGUF headers carry a name that drops what the
+        # model is actually called upstream (nemotron-3.5-asr -> "Nemotron
+        # Streaming 3.5"), which makes the model unfindable by its real name.
+        "name": cur.get("name") or gg.get("general.name") or pretty(s),
         "architecture": gg.get("general.architecture"),
         "family": family(s, info.tags),
         "parameters": gg.get("general.size_label"),          # "0.6B" / "1.7B" / "62M"

@@ -42,7 +42,7 @@
       "id": "handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf",
       "revision": "6d44e540bc31b0de1dbe174a3cea87f53a7f22fb",
       "slug": "nemotron-3.5-asr-streaming-0.6b",
-      "name": "Nemotron Streaming 3.5",
+      "name": "Nemotron 3.5 ASR Streaming",
       "architecture": "parakeet",
       "family": "nemotron",
       "parameters": "0.6B",
