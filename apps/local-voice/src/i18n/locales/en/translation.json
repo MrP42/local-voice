@@ -240,10 +240,6 @@
       "cohere-int8": {
         "name": "Cohere",
         "description": "A large, slower, but very accurate multilingual model."
-      },
-      "handy-computer/parakeet-primeline-gguf": {
-        "name": "Parakeet TDT 0.6B primeLine (German-tuned)",
-        "description": "Fine-tuned on German — the most accurate model here for German (WER 6.0 on FLEURS-DE). 25 European languages, no streaming."
       }
     },
     "errors": {
