@@ -88,7 +88,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/MrP42/sprechstift/releases/latest/download/latest.json"
+        "https://github.com/MrP42/local-voice/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ5MUY4RTI4OTc2RDJGREEKUldUYUwyMlhLSTRmU1U0WWZ0NUhHVU45WlI2K1VCWHE1Q0hHUFQwcHp2RElrVFVYRFFjMkJnR20K",
       "windows": {
