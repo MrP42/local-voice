@@ -24,6 +24,9 @@ use crate::settings::AppSettings;
 /// Gleicher Wert wie im Summarizer: auch ein lokales 8k-Modell verkraftet
 /// einen Block samt Prompt.
 const MAP_REDUCE_CHARS: usize = 16_000;
+/// Versuche je Block der map-Stufe (eigenes Budget, unabhaengig vom
+/// Struktur-Retry innerhalb eines Versuchs).
+const CHUNK_ATTEMPTS: usize = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct DecisionItem {
@@ -278,15 +281,49 @@ fn chunk_prompt(head: &MinutesHead, index: usize, total: usize, chunk: &str) -> 
 }
 
 /// Prompt der Reduce-Stufe: Zwischenergebnisse zu einem Protokoll verdichten.
-fn merge_prompt(head: &MinutesHead, partials: &[String]) -> String {
+/// `missing` nennt die Bloecke (1-basiert), die nicht ausgewertet werden
+/// konnten - das Modell soll die Luecke kennen, statt sie zu ueberspielen.
+fn merge_prompt(head: &MinutesHead, partials: &[String], missing: &[usize]) -> String {
+    let gap_note = if missing.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nNote: part(s) {} of the transcript could not be processed and are \
+             missing below. Merge only what is present and do not pretend the \
+             meeting had no other content; mention the gap in open_questions.\n",
+            missing
+                .iter()
+                .map(|index| index.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
     format!(
         "{}\nThe following JSON objects are partial minutes of consecutive \
          parts of ONE meeting, in order. Merge them into a single set of \
          minutes with the same structure: one coherent summary and scope, \
          deduplicated lists, later information winning over earlier when they \
-         contradict. Add nothing that is not in the parts.\n\n{}",
+         contradict. Add nothing that is not in the parts.\n{}\n{}",
         head_facts_block(head),
+        gap_note,
         partials.join("\n\n---\n\n"),
+    )
+}
+
+/// Hinweiszeile fuer ein Protokoll, dem Transkriptbloecke fehlen.
+fn incomplete_note(total: usize, failed: &[usize]) -> String {
+    let list = failed
+        .iter()
+        .map(|index| index.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "\n> **Hinweis:** {} von {} Transkriptblöcken konnten nicht ausgewertet \
+         werden (Block {}). Das Protokoll deckt den übrigen Teil der Besprechung \
+         ab; das vollständige Transkript bleibt erhalten.\n",
+        failed.len(),
+        total,
+        list,
     )
 }
 
@@ -539,6 +576,36 @@ async fn ask_for_minutes_json(
     ))
 }
 
+/// Ein Block der map-Stufe mit eigenem Retry-Budget. `ask_for_minutes_json`
+/// wiederholt nur Struktur-Fehler; ein Transportfehler (Ollama kurz weg,
+/// Timeout) kommt sofort zurueck und wuerde ohne diesen zweiten Anlauf den
+/// ganzen Lauf kosten.
+async fn ask_for_chunk(
+    settings: &AppSettings,
+    prompt: &str,
+    index: usize,
+    total: usize,
+) -> Result<MinutesJson, String> {
+    let mut last_error = String::new();
+    for attempt in 1..=CHUNK_ATTEMPTS {
+        match ask_for_minutes_json(settings, prompt).await {
+            Ok(minutes) => return Ok(minutes),
+            Err(e) => {
+                last_error = e;
+                log::warn!(
+                    "Protokoll: Block {}/{} fehlgeschlagen (Versuch {} von {}): {}",
+                    index + 1,
+                    total,
+                    attempt,
+                    CHUNK_ATTEMPTS,
+                    last_error
+                );
+            }
+        }
+    }
+    Err(last_error)
+}
+
 /// Kopfdaten aus den Store-Fakten. `date_iso` bevorzugt den Start der
 /// Aufnahme und fällt auf das Anlagedatum zurück (Importe haben kein
 /// `started_at`).
@@ -604,17 +671,39 @@ pub async fn generate_minutes_with_settings(
     let head = build_head(&meeting, &segments);
     let transcript = render_transcript_for_prompt(&segments);
 
+    // Blockbilanz der map-Stufe: bei einem einzelnen Ausreisser wird
+    // degradiert statt abgebrochen - ein zwei Stunden langes Meeting darf
+    // nicht daran scheitern, dass ein Block von zwoelf nicht durchkommt.
+    let mut chunks_total: usize = 1;
+    let mut chunks_failed: Vec<usize> = Vec::new();
     let minutes = if transcript.chars().count() > MAP_REDUCE_CHARS {
         let chunks = crate::summarizer::chunk_text(&transcript, MAP_REDUCE_CHARS);
+        chunks_total = chunks.len();
         log::info!("Protokoll: {} Blöcke (map-reduce)", chunks.len());
         let mut partials = Vec::with_capacity(chunks.len());
         for (index, chunk) in chunks.iter().enumerate() {
-            let partial =
-                ask_for_minutes_json(settings, &chunk_prompt(&head, index, chunks.len(), chunk))
-                    .await?;
-            partials.push(serde_json::to_string(&partial).map_err(|e| e.to_string())?);
+            let prompt = chunk_prompt(&head, index, chunks.len(), chunk);
+            match ask_for_chunk(settings, &prompt, index, chunks.len()).await {
+                Ok(partial) => {
+                    partials.push(serde_json::to_string(&partial).map_err(|e| e.to_string())?)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Protokoll: Block {}/{} endgültig nicht ausgewertet ({}) —                          das Protokoll entsteht aus den übrigen Blöcken",
+                        index + 1,
+                        chunks.len(),
+                        e
+                    );
+                    chunks_failed.push(index + 1);
+                }
+            }
         }
-        ask_for_minutes_json(settings, &merge_prompt(&head, &partials)).await?
+        if partials.is_empty() {
+            return Err(format!(
+                "Protokoll-Erzeugung fehlgeschlagen: kein einziger der {chunks_total}                  Transkriptblöcke konnte ausgewertet werden"
+            ));
+        }
+        ask_for_minutes_json(settings, &merge_prompt(&head, &partials, &chunks_failed)).await?
     } else {
         ask_for_minutes_json(settings, &minutes_user_prompt(&head, &transcript)).await?
     };
@@ -622,8 +711,19 @@ pub async fn generate_minutes_with_settings(
     validate_minutes(&minutes, head.single_speaker)?;
 
     let (provider, model, _) = resolve_provider(settings)?;
-    let body = minutes_to_markdown(&head, &minutes);
-    let metadata = serde_json::json!({ "model": model, "provider": provider.id }).to_string();
+    let mut body = minutes_to_markdown(&head, &minutes);
+    if !chunks_failed.is_empty() {
+        // Der Hinweis steht im Dokument selbst: wer das Protokoll liest, muss
+        // sehen, dass ein Teil des Gesprächs nicht darin steckt.
+        body.push_str(&incomplete_note(chunks_total, &chunks_failed));
+    }
+    let metadata = serde_json::json!({
+        "model": model,
+        "provider": provider.id,
+        "chunks_total": chunks_total,
+        "chunks_failed": chunks_failed,
+    })
+    .to_string();
     let document_id = store
         .upsert_document(meeting_id, "minutes", "markdown@1", &body, Some(&metadata))
         .map_err(|e| e.to_string())?;
@@ -853,6 +953,22 @@ mod tests {
         let mic_only = build_head(&meeting, &[segment(0)]);
         assert!(!mic_only.mixed_channel);
         assert!(mic_only.single_speaker);
+    }
+
+    #[test]
+    fn the_merge_prompt_names_the_blocks_that_are_missing() {
+        let complete = merge_prompt(&head(false), &["{}".to_string()], &[]);
+        assert!(!complete.contains("could not be processed"));
+        let with_gap = merge_prompt(&head(false), &["{}".to_string()], &[2, 5]);
+        assert!(with_gap.contains("part(s) 2, 5"));
+        assert!(with_gap.contains("open_questions"));
+    }
+
+    #[test]
+    fn the_incomplete_note_states_how_many_blocks_are_missing() {
+        let note = incomplete_note(12, &[3]);
+        assert!(note.contains("1 von 12"));
+        assert!(note.contains("Block 3"));
     }
 
     #[test]
