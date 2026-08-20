@@ -12,7 +12,7 @@ pub mod protocol;
 pub mod state;
 pub mod voices;
 
-use player::Player;
+use player::{PlaybackControls, Player};
 use state::TtsPhase;
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -60,8 +60,10 @@ pub struct TtsCore {
     player: Arc<dyn Player>,
     seed: Mutex<i64>,
     max_chars: Mutex<u32>,
-    volume: Mutex<f32>,
-    speed: Mutex<f32>,
+    /// Tempo und Lautstaerke, die die LAUFENDE Wiedergabe mitliest. Frueher
+    /// zwei Mutex-Werte, die einmal je Satz gelesen wurden — eine Aenderung
+    /// wirkte deshalb erst beim naechsten Satz.
+    controls: Arc<PlaybackControls>,
     export_format: Mutex<String>,
     output_device: Mutex<Option<String>>,
     /// Aktive Referenzstimme (reference_id) oder None = Seed-Standardstimme.
@@ -163,8 +165,7 @@ impl TtsCore {
             player,
             seed: Mutex::new(42),
             max_chars: Mutex::new(5000),
-            volume: Mutex::new(1.0),
-            speed: Mutex::new(1.0),
+            controls: Arc::new(PlaybackControls::default()),
             export_format: Mutex::new("wav".to_string()),
             output_device: Mutex::new(None),
             voice: Mutex::new(None),
@@ -530,16 +531,15 @@ impl TtsCore {
                     }
                     let player = self.player.clone();
                     let device = self.output_device.lock().unwrap().clone();
-                    // Stimmen gleich laut: der Nutzerregler skaliert den
-                    // ausgeglichenen Pegel, nicht den rohen des Servers.
-                    let volume =
-                        *self.volume.lock().unwrap() * self.playback_gain(voice.as_deref(), &bytes);
-                    let speed = *self.speed.lock().unwrap();
+                    // Stimmen gleich laut: der Pegelausgleich dieses Satzes
+                    // steht fest, der Nutzerregler skaliert ihn live.
+                    let gain = self.playback_gain(voice.as_deref(), &bytes);
+                    let controls = Arc::clone(&self.controls);
                     let cancel_flag = cancelled.clone();
                     previous_playback = Some((
                         offset,
                         tauri::async_runtime::spawn_blocking(move || {
-                            player.play(bytes, device, volume, speed, cancel_flag)
+                            player.play(bytes, device, gain, controls, cancel_flag)
                         }),
                     ));
                 }
@@ -936,8 +936,8 @@ impl TtsManager {
         *self.core.port.lock().unwrap() = settings.tts_port;
         *self.core.seed.lock().unwrap() = settings.tts_seed;
         *self.core.max_chars.lock().unwrap() = settings.tts_max_chars;
-        *self.core.volume.lock().unwrap() = settings.tts_volume;
-        *self.core.speed.lock().unwrap() = settings.tts_speed;
+        self.core.controls.set_volume(settings.tts_volume);
+        self.core.controls.set_speed(settings.tts_speed);
         *self.core.export_format.lock().unwrap() = settings.tts_export_format;
         *self.core.output_device.lock().unwrap() = settings.selected_output_device;
         *self.core.voice.lock().unwrap() = settings.tts_voice;
@@ -1854,6 +1854,14 @@ impl TtsManager {
             serde_json::json!({ "position": target as u32, "total": sentences.len() as u32 }),
         );
         self.run_speak_session(sentences, target).await
+    }
+
+    /// Tempo und Lautstaerke der laufenden Wiedergabe. Oeffentlich, damit
+    /// die Einstellungsbefehle sie SOFORT setzen koennen — sonst wirkt ein
+    /// Dreh am Regler erst beim naechsten Satz, weil `refresh_from_settings`
+    /// nur zu Beginn eines Sprechlaufs laeuft.
+    pub fn controls(&self) -> &Arc<PlaybackControls> {
+        &self.core.controls
     }
 
     /// Die aktive Stimme hat sich geändert — sofort übernehmen.

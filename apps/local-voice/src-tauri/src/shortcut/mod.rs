@@ -648,6 +648,7 @@ pub fn change_tts_volume_setting(app: AppHandle, value: f32) -> Result<(), Strin
     let mut settings = settings::get_settings(&app);
     settings.tts_volume = value.clamp(0.0, 1.0);
     settings::write_settings(&app, settings);
+    apply_playback_control(&app, |c| c.set_volume(value));
     Ok(())
 }
 
@@ -657,7 +658,24 @@ pub fn change_tts_speed_setting(app: AppHandle, value: f32) -> Result<(), String
     let mut settings = settings::get_settings(&app);
     settings.tts_speed = value.clamp(0.5, 2.0);
     settings::write_settings(&app, settings);
+    apply_playback_control(&app, |c| c.set_speed(value));
     Ok(())
+}
+
+/// Einen Reglerwert sofort an die laufende Wiedergabe geben.
+///
+/// Ohne das landet er nur in der Einstellungsdatei und wird erst beim
+/// naechsten Sprechlauf gelesen — bei einem langen Absatz also gefuehlt gar
+/// nicht. Der TTS-Manager fehlt nur, solange die App noch startet; dann gibt
+/// es auch keine Wiedergabe, die etwas uebernehmen koennte.
+fn apply_playback_control(
+    app: &AppHandle,
+    change: impl FnOnce(&crate::managers::tts::player::PlaybackControls),
+) {
+    use tauri::Manager;
+    if let Some(tts) = app.try_state::<std::sync::Arc<crate::managers::tts::TtsManager>>() {
+        change(tts.controls());
+    }
 }
 
 #[tauri::command]
