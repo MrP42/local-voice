@@ -119,7 +119,18 @@ export const TtsSettings = () => {
     if (result.status === "error") setLastError(result.error);
   };
 
-  const pauseSpeaking = () => {
+  /**
+   * Stops playback outright — this is a cancel, not a suspend; "Fortsetzen"
+   * restarts from the last fully spoken sentence.
+   *
+   * Deliberately NEVER disabled. It used to be gated on `speaking`, which is
+   * derived from a phase event — and any event that put the phase back to
+   * "ready" mid-playback (a server health check did exactly that) left the
+   * only stop control greyed out while audio kept running. Cancelling when
+   * nothing is playing costs nothing; being unable to cancel costs the user
+   * their loudspeakers.
+   */
+  const stopSpeaking = () => {
     void commands.ttsCancel();
   };
 
@@ -220,12 +231,8 @@ export const TtsSettings = () => {
             >
               {t("tts.speak")}
             </Button>
-            <Button
-              variant="secondary"
-              onClick={pauseSpeaking}
-              disabled={!speaking}
-            >
-              {t("tts.pause")}
+            <Button variant="secondary" onClick={stopSpeaking}>
+              {t("tts.stop")}
             </Button>
             {canResume && (
               <Button variant="secondary" onClick={resumeSpeaking}>

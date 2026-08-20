@@ -164,7 +164,13 @@ impl TtsCore {
     }
 
     fn set_phase(&self, phase: TtsPhase, message: Option<String>) {
-        *self.phase.lock().unwrap() = phase;
+        {
+            let mut slot = self.phase.lock().unwrap();
+            if *slot != phase {
+                log::info!("tts phase: {:?} -> {:?}", *slot, phase);
+            }
+            *slot = phase;
+        }
         let status = TtsStatus {
             phase,
             owns_server: self.owns_server.load(Ordering::Acquire),
@@ -213,7 +219,15 @@ impl TtsCore {
         }
         if self.health_ok(port).await {
             self.owns_server.store(false, Ordering::Release);
-            self.set_phase(TtsPhase::Ready, None);
+            // NICHT waehrend eines laufenden Auftrags auf `Ready` stellen:
+            // die Phase ist zugleich die Anzeige "spricht gerade", und die
+            // Oberflaeche haengt ihren Stopp-Knopf daran. Ein Serverbefund
+            // mitten im Vorlesen hat die Anzeige auf "Bereit" zurueckgesetzt —
+            // damit war der Knopf ausgegraut und das Vorlesen nicht mehr zu
+            // beenden.
+            if !matches!(self.phase(), TtsPhase::Speaking | TtsPhase::Starting) {
+                self.set_phase(TtsPhase::Ready, None);
+            }
             return Ok(());
         }
         Err("no server reachable".into())
@@ -759,6 +773,17 @@ impl TtsManager {
     pub async fn ensure_server(&self) -> Result<(), String> {
         if self.core.ensure_server_core().await.is_ok() {
             return Ok(());
+        }
+
+        // Ein Start laeuft bereits. Fish Speech braucht bis zu zwei Minuten,
+        // bis es gesund meldet — ohne diese Sperre spawnt jeder weitere
+        // Versuch in der Zwischenzeit einen ZWEITEN Serverprozess auf denselben
+        // Port. Beobachtet am 20.08.2026: drei Startzeilen im Protokoll
+        // (17:01:30, 17:02:00, 17:10:23), ein einziges "ready"; die
+        // ueberzaehligen Prozesse belegen VRAM und koennen von der App nicht
+        // mehr beendet werden, weil sie ihr nicht gehoeren.
+        if self.core.phase() == TtsPhase::Starting {
+            return Err("Der Server startet bereits — bitte warten.".to_string());
         }
 
         let settings = crate::settings::get_settings(&self.app);
