@@ -832,12 +832,16 @@ impl TranscriptionManager {
         if *is_loading {
             return;
         }
-        let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
+        let reload_pending =
+            self.reload_model_on_next_use.load(Ordering::Acquire) || self.cpu_bound_but_gpu_free();
         if !reload_pending
             && self.is_model_loaded()
             && self.get_current_model().as_deref() == Some(model_id)
         {
             return;
+        }
+        if reload_pending && self.is_model_loaded() {
+            info!("reloading transcription model (backend re-evaluation pending)");
         }
 
         *is_loading = true;
@@ -865,7 +869,8 @@ impl TranscriptionManager {
             return;
         }
 
-        let reload_pending = self.reload_model_on_next_use.load(Ordering::Acquire);
+        let reload_pending =
+            self.reload_model_on_next_use.load(Ordering::Acquire) || self.cpu_bound_but_gpu_free();
         if !reload_pending && self.is_model_loaded() {
             return;
         }
@@ -886,6 +891,54 @@ impl TranscriptionManager {
             *is_loading = false;
             self_clone.loading_condvar.notify_all();
         });
+    }
+
+    /// Ist das geladene Modell auf die CPU gebunden, obwohl die GPU
+    /// inzwischen frei und laut Einstellung erwuenscht ist? Dann lohnt sich
+    /// ein Neuladen vor dem naechsten Auftrag.
+    ///
+    /// Hintergrund (21.08.2026): waehrend der Fish-Speech-Server lief, hielt
+    /// er fast den ganzen Grafikspeicher. Ein Transkriptionsmodell, das in
+    /// dieser Zeit geladen wurde, fiel unter `Auto` auf die CPU zurueck — und
+    /// blieb dort dauerhaft, weil "gleiches Modell schon geladen" jedes
+    /// Neuladen uebersprang. Der gebundene Backend wurde nur geloggt, nie
+    /// geprueft. Ein Besprechungs-Import nach Serverende lief so unnoetig
+    /// auf der CPU, ein Vielfaches langsamer.
+    ///
+    /// Bewusst nur die eine Richtung: laeuft der Fish-Server (Phase nicht
+    /// Stopped), bleibt ein CPU-gebundenes Modell CPU-gebunden — die GPU ist
+    /// dann besetzt, und ein Ladeversuch dorthin scheiterte ohnehin wieder.
+    fn cpu_bound_but_gpu_free(&self) -> bool {
+        let cpu_bound = self
+            .current_backend()
+            .is_some_and(|b| b.eq_ignore_ascii_case("cpu"));
+        if !cpu_bound {
+            return false;
+        }
+        let settings = get_settings(&self.app_handle);
+        if settings.transcribe_accelerator == TranscribeAcceleratorSetting::Cpu
+            || transcribe_gpu_disabled_for_host()
+        {
+            // CPU ist hier gewollt, kein Fehlerzustand.
+            return false;
+        }
+        if !transcribe_compute_devices()
+            .iter()
+            .any(is_transcribe_gpu_device)
+        {
+            return false;
+        }
+        // Frei ist die GPU erst, wenn kein TTS-Server sie haelt. Ist der
+        // Manager (noch) nicht registriert, gilt der Zustand als unbekannt —
+        // und bei Unbekanntem wird nicht neu geladen.
+        use tauri::Manager;
+        match self
+            .app_handle
+            .try_state::<Arc<crate::managers::tts::TtsManager>>()
+        {
+            Some(tts) => tts.status().phase == crate::managers::tts::state::TtsPhase::Stopped,
+            None => false,
+        }
     }
 
     pub fn get_current_model(&self) -> Option<String> {
