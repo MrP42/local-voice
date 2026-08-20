@@ -4,7 +4,6 @@ import { DictationTab } from "./DictationTab";
 import { SoundTab } from "./SoundTab";
 import { AppTab } from "./AppTab";
 import { PostProcessingSettings } from "../post-processing/PostProcessingSettings";
-import { DictationTest } from "../dictation-test/DictationTest";
 import { AboutSettings } from "../about/AboutSettings";
 import { DebugSettings } from "../debug/DebugSettings";
 import { useSettings } from "../../../hooks/useSettings";
@@ -22,7 +21,9 @@ import { usePersistentState } from "../../../hooks/usePersistentState";
  * the same act of dictating.
  *
  * Adding a setting means putting it in the group it belongs to, here. It does
- * not mean a new tab, and never a new sidebar entry.
+ * not mean a new tab, and never a new sidebar entry. The dictation test sits at
+ * the foot of the Diktat tab for the same reason: it checks what that tab
+ * configures.
  */
 const TABS = [
   {
@@ -47,12 +48,6 @@ const TABS = [
     id: "app",
     labelKey: "settings.app.tabs.app",
     Component: AppTab,
-    enabled: () => true,
-  },
-  {
-    id: "dictationTest",
-    labelKey: "sidebar.dictationTest",
-    Component: DictationTest,
     enabled: () => true,
   },
   {

@@ -58,11 +58,11 @@ entry's tabs (`src/components/settings/app-settings/`):
 
 | Tab | What belongs there |
 |---|---|
-| `DictationTab` | Shortcuts, recognition, how the text is inserted |
+| `DictationTab` | Shortcuts, recognition, how the text is inserted, and the dictation test at its foot |
 | `SoundTab` | Input/output devices, audible feedback |
 | `PostProcessingSettings` | The LLM provider, its switch, the prompts |
 | `AppTab` | Appearance, start-up, storage and files, updates, experimental |
-| `DictationTest` / `AboutSettings` / `DebugSettings` | Tools and information |
+| `AboutSettings` / `DebugSettings` | Information and diagnostics |
 
 A new setting goes into the group inside one of these tabs where a user would
 go looking for it. If none fits, that is a signal the grouping is wrong — fix

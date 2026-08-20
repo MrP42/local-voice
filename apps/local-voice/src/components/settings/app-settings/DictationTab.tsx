@@ -12,6 +12,7 @@ import { TypingToolSetting } from "../TypingTool";
 import { ClipboardHandlingSetting } from "../ClipboardHandling";
 import { AutoSubmit } from "../AutoSubmit";
 import { useSettings } from "../../../hooks/useSettings";
+import { DictationTest } from "../dictation-test/DictationTest";
 
 /**
  * Everything about turning speech into text in another application, in the
@@ -20,6 +21,10 @@ import { useSettings } from "../../../hooks/useSettings";
  * The model's own options are deliberately absent — they live on the model
  * card under "Modelle" (see ModelOptions), because they belong to the model,
  * not to the app.
+ *
+ * The test bench closes the tab rather than occupying one of its own: you use
+ * it right after changing something above it, and a tab would put a navigation
+ * step between the change and the check.
  */
 export const DictationTab: React.FC = () => {
   const { t } = useTranslation();
@@ -51,6 +56,8 @@ export const DictationTab: React.FC = () => {
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <AutoSubmit descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
+
+      <DictationTest />
     </div>
   );
 };

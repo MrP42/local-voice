@@ -6,6 +6,11 @@ dist/
 *.wav
 *.gguf
 *.bin
-models/
+# Heruntergeladene Modellgewichte — NICHT `models/`: das schluckt jedes
+# Verzeichnis dieses Namens, auch Quelltextordner wie
+# src/components/settings/models/. Genau daran ist ModelOptions.tsx
+# unbemerkt aus dem Commit gefallen und erst in CI aufgefallen.
+apps/local-voice/src-tauri/resources/models/*.onnx
+apps/local-voice/src-tauri/resources/models/*.gguf
 **/__pycache__/
 *-workspace/
