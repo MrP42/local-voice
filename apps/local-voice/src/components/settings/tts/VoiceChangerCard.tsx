@@ -5,10 +5,13 @@ import { commands } from "@/bindings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
+import { usePersistentNullableText } from "../../../hooks/usePersistentState";
 
 export const VoiceChangerCard = () => {
   const { t } = useTranslation();
-  const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcript, setTranscript] = usePersistentNullableText(
+    "tts.voicechanger.transcript",
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);

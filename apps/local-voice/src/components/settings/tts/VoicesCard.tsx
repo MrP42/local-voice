@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
-import { commands } from "@/bindings";
+import { commands, type VoiceSample } from "@/bindings";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { Play } from "lucide-react";
+import { AudioPlayer } from "../../ui/AudioPlayer";
 import { useSettings } from "../../../hooks/useSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { Input } from "../../ui/Input";
@@ -25,6 +28,13 @@ export const VoicesCard = () => {
   const [busy, setBusy] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const recordTimer = useRef<number | null>(null);
+  // Which voice the user opened a preview for, and what it is. Loaded on
+  // demand rather than for every voice up front: a preview is a file read, and
+  // most of the time you only want to hear one of them.
+  const [sample, setSample] = useState<{
+    id: string;
+    data: VoiceSample | null;
+  } | null>(null);
 
   const activeVoice = getSetting("tts_voice") ?? null;
 
@@ -55,6 +65,15 @@ export const VoicesCard = () => {
       }
     };
   }, [mode.kind]);
+
+  const togglePreview = async (id: string) => {
+    if (sample?.id === id) {
+      setSample(null);
+      return;
+    }
+    const result = await commands.ttsVoiceSample(id);
+    setSample({ id, data: result.status === "ok" ? result.data : null });
+  };
 
   const startRecording = async () => {
     setError(null);
@@ -179,31 +198,59 @@ export const VoicesCard = () => {
             </div>
           </div>
           {voices.map((id) => (
-            <div
-              key={id}
-              className="flex items-center justify-between gap-2 py-1"
-            >
-              <span className="text-sm font-medium">{id}</span>
-              <div className="flex items-center gap-2">
-                {activeVoice === id ? (
-                  <Badge variant="success">{t("tts.voices.active")}</Badge>
-                ) : (
+            <div key={id} className="py-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-sm font-medium">{id}</span>
+                <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => updateSetting("tts_voice", id)}
+                    onClick={() => void togglePreview(id)}
+                    aria-expanded={sample?.id === id}
                   >
-                    {t("tts.voices.activate")}
+                    <Play width={14} height={14} />
+                    {t("tts.voices.preview")}
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="danger-ghost"
-                  onClick={() => remove(id)}
-                >
-                  {t("tts.voices.delete")}
-                </Button>
+                  {activeVoice === id ? (
+                    <Badge variant="success">{t("tts.voices.active")}</Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => updateSetting("tts_voice", id)}
+                    >
+                      {t("tts.voices.activate")}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="danger-ghost"
+                    onClick={() => remove(id)}
+                  >
+                    {t("tts.voices.delete")}
+                  </Button>
+                </div>
               </div>
+              {sample?.id === id &&
+                (sample.data ? (
+                  <div className="mt-2 space-y-1">
+                    {/* The reference recording itself — this IS the voice, not
+                        a synthesized imitation, and it needs no server. */}
+                    <AudioPlayer
+                      src={convertFileSrc(sample.data.wav_path, "asset")}
+                      className="w-full"
+                    />
+                    {sample.data.transcript && (
+                      <p className="text-xs text-text/60 italic">
+                        {sample.data.transcript}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-text/60">
+                    {t("tts.voices.previewMissing")}
+                  </p>
+                ))}
             </div>
           ))}
           {voices.length === 0 && (

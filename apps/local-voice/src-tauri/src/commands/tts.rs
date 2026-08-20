@@ -63,6 +63,29 @@ pub fn tts_list_voices(app: AppHandle) -> Result<Vec<String>, String> {
     Ok(app.state::<Arc<TtsManager>>().list_voice_ids())
 }
 
+/// Hoerprobe einer Stimme. `None`, wenn die Stimme keine lesbare
+/// Referenzaufnahme (mehr) hat.
+#[derive(serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct VoiceSample {
+    /// Absoluter Pfad zur WAV — die Oberflaeche spielt sie ueber das
+    /// asset-Protokoll ab, ohne sie zu kopieren.
+    pub wav_path: String,
+    /// Der Satz, der in der Aufnahme gesprochen wird.
+    pub transcript: String,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn tts_voice_sample(app: AppHandle, voice_id: String) -> Result<Option<VoiceSample>, String> {
+    Ok(app
+        .state::<Arc<TtsManager>>()
+        .voice_sample(&voice_id)
+        .map(|(wav, transcript)| VoiceSample {
+            wav_path: wav.to_string_lossy().into_owned(),
+            transcript,
+        }))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn tts_record_reference_start(app: AppHandle) -> Result<(), String> {

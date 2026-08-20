@@ -796,6 +796,12 @@ impl TtsManager {
         voices::list_voices(&self.fish_dir())
     }
 
+    /// Hoerprobe einer Stimme: Pfad zur Referenzaufnahme und der gesprochene
+    /// Text dazu.
+    pub fn voice_sample(&self, id: &str) -> Option<(std::path::PathBuf, String)> {
+        voices::voice_sample(&self.fish_dir(), id)
+    }
+
     /// Referenzaufnahme starten (VAD aus — auch leise Passagen gehören in die
     /// Referenz). Stößt parallel das STT-Modell-Laden an, damit das Transkript
     /// beim Stopp ohne Wartezeit entsteht.

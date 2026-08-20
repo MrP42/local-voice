@@ -1120,6 +1120,19 @@ async meetingsGenerateMinutes(meetingId: string) : Promise<Result<MeetingDocumen
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Where this meeting's minutes were filed as Markdown, if the file is there.
+ * The database holds the authoritative copy; this is the convenience copy the
+ * generator drops next to the recording so it can be opened without the app.
+ */
+async meetingsMinutesFile(meetingId: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meetings_minutes_file", { meetingId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsSpeakText(text: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_text", { text }) };
@@ -1171,6 +1184,14 @@ async ttsServerStatus() : Promise<Result<TtsStatus, string>> {
 async ttsListVoices() : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_list_voices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async ttsVoiceSample(voiceId: string) : Promise<Result<VoiceSample | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_voice_sample", { voiceId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1744,6 +1765,20 @@ export type TranslateOutcome = { transcript: string; translation: string }
 export type TtsPhase = "stopped" | "starting" | "ready" | "speaking" | "error"
 export type TtsStatus = { phase: TtsPhase; owns_server: boolean; message: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+/**
+ * Hoerprobe einer Stimme. `None`, wenn die Stimme keine lesbare
+ * Referenzaufnahme (mehr) hat.
+ */
+export type VoiceSample = { 
+/**
+ * Absoluter Pfad zur WAV — die Oberflaeche spielt sie ueber das
+ * asset-Protokoll ab, ohne sie zu kopieren.
+ */
+wav_path: string; 
+/**
+ * Der Satz, der in der Aufnahme gesprochen wird.
+ */
+transcript: string }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 
 /** tauri-specta globals **/

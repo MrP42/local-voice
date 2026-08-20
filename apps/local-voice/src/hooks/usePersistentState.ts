@@ -45,3 +45,23 @@ export function usePersistentState<T extends string>(
 
   return [value, set];
 }
+
+/**
+ * The same, for a value that is either text or "nothing yet" — a transcript
+ * that has not been produced, a file that was never picked.
+ *
+ * `null` is stored as the empty string, which is why an empty string cannot be
+ * told apart from `null` on the way back. For the callers here that is the
+ * same state, and the alternative (a JSON envelope) would put a parse step in
+ * front of every read for no gain.
+ */
+export function usePersistentNullableText(
+  key: string,
+): [string | null, (value: string | null) => void] {
+  const [raw, setRaw] = usePersistentState<string>(key, "");
+  const set = useCallback(
+    (value: string | null) => setRaw(value ?? ""),
+    [setRaw],
+  );
+  return [raw === "" ? null : raw, set];
+}

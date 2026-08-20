@@ -8,20 +8,47 @@ import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import {
+  usePersistentNullableText,
+  usePersistentState,
+} from "../../../hooks/usePersistentState";
 
 export const SummaryCard = () => {
   const { t } = useTranslation();
-  const [source, setSource] = useState("");
-  const [sourceName, setSourceName] = useState<string | null>(null);
-  const [summary, setSummary] = useState("");
-  const [length, setLength] = useState("mittel");
-  const [detail, setDetail] = useState("ausgewogen");
-  const [audience, setAudience] = useState("allgemein");
+  // Everything the user put in or got out survives leaving the page. A summary
+  // costs a model run and, with a local Ollama, minutes of it — throwing it
+  // away because someone clicked "Modelle" is not a state worth returning to.
+  // Deliberately NOT persisted: `error`, `busy`, `saved`. Those describe the
+  // last attempt, not the work, and a stale "in progress" after a restart
+  // would be a lie.
+  const [source, setSource] = usePersistentState<string>(
+    "tts.summary.source",
+    "",
+  );
+  const [sourceName, setSourceName] = usePersistentNullableText(
+    "tts.summary.sourceName",
+  );
+  const [summary, setSummary] = usePersistentState<string>(
+    "tts.summary.text",
+    "",
+  );
+  const [length, setLength] = usePersistentState<string>(
+    "tts.summary.length",
+    "mittel",
+  );
+  const [detail, setDetail] = usePersistentState<string>(
+    "tts.summary.detail",
+    "ausgewogen",
+  );
+  const [audience, setAudience] = usePersistentState<string>(
+    "tts.summary.audience",
+    "allgemein",
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
 
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = usePersistentState<string>("tts.summary.url", "");
 
   const loadUrl = async () => {
     setError(null);

@@ -112,7 +112,9 @@
       "transcriptPlaceholder": "Exact transcript of the recording (auto-generated, editable)",
       "transcriptImportPlaceholder": "Exact transcript of the file (leave empty to auto-transcribe)",
       "save": "Save voice",
-      "discard": "Discard"
+      "discard": "Discard",
+      "preview": "Listen",
+      "previewMissing": "No reference recording found for this voice."
     },
     "translate": {
       "title": "Audio Translation",
@@ -942,7 +944,11 @@
       "empty": "No minutes generated yet.",
       "generating": "Generating minutes…",
       "exportSaved": "Saved to {{path}}",
-      "exportError": "Export failed"
+      "exportError": "Export failed",
+      "copy": "Copy minutes",
+      "copyError": "Could not copy the minutes",
+      "loadError": "The minutes could not be loaded: {{error}}",
+      "autoSaved": "Automatically filed as:"
     },
     "language": {
       "title": "Transcription language",

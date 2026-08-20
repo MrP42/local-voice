@@ -18,6 +18,7 @@ import { Slider } from "../../ui/Slider";
 import { Select } from "../../ui/Select";
 import { ReadingCard } from "./ReadingCard";
 import { SummaryCard } from "./SummaryCard";
+import { usePersistentState } from "../../../hooks/usePersistentState";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -37,7 +38,10 @@ export const TtsSettings = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
   const [status, setStatus] = useState<TtsStatus | null>(null);
-  const [text, setText] = useState("");
+  // The text you were about to have read out survives leaving the page —
+  // losing a pasted article because you glanced at the model list is the
+  // kind of loss nobody forgives.
+  const [text, setText] = usePersistentState<string>("tts.text", "");
   const [startingSeconds, setStartingSeconds] = useState(0);
   const [lastError, setLastError] = useState<string | null>(null);
   const [speakProgress, setSpeakProgress] = useState<{

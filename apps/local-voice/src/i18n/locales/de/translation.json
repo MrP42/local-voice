@@ -112,7 +112,9 @@
       "transcriptPlaceholder": "Exaktes Transkript der Aufnahme (automatisch erzeugt, editierbar)",
       "transcriptImportPlaceholder": "Exaktes Transkript der Datei (leer lassen für automatische Transkription)",
       "save": "Stimme speichern",
-      "discard": "Verwerfen"
+      "discard": "Verwerfen",
+      "preview": "Anhören",
+      "previewMissing": "Zu dieser Stimme wurde keine Referenzaufnahme gefunden."
     },
     "translate": {
       "title": "Audio-Übersetzung",
@@ -942,7 +944,11 @@
       "empty": "Noch kein Protokoll erzeugt.",
       "generating": "Protokoll wird erzeugt…",
       "exportSaved": "Gespeichert unter {{path}}",
-      "exportError": "Export fehlgeschlagen"
+      "exportError": "Export fehlgeschlagen",
+      "copy": "Protokoll kopieren",
+      "copyError": "Das Protokoll konnte nicht kopiert werden",
+      "loadError": "Das Protokoll konnte nicht geladen werden: {{error}}",
+      "autoSaved": "Automatisch abgelegt unter:"
     },
     "language": {
       "title": "Transkriptionssprache",

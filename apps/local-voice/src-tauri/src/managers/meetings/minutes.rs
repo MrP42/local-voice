@@ -12,6 +12,7 @@
 
 use std::sync::Arc;
 
+use log::info;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -635,6 +636,36 @@ pub async fn generate_minutes_with_settings(
         .ok_or_else(|| "Protokoll wurde gespeichert, ist aber nicht lesbar".to_string())
 }
 
+/// Dateiname des automatisch abgelegten Protokolls im Ordner der Besprechung.
+const MINUTES_FILENAME: &str = "protokoll.md";
+
+/// Wo das Protokoll dieser Besprechung als Datei liegt — unabhaengig davon, ob
+/// es schon existiert. Ein Ort, den beide Seiten (Schreiben und Anzeigen)
+/// benutzen, damit sie nicht auseinanderlaufen koennen.
+pub fn minutes_file_path(
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    Ok(super::meetings_data_dir(app)?
+        .join(meeting_id)
+        .join(MINUTES_FILENAME))
+}
+
+/// Schreibt das Protokoll als Markdown neben die Aufzeichnung.
+fn write_minutes_file(
+    app: &tauri::AppHandle,
+    meeting_id: &str,
+    body: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    let path = minutes_file_path(app, meeting_id)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, body)?;
+    info!("meetings: Protokoll abgelegt unter {}", path.display());
+    Ok(path)
+}
+
 pub async fn generate_minutes(
     app: &tauri::AppHandle,
     store: Arc<MeetingStore>,
@@ -642,6 +673,14 @@ pub async fn generate_minutes(
 ) -> Result<MeetingDocument, String> {
     let settings = crate::settings::get_settings(app);
     let document = generate_minutes_with_settings(&settings, store.clone(), meeting_id).await?;
+
+    // Eine Datei neben der Aufzeichnung, ohne dass jemand einen Dialog
+    // bestaetigen muss. Die Datenbank bleibt die Quelle der Wahrheit — schlaegt
+    // das Schreiben fehl, ist das Protokoll trotzdem erzeugt, also wird hier
+    // nur gewarnt statt die Erzeugung zu verwerfen.
+    if let Err(e) = write_minutes_file(app, meeting_id, &document.body) {
+        log::warn!("meetings: Protokolldatei nicht geschrieben ({meeting_id}): {e}");
+    }
 
     // A minutes document now exists — recompute the audio's retention.
     // Anchored to the meeting's actual `ended_at` (falling back to

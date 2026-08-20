@@ -7,6 +7,10 @@ import { Textarea } from "../../ui/Textarea";
 import { Button } from "../../ui/Button";
 import Badge from "../../ui/Badge";
 import { Select } from "../../ui/Select";
+import {
+  usePersistentNullableText,
+  usePersistentState,
+} from "../../../hooks/usePersistentState";
 
 /// Zielsprachen als englische Namen (so erwartet sie der Übersetzungs-Prompt);
 /// die Labels sind Eigennamen der Sprachen, keine UI-Texte.
@@ -26,9 +30,16 @@ const TARGET_LANGS = [
 export const TranslateCard = () => {
   const { t } = useTranslation();
   const { getSetting, updateSetting } = useSettings();
-  const [input, setInput] = useState("");
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [translation, setTranslation] = useState<string | null>(null);
+  const [input, setInput] = usePersistentState<string>(
+    "tts.translate.input",
+    "",
+  );
+  const [transcript, setTranscript] = usePersistentNullableText(
+    "tts.translate.transcript",
+  );
+  const [translation, setTranslation] = usePersistentNullableText(
+    "tts.translate.translation",
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);

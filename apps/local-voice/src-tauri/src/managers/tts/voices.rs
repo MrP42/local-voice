@@ -83,6 +83,34 @@ pub fn list_voices(fish_dir: &Path) -> Vec<String> {
     voices
 }
 
+/// Die Referenzaufnahme einer Stimme samt ihrem Transkript — genau die Datei,
+/// aus der Fish Speech die Stimme nachbildet. Sie ist damit auch die
+/// ehrlichste Hoerprobe: kein erzeugtes Beispiel, das erst einen Serverstart
+/// und Sekunden GPU-Zeit kostet, sondern die Stimme selbst.
+///
+/// Genommen wird das erste WAV mit gleichnamiger .lab-Datei — dieselbe
+/// Gueltigkeitsregel wie in `list_voices`, damit die Liste und die Hoerprobe
+/// nicht auseinanderlaufen koennen.
+pub fn voice_sample(fish_dir: &Path, id: &str) -> Option<(PathBuf, String)> {
+    let dir = voice_dir(fish_dir, id);
+    let mut candidates: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "wav") && path.with_extension("lab").exists()
+        })
+        .collect();
+    // Deterministic: the same voice must always preview the same take.
+    candidates.sort();
+    let wav = candidates.into_iter().next()?;
+    let transcript = std::fs::read_to_string(wav.with_extension("lab"))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Some((wav, transcript))
+}
+
 /// Aufnahme (16 kHz mono f32) als Referenz speichern: sample.wav (16-bit PCM)
 /// plus sample.lab (Transkript, UTF-8 ohne BOM).
 pub fn save_voice(

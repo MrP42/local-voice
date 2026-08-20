@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::managers::meetings::import::import_media_file;
-use crate::managers::meetings::minutes::generate_minutes;
+use crate::managers::meetings::minutes::{generate_minutes, minutes_file_path};
 use crate::managers::meetings::recorder::MeetingRecorderManager;
 use crate::managers::meetings::retention::delete_audio_files;
 use crate::managers::meetings::retranscribe::retranscribe_meeting;
@@ -171,6 +171,19 @@ pub async fn meetings_generate_minutes(
 ) -> Result<MeetingDocument, String> {
     let store = Arc::clone(&store);
     generate_minutes(&app, store, &meeting_id).await
+}
+
+/// Where this meeting's minutes were filed as Markdown, if the file is there.
+/// The database holds the authoritative copy; this is the convenience copy the
+/// generator drops next to the recording so it can be opened without the app.
+#[tauri::command]
+#[specta::specta]
+pub async fn meetings_minutes_file(
+    app: tauri::AppHandle,
+    meeting_id: String,
+) -> Result<Option<String>, String> {
+    let path = minutes_file_path(&app, &meeting_id).map_err(|e| e.to_string())?;
+    Ok(path.exists().then(|| path.to_string_lossy().into_owned()))
 }
 
 /// Imports a local audio/video file or a VTT/SRT subtitle file as a new
