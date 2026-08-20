@@ -252,11 +252,13 @@ export const TtsSettings = () => {
                 {t("tts.serverStart")}
               </Button>
             ) : (
+              // Nicht mehr an `owns_server` gebunden: der Server belegt rund
+              // 17 GB VRAM, und wer ihn von Hand gestartet hat, musste bisher
+              // in den Taskmanager, um seine Grafikkarte zurueckzubekommen.
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={stopServer}
-                disabled={!status?.owns_server}
                 title={
                   status?.owns_server ? undefined : t("tts.externalServerHint")
                 }

@@ -40,9 +40,9 @@ pub async fn tts_server_start(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn tts_server_stop(app: AppHandle) -> Result<(), String> {
-    app.state::<Arc<TtsManager>>().stop_server();
-    Ok(())
+pub async fn tts_server_stop(app: AppHandle) -> Result<(), String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.stop_server_any().await
 }
 
 #[tauri::command]

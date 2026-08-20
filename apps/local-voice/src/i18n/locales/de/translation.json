@@ -86,7 +86,7 @@
     },
     "serverStart": "Server starten",
     "serverStop": "Server stoppen",
-    "externalServerHint": "Dieser Server wurde außerhalb der App gestartet und wird von hier nie beendet.",
+    "externalServerHint": "Dieser Server wurde außerhalb der App gestartet. Beenden hier schließt diesen Prozess.",
     "status": {
       "stopped": "Server aus",
       "starting": "Startet… ({{seconds}} s)",

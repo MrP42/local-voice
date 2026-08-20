@@ -218,7 +218,15 @@ impl TtsCore {
             return Ok(());
         }
         if self.health_ok(port).await {
-            self.owns_server.store(false, Ordering::Release);
+            // `owns_server` wird hier NICHT mehr auf false gesetzt. Der Wert ist
+            // nur an zwei Stellen wahr gemeint: true beim eigenen Spawn, false
+            // beim eigenen Stopp. Diese Zeile hat ihn bei JEDER Gesundheits-
+            // pruefung auf false gezwungen — also auch fuer einen Server, den
+            // die App selbst gestartet hatte. Danach hielt sie ihn fuer fremd,
+            // "Server stoppen" war ausgegraut und der Prozess blieb mit seinem
+            // VRAM stehen, bis jemand ihn im Taskmanager erschoss. Wer nichts
+            // gespawnt hat, hat hier ohnehin schon false stehen.
+            //
             // NICHT waehrend eines laufenden Auftrags auf `Ready` stellen:
             // die Phase ist zugleich die Anzeige "spricht gerade", und die
             // Oberflaeche haengt ihren Stopp-Knopf daran. Ein Serverbefund
@@ -1662,6 +1670,43 @@ impl TtsManager {
     }
 
     /// Beendet AUSSCHLIESSLICH einen selbst gestarteten Serverprozess.
+    /// Den Fish-Speech-Server beenden — auch einen, den die App nicht selbst
+    /// gestartet hat.
+    ///
+    /// Frueher hat sie fremde Prozesse grundsaetzlich in Ruhe gelassen. Das ist
+    /// als Regel vertretbar, in der Praxis aber unbrauchbar: der Server belegt
+    /// rund 17 GB VRAM, und wer ihn einmal von Hand gestartet hat, musste zum
+    /// Taskmanager greifen, um seine Grafikkarte zurueckzubekommen.
+    ///
+    /// Erkannt wird er ueber zwei Merkmale zugleich — er lauscht auf dem
+    /// eingestellten TTS-Port UND antwortet auf `/v1/health`. Ein fremdes
+    /// Programm, das zufaellig denselben Port belegt, wird damit nicht
+    /// getroffen; die Gesundheitsantwort ist der Ausweis.
+    pub async fn stop_server_any(&self) -> Result<(), String> {
+        self.core.cancel_core();
+
+        if self.core.owns_server() {
+            self.kill_owned_child();
+            self.core.owns_server.store(false, Ordering::Release);
+            self.core.set_phase(TtsPhase::Stopped, None);
+            return Ok(());
+        }
+
+        let port = *self.core.port.lock().unwrap();
+        if !self.core.health_ok(port).await {
+            // Nichts da, was zu beenden waere — Zustand nur aufraeumen.
+            self.core.set_phase(TtsPhase::Stopped, None);
+            return Ok(());
+        }
+        let pid = listening_pid(port)
+            .ok_or_else(|| format!("Kein Prozess gefunden, der auf Port {port} lauscht"))?;
+        kill_pid(pid)?;
+        log::info!("fish-speech (fremd gestartet, PID {pid}) auf Port {port} beendet");
+        self.core.set_phase(TtsPhase::Stopped, None);
+        Ok(())
+    }
+
+    /// Nur den selbst gestarteten Prozess beenden (Idle-Watchdog, Herunterfahren).
     pub fn stop_server(&self) {
         if !self.core.owns_server() {
             return;
@@ -1680,6 +1725,57 @@ impl TtsManager {
             let _ = child.wait();
         }
     }
+}
+
+/// PID des Prozesses, der auf `127.0.0.1:port` lauscht.
+///
+/// Ueber `netstat -ano` statt einer Crate: das Werkzeug gehoert zu Windows, die
+/// Ausgabe ist seit Jahrzehnten stabil, und der Alternativweg (IP Helper API)
+/// waere fuer eine einzige Abfrage viel unsafe-Code.
+fn listening_pid(port: u16) -> Option<u32> {
+    let output = std::process::Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(_proto), Some(local), Some(_remote), Some(state), Some(pid)) = (
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+            fields.next(),
+        ) else {
+            continue;
+        };
+        if !state.eq_ignore_ascii_case("LISTENING") {
+            continue;
+        }
+        // Nur die Loopback-Adresse: der Server der App laeuft auf 127.0.0.1,
+        // und ein fremder Dienst auf 0.0.0.0 desselben Ports geht uns nichts an.
+        let matches_port = local
+            .rsplit_once(':')
+            .is_some_and(|(host, p)| p == port.to_string() && host.contains("127.0.0.1"));
+        if matches_port {
+            return pid.parse().ok();
+        }
+    }
+    None
+}
+
+fn kill_pid(pid: u32) -> Result<(), String> {
+    let output = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output()
+        .map_err(|e| format!("taskkill nicht ausfuehrbar: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "Prozess {pid} liess sich nicht beenden: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    ))
 }
 
 #[cfg(test)]
@@ -1765,6 +1861,38 @@ mod tests {
         assert!(
             !core.owns_server(),
             "extern erkannt → kein Besitz, kein Kill"
+        );
+    }
+
+    #[tokio::test]
+    async fn ein_selbst_gestarteter_server_bleibt_nach_der_gesundheitspruefung_eigener() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let port = spawn_mock(calls, Arc::new(std::sync::Mutex::new(Vec::new()))).await;
+        let core = TtsCore::for_test(port);
+        // So sieht es aus, nachdem die App selbst gespawnt hat.
+        core.owns_server.store(true, Ordering::Release);
+
+        core.ensure_server_core().await.unwrap();
+
+        assert!(
+            core.owns_server(),
+            "die Gesundheitspruefung hat den eigenen Server enteignet — danach              war 'Server stoppen' ausgegraut und der Prozess blieb mit seinem              VRAM stehen"
+        );
+    }
+
+    #[tokio::test]
+    async fn eine_laufende_wiedergabe_wird_von_der_gesundheitspruefung_nicht_beendet() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let port = spawn_mock(calls, Arc::new(std::sync::Mutex::new(Vec::new()))).await;
+        let core = TtsCore::for_test(port);
+        core.set_phase(TtsPhase::Speaking, None);
+
+        core.ensure_server_core().await.unwrap();
+
+        assert_eq!(
+            core.phase(),
+            TtsPhase::Speaking,
+            "die Phase ist zugleich die Anzeige 'spricht gerade'; wird sie              mitten im Vorlesen auf 'Bereit' gesetzt, graut die Oberflaeche              ihren einzigen Stopp-Knopf aus"
         );
     }
 
