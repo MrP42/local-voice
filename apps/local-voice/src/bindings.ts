@@ -1389,10 +1389,38 @@ async ttsVoicechangeFile(wavPath: string) : Promise<Result<string, string>> {
 },
 /**
  * Den Vorlesetext samt Sprecherwechseln in eine WAV-Datei schreiben.
+ * 
+ * Kehrt SOFORT zurueck; der Lauf arbeitet im Hintergrund weiter und meldet
+ * sich ueber `tts-export-progress`. Ein langer Text braucht Minuten — die
+ * Oberflaeche darf solange nicht blockiert sein, und der Fortschritt gehoert
+ * sichtbar auf den Schirm statt in eine wartende Zusage.
  */
 async ttsSpeakToFile(text: string, outPath: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_speak_to_file", { text, outPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Laufenden Datei-Export abbrechen.
+ */
+async ttsExportCancel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_export_cancel") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Freitext-Vorlesen an einer bestimmten Satzposition fortsetzen — die Basis
+ * fuer "vorheriger/naechster Satz" in der Transportzeile.
+ */
+async ttsSpeakSeek(delta: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("tts_speak_seek", { delta }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

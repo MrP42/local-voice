@@ -271,15 +271,43 @@ pub async fn tts_voicechange_file(app: AppHandle, wav_path: String) -> Result<St
 }
 
 /// Den Vorlesetext samt Sprecherwechseln in eine WAV-Datei schreiben.
+///
+/// Kehrt SOFORT zurueck; der Lauf arbeitet im Hintergrund weiter und meldet
+/// sich ueber `tts-export-progress`. Ein langer Text braucht Minuten — die
+/// Oberflaeche darf solange nicht blockiert sein, und der Fortschritt gehoert
+/// sichtbar auf den Schirm statt in eine wartende Zusage.
 #[tauri::command]
 #[specta::specta]
-pub async fn tts_speak_to_file(
-    app: AppHandle,
-    text: String,
-    out_path: String,
-) -> Result<(), String> {
+pub fn tts_speak_to_file(app: AppHandle, text: String, out_path: String) -> Result<(), String> {
     let tts = app.state::<Arc<TtsManager>>().inner().clone();
-    tts.speak_to_file(&text, &out_path).await.map(|_| ())
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = tts.speak_to_file(&text, &out_path).await {
+            log::warn!("tts export failed: {e}");
+            let _ = tauri::Emitter::emit(
+                &tts.app_handle(),
+                "tts-export-error",
+                serde_json::json!({ "message": e }),
+            );
+        }
+    });
+    Ok(())
+}
+
+/// Laufenden Datei-Export abbrechen.
+#[tauri::command]
+#[specta::specta]
+pub fn tts_export_cancel(app: AppHandle) -> Result<(), String> {
+    app.state::<Arc<TtsManager>>().cancel_export();
+    Ok(())
+}
+
+/// Freitext-Vorlesen an einer bestimmten Satzposition fortsetzen — die Basis
+/// fuer "vorheriger/naechster Satz" in der Transportzeile.
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_speak_seek(app: AppHandle, delta: i32) -> Result<(), String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.speak_seek(delta).await.map(|_| ())
 }
 
 #[tauri::command]

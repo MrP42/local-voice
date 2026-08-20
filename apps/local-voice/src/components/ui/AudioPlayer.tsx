@@ -22,6 +22,18 @@ const GLYPHS = {
     </>
   ),
   stop: <rect x="6.2" y="6.2" width="11.6" height="11.6" rx="1.6" />,
+  prev: (
+    <>
+      <rect x="5.4" y="5.4" width="2.6" height="13.2" rx="1.1" />
+      <path d="M19 5.4 19 18.6 9.2 12Z" />
+    </>
+  ),
+  next: (
+    <>
+      <path d="M5 5.4 5 18.6 14.8 12Z" />
+      <rect x="16" y="5.4" width="2.6" height="13.2" rx="1.1" />
+    </>
+  ),
   /* Ring stays hollow so the number inside it keeps its contrast. */
   back: (
     <>

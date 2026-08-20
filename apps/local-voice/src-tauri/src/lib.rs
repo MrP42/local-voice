@@ -1410,6 +1410,8 @@ pub fn run(cli_args: CliArgs) {
             commands::tts::tts_voicechange_record_stop,
             commands::tts::tts_voicechange_file,
             commands::tts::tts_speak_to_file,
+            commands::tts::tts_export_cancel,
+            commands::tts::tts_speak_seek,
             commands::tts::tts_synthesize_to_file,
             helpers::clamshell::is_laptop,
         ])

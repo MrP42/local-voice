@@ -511,6 +511,10 @@ pub struct TtsManager {
     /// Letzter Freitext-Sprechauftrag (Sätze + Position) — Basis für
     /// Pause/Weiter im Vorlesen-Feld, bewusst nicht persistiert.
     speak_session: Mutex<Option<SpeakSession>>,
+    /// Abbruch-Flag des laufenden Datei-Exports. EIGENES Flag, nicht das der
+    /// Wiedergabe: sonst würde ein Klick auf Stopp im Player den Export
+    /// abwürgen (und umgekehrt) — zwei Vorgänge, zwei Schalter.
+    export_cancel: Mutex<Arc<AtomicBool>>,
 }
 
 struct SpeakSession {
@@ -602,6 +606,7 @@ impl TtsManager {
             pending_reference: Mutex::new(None),
             reading: Mutex::new(None),
             speak_session: Mutex::new(None),
+            export_cancel: Mutex::new(Arc::new(AtomicBool::new(false))),
         });
         manager.refresh_from_settings();
 
@@ -1250,9 +1255,26 @@ impl TtsManager {
         let port = *self.core.port.lock().unwrap();
         let seed = *self.core.seed.lock().unwrap();
 
+        // Eigenes Abbruch-Flag je Lauf; ein neuer Export storniert den alten.
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut slot = self.export_cancel.lock().unwrap();
+            slot.store(true, Ordering::Release);
+            *slot = cancel.clone();
+        }
+        let total = utterances.len() as u32;
+        self.emit_export_progress(0, total, false);
+
         let mut writer: Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>> = None;
         let mut written = 0usize;
-        for (sentence, voice) in &utterances {
+        for (index, (sentence, voice)) in utterances.iter().enumerate() {
+            if cancel.load(Ordering::Acquire) {
+                // Halbe Datei ist schlimmer als keine: sie sieht fertig aus.
+                drop(writer);
+                let _ = std::fs::remove_file(out_path);
+                self.emit_export_progress(index as u32, total, true);
+                return Err("abgebrochen".to_string());
+            }
             let Some(part) = protocol::prepare_text(sentence, max_chars) else {
                 continue;
             };
@@ -1276,13 +1298,57 @@ impl TtsManager {
                     .map_err(|e| format!("could not write {out_path}: {e}"))?;
                 written += 1;
             }
+            self.emit_export_progress(index as u32 + 1, total, false);
         }
         writer
             .ok_or_else(|| "nichts zu schreiben".to_string())?
             .finalize()
             .map_err(|e| format!("could not finish {out_path}: {e}"))?;
         *self.core.last_used.lock().unwrap() = Instant::now();
+        self.emit_export_progress(total, total, false);
         Ok(written)
+    }
+
+    /// Zugriff auf den AppHandle fuer Ereignisse aus Hintergrundlaeufen.
+    pub fn app_handle(&self) -> tauri::AppHandle {
+        self.app.clone()
+    }
+
+    /// Um `delta` Saetze springen und von dort weiterlesen.
+    ///
+    /// Das Vorlesen ist satzweise aufgebaut, nicht als durchgehender Strom —
+    /// ein Sprung um 15 Sekunden gaebe es hier gar nicht. Der Satz ist die
+    /// Einheit, in der man sich in vorgelesenem Text bewegt.
+    pub async fn speak_seek(self: &Arc<Self>, delta: i32) -> Result<usize, String> {
+        let (sentences, target) = {
+            let mut guard = self.speak_session.lock().unwrap();
+            let session = guard.as_mut().ok_or("nichts zum Springen")?;
+            let len = session.sentences.len() as i32;
+            let next = (session.position as i32 + delta).clamp(0, (len - 1).max(0));
+            session.position = next as usize;
+            (session.sentences.clone(), next as usize)
+        };
+        self.run_speak_session(sentences, target).await
+    }
+
+    /// Laufenden Datei-Export abbrechen.
+    pub fn cancel_export(&self) {
+        self.export_cancel
+            .lock()
+            .unwrap()
+            .store(true, Ordering::Release);
+    }
+
+    fn emit_export_progress(&self, position: u32, total: u32, cancelled: bool) {
+        use tauri::Emitter;
+        let _ = self.app.emit(
+            "tts-export-progress",
+            serde_json::json!({
+                "position": position,
+                "total": total,
+                "cancelled": cancelled,
+            }),
+        );
     }
 
     /// Aktuell konfiguriertes Export-Format ("wav" | "mp3" | "opus") — für

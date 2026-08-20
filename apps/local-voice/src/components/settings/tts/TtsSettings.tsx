@@ -21,6 +21,7 @@ import { SummaryCard } from "./SummaryCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
+import { Dices } from "lucide-react";
 
 const badgeVariant = (
   phase: TtsStatus["phase"] | undefined,
@@ -52,6 +53,10 @@ export const TtsSettings = () => {
   } | null>(null);
   const [currentSentence, setCurrentSentence] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{
+    position: number;
+    total: number;
+  } | null>(null);
   const startingTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -69,6 +74,27 @@ export const TtsSettings = () => {
         setLastError(null);
       }
     });
+    const unExport = listen<{
+      position: number;
+      total: number;
+      cancelled: boolean;
+    }>("tts-export-progress", (e) => {
+      const { position, total, cancelled } = e.payload;
+      if (cancelled || (total > 0 && position >= total)) {
+        setSaving(false);
+        setExportProgress(null);
+        return;
+      }
+      setExportProgress({ position, total });
+    });
+    const unExportError = listen<{ message: string }>(
+      "tts-export-error",
+      (e) => {
+        setSaving(false);
+        setExportProgress(null);
+        setLastError(e.payload.message);
+      },
+    );
     const unProgress = listen<{ position: number; total: number }>(
       "tts-speak-progress",
       (e) => setSpeakProgress(e.payload),
@@ -81,6 +107,8 @@ export const TtsSettings = () => {
     );
     return () => {
       un.then((f) => f());
+      unExport.then((f) => f());
+      unExportError.then((f) => f());
       unProgress.then((f) => f());
       unSentence.then((f) => f());
     };
@@ -114,6 +142,10 @@ export const TtsSettings = () => {
   const starting = phase === "starting";
 
   const speak = async () => {
+    if (canResume) {
+      await resumeSpeaking();
+      return;
+    }
     setLastError(null);
     setSpeakProgress(null);
     const result = await commands.ttsSpeakText(text);
@@ -131,8 +163,19 @@ export const TtsSettings = () => {
    * nothing is playing costs nothing; being unable to cancel costs the user
    * their loudspeakers.
    */
+  /** Pause: anhalten, Position behalten — Play setzt genau dort fort. */
+  const pauseSpeaking = () => {
+    void commands.ttsCancel();
+  };
+
+  /**
+   * Stop: anhalten UND an den Anfang. Das ist der Unterschied zu Pause und der
+   * einzige Grund, warum das Design-System beide nebeneinander erlaubt —
+   * decken sie sich, gehoert Stopp weg.
+   */
   const stopSpeaking = () => {
     void commands.ttsCancel();
+    setSpeakProgress(null);
   };
 
   const resumeSpeaking = async () => {
@@ -154,9 +197,23 @@ export const TtsSettings = () => {
     });
     if (typeof target !== "string") return;
     setSaving(true);
+    setExportProgress({ position: 0, total: 0 });
+    // Returns at once; the run reports itself through tts-export-progress.
     const result = await commands.ttsSpeakToFile(text, target);
-    setSaving(false);
-    if (result.status === "error") setLastError(result.error);
+    if (result.status === "error") {
+      setSaving(false);
+      setExportProgress(null);
+      setLastError(result.error);
+    }
+  };
+
+  const cancelExport = () => {
+    void commands.ttsExportCancel();
+  };
+
+  /** One sentence back or forward — the unit spoken text moves in. */
+  const seekSentence = (delta: number) => {
+    void commands.ttsSpeakSeek(delta);
   };
 
   const canResume =
@@ -229,16 +286,40 @@ export const TtsSettings = () => {
             {/* Transport per design system: round glyph buttons, exactly one
                 primary. Reading aloud is playback, so it gets the same family
                 as every audio player in the app — not text buttons. */}
+            {/* Vollstaendige Transportzeile nach Katalog: von der Mitte nach
+                aussen — Hauptschalter, daneben die Satzspruenge; hinter dem
+                Trenner die Aktionen, die die Wiedergabe nicht fortbewegen.
+                Statt ±15 s stehen hier Saetze: vorgelesener Text ist satzweise
+                aufgebaut, eine Sekundenmarke gibt es darin nicht. */}
             <div className="mediabar mediabar--start">
               <button
                 type="button"
+                className="mbtn"
+                onClick={() => seekSentence(-1)}
+                disabled={!canResume && !speaking}
+                aria-label={t("tts.previousSentence")}
+              >
+                <Glyph name="prev" />
+              </button>
+              <button
+                type="button"
                 className="mbtn mbtn--primary mbtn--lg"
-                onClick={speaking ? stopSpeaking : speak}
-                disabled={!speaking && (text.trim().length === 0 || starting)}
-                aria-label={speaking ? t("tts.stop") : t("tts.speak")}
+                onClick={speaking ? pauseSpeaking : speak}
+                disabled={!speaking && text.trim().length === 0}
+                aria-label={speaking ? t("tts.pause") : t("tts.speak")}
               >
                 <Glyph name={speaking ? "pause" : "play"} />
               </button>
+              <button
+                type="button"
+                className="mbtn"
+                onClick={() => seekSentence(1)}
+                disabled={!canResume && !speaking}
+                aria-label={t("tts.nextSentence")}
+              >
+                <Glyph name="next" />
+              </button>
+              <span className="mediabar__sep" />
               <button
                 type="button"
                 className="mbtn"
@@ -247,16 +328,6 @@ export const TtsSettings = () => {
               >
                 <Glyph name="stop" />
               </button>
-              {canResume && (
-                <button
-                  type="button"
-                  className="mbtn"
-                  onClick={resumeSpeaking}
-                  aria-label={t("tts.resume")}
-                >
-                  <Glyph name="play" />
-                </button>
-              )}
             </div>
             <Button
               variant="secondary"
@@ -265,6 +336,36 @@ export const TtsSettings = () => {
             >
               {saving ? t("tts.savingAudio") : t("tts.saveAudio")}
             </Button>
+            {saving && (
+              <div className="flex items-center gap-2">
+                <div className="w-32 h-1.5 rounded-full bg-mid-gray/20 overflow-hidden">
+                  <div
+                    className="h-full bg-logo-primary transition-[width] duration-200"
+                    style={{
+                      width: exportProgress?.total
+                        ? `${(exportProgress.position / exportProgress.total) * 100}%`
+                        : "0%",
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-text/60 tabular-nums">
+                  {exportProgress?.total
+                    ? t("tts.sentenceProgress", {
+                        position: exportProgress.position,
+                        total: exportProgress.total,
+                      })
+                    : t("tts.savingAudio")}
+                </span>
+                <button
+                  type="button"
+                  className="mbtn mbtn--sm"
+                  onClick={cancelExport}
+                  aria-label={t("tts.cancelExport")}
+                >
+                  <Glyph name="stop" />
+                </button>
+              </div>
+            )}
             {speakProgress && (
               <span className="text-xs text-text/60">
                 {t("tts.sentenceProgress", {
@@ -382,16 +483,37 @@ export const TtsSettings = () => {
           grouped={true}
           layout="horizontal"
         >
-          <Input
-            type="number"
-            value={getSetting("tts_seed") ?? 42}
-            onChange={(e) => {
-              const value = parseInt(e.target.value, 10);
-              if (!isNaN(value)) updateSetting("tts_seed", value);
-            }}
-            disabled={isUpdating("tts_seed")}
-            className="w-24"
-          />
+          {/* Der Seed bestimmt, wie die Standardstimme klingt. Er ist fest
+              einstellbar, damit eine gefundene Stimme wiederholbar bleibt —
+              und wuerfelbar, weil man sie nur durch Ausprobieren findet. Der
+              gewuerfelte Wert landet sichtbar im Feld; genau der ist die
+              Notiz, mit der man spaeter zurueckkommt. */}
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              value={getSetting("tts_seed") ?? 42}
+              onChange={(e) => {
+                const value = parseInt(e.target.value, 10);
+                if (!isNaN(value)) updateSetting("tts_seed", value);
+              }}
+              disabled={isUpdating("tts_seed")}
+              className="w-28"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                updateSetting(
+                  "tts_seed",
+                  Math.floor(Math.random() * 2_147_483_647) + 1,
+                )
+              }
+              disabled={isUpdating("tts_seed")}
+            >
+              <Dices width={14} height={14} />
+              {t("tts.settings.rollSeed")}
+            </Button>
+          </div>
         </SettingContainer>
         <SettingContainer
           title={t("tts.settings.idleMinutes")}
