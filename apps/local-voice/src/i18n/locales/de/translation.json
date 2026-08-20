@@ -240,6 +240,10 @@
       "cohere-int8": {
         "name": "Cohere",
         "description": "Ein großes, langsameres, aber sehr genaues mehrsprachiges Modell."
+      },
+      "handy-computer/parakeet-primeline-gguf": {
+        "name": "Parakeet TDT 0.6B primeLine (deutsch)",
+        "description": "Auf Deutsch nachtrainiert — im Katalog das genaueste Modell für Deutsch (WER 6,0 auf FLEURS-DE). 25 europäische Sprachen, kein Streaming."
       }
     },
     "errors": {
