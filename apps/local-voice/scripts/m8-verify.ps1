@@ -201,7 +201,8 @@ if (Test-Path $manifestPath) {
 $privacyWords = if ($manifest) { $manifest.privacy_words } else { @('Quartalsbericht', 'Nordlicht') }
 $vttCues = if ($manifest) { $manifest.vtt_cues_ms } else { $null }
 
-$LogFile = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.localvoiceai\logs\handy.log'
+$LogDir  = Join-Path $env:LOCALAPPDATA 'de.wolffappliedai.localvoiceai\logs'
+$LogFile = Join-Path $LogDir 'handy.log'
 $SettingsFile = Join-Path $env:APPDATA 'de.wolffappliedai.localvoiceai\settings_store.json'
 
 Write-Host "app:      $AppExe"
@@ -315,7 +316,7 @@ Invoke-Scenario 'log-privacy' {
     # Reads the real log after a real import instead of auditing the source.
     # An audit missed a leak once already (M3, 2026-08-17: "Transcription
     # result: {}"), so only measurement counts here.
-    if (-not (Test-Path $LogFile)) { throw "log file not found: $LogFile" }
+    if (-not (Test-Path $LogDir)) { throw "log directory not found: $LogDir" }
 
     $imp = Import-Fixture 'm8_short_de.wav'
     $d = Get-MeetingDump $imp.Id
@@ -325,19 +326,28 @@ Invoke-Scenario 'log-privacy' {
                   Data = $d }
     }
 
+    # handy.log rotates at 500 KB (KeepOne), so probing only the current file
+    # would be blind to a leak that has already rotated away. The sweep takes
+    # every handy.log* in the log directory - the rotated copies are just as
+    # readable, and just as much a data leak.
+    $logFiles = @(Get-ChildItem -Path $LogDir -Filter 'handy.log*' -File -ErrorAction SilentlyContinue |
+                  Sort-Object Name)
+    if ($logFiles.Count -eq 0) { throw "no log files found in: $LogDir" }
+
     $leaks = @()
     foreach ($w in $privacyWords) {
-        $hits = @(Select-String -Path $LogFile -Pattern ([regex]::Escape($w)) -ErrorAction SilentlyContinue)
-        if ($hits.Count -gt 0) { $leaks += ("{0} x{1}" -f $w, $hits.Count) }
+        $hits = @(Select-String -Path $logFiles.FullName -Pattern ([regex]::Escape($w)) -ErrorAction SilentlyContinue)
+        if ($hits.Count -gt 0) {
+            $where = ($hits | ForEach-Object { Split-Path -Leaf $_.Path } | Sort-Object -Unique) -join '/'
+            $leaks += ("{0} x{1} in {2}" -f $w, $hits.Count, $where)
+        }
     }
-    $logKb = [math]::Round((Get-Item $LogFile).Length / 1KB, 1)
-    # handy.log rotates at 500 KB with KeepOne, so this probe only ever sees
-    # the current file. That is enough here (the import above wrote into it
-    # seconds ago), but a leak from an earlier rotation would not be visible.
-    $script:Notes += ("log-privacy: handy.log war beim Test {0} KB gross (Rotation bei 500 KB, KeepOne) - geprueft wurde die aktuelle Datei." -f $logKb)
+    $totalKb = [math]::Round((($logFiles | Measure-Object Length -Sum).Sum) / 1KB, 1)
+    $fileList = ($logFiles | ForEach-Object { "{0} ({1} KB)" -f $_.Name, [math]::Round($_.Length / 1KB, 1) }) -join ', '
+    $script:Notes += ("log-privacy: geprueft wurden alle {0} Logdatei(en) im Log-Verzeichnis (Rotation bei 500 KB, KeepOne): {1}." -f $logFiles.Count, $fileList)
     $detail = if ($leaks.Count -eq 0) {
-        "no spoken word appears in handy.log ({0} words probed, transcript {1} chars, log {2} KB)" -f `
-            @($privacyWords).Count, $d.total_text_chars, $logKb
+        "no spoken word appears in any log file ({0} words probed, transcript {1} chars, {2} file(s), {3} KB total: {4})" -f `
+            @($privacyWords).Count, $d.total_text_chars, $logFiles.Count, $totalKb, $fileList
     } else {
         "LEAK: " + ($leaks -join ', ')
     }
