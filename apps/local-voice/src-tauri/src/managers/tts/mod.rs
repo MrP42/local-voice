@@ -630,6 +630,50 @@ const READING_STORE: &str = "reading_progress.json";
 const DISK_CACHE_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// FIFO-Verdrängung nach Änderungszeit — läuft einmal beim App-Start.
+/// Die aussagekraeftigsten Zeilen aus dem Startprotokoll des Servers.
+///
+/// Der Kindprozess schrieb seine Ausgabe bisher nach `Stdio::null()`. Faellt
+/// er beim Start um, sah der Nutzer nur "exit code: 3" — die Erklaerung stand
+/// derweil in einem Traceback, den niemand je zu Gesicht bekam. Beobachtet am
+/// 21.08.2026: hinter Code 3 steckte eine durch einen Bluescheck zerstoerte
+/// Datei im Compile-Cache von PyTorch, sichtbar nur im Traceback.
+///
+/// Gesucht wird die letzte Zeile, die wie eine Fehlerursache aussieht
+/// (Exception-Zeilen tragen sie in Python am Ende), sonst die letzte nicht
+/// leere Zeile. Bewusst wenige Zeichen: das gehoert in eine Fehlermeldung,
+/// nicht in ein Protokollfenster — der vollstaendige Text steht in der Datei.
+pub fn startup_error_summary(log: &str) -> Option<String> {
+    const MARKERS: [&str; 6] = [
+        "Error",
+        "error:",
+        "Exception",
+        "raised",
+        "failed",
+        "Traceback",
+    ];
+    let lines: Vec<&str> = log
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let picked = lines
+        .iter()
+        .rev()
+        // Die Zeile mit dem Ursachenwort, aber nicht die Rahmenzeilen des
+        // Tracebacks selbst ("Traceback (most recent call last):", "File ...").
+        .find(|l| {
+            MARKERS.iter().any(|m| l.contains(m))
+                && !l.starts_with("File \"")
+                && !l.starts_with("Traceback")
+        })
+        .or_else(|| lines.last())?;
+    let mut summary: String = picked.chars().take(300).collect();
+    if picked.chars().count() > 300 {
+        summary.push('…');
+    }
+    Some(summary)
+}
+
 /// WAV-Blob zu Mono-Downmix, Abtastrate und Spitzenwert.
 ///
 /// `None` bei allem, was `hound` nicht lesen kann — die Wiedergabe läuft dann
@@ -1029,6 +1073,16 @@ impl TtsManager {
         // Liegengebliebenen (abgestürzten) eigenen Prozess aufräumen.
         self.kill_owned_child();
 
+        // Ausgabe des Kindprozesses in eine Datei statt ins Nichts. Ohne das
+        // ist ein Startfehler nicht diagnostizierbar: der Nutzer sieht eine
+        // Nummer, die Erklaerung steht in einem Traceback, den niemand liest.
+        let startup_log = self.startup_log_path();
+        let log_handles = startup_log.as_ref().and_then(|path| {
+            let file = std::fs::File::create(path).ok()?;
+            let clone = file.try_clone().ok()?;
+            Some((file, clone))
+        });
+
         let mut cmd = std::process::Command::new(&python);
         cmd.args([
             "tools/api_server.py",
@@ -1036,9 +1090,17 @@ impl TtsManager {
             &format!("127.0.0.1:{port}"),
         ])
         .current_dir(&fish_dir)
-        .env("HF_HUB_DISABLE_TELEMETRY", "1")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .env("HF_HUB_DISABLE_TELEMETRY", "1");
+        match log_handles {
+            Some((out, err)) => {
+                cmd.stdout(std::process::Stdio::from(out))
+                    .stderr(std::process::Stdio::from(err));
+            }
+            None => {
+                cmd.stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+            }
+        }
         if settings.tts_compile {
             // 9x schnellere Synthese (RTF ~0,65 statt ~6), kostet ~60 s beim Start.
             cmd.arg("--compile");
@@ -1068,7 +1130,21 @@ impl TtsManager {
             // Früher Kindprozess-Tod (falscher Pfad, kaputtes venv) → klarer Fehler.
             if let Some(child) = self.child.lock().unwrap().as_mut() {
                 if let Ok(Some(status)) = child.try_wait() {
-                    let msg = format!("fish-speech exited during startup ({status})");
+                    // Die Ursache steht im Protokoll des Kindprozesses; ohne
+                    // sie ist "exit code 3" fuer niemanden verwertbar.
+                    let detail = startup_log
+                        .as_ref()
+                        .and_then(|path| std::fs::read_to_string(path).ok())
+                        .as_deref()
+                        .and_then(startup_error_summary)
+                        .map(|line| format!(" — {line}"))
+                        .unwrap_or_default();
+                    let where_ = startup_log
+                        .as_ref()
+                        .map(|p| format!(" (Protokoll: {})", p.display()))
+                        .unwrap_or_default();
+                    let msg =
+                        format!("fish-speech exited during startup ({status}){detail}{where_}");
                     self.core.owns_server.store(false, Ordering::Release);
                     self.core.set_phase(TtsPhase::Error, Some(msg.clone()));
                     return Err(msg);
@@ -1377,6 +1453,17 @@ impl TtsManager {
     /// zwei verschiedene Aufnahmen. Bewusst kurz und vollständig: Klangfarbe,
     /// Tempo und Satzmelodie hört man an einem Satz, nicht an einem Wort.
     pub const DEMO_TEXT: &'static str = "Guten Tag. So klingt diese Stimme:         ein kurzer Satz, damit Sie Klangfarbe, Tempo und Betonung vergleichen können.";
+
+    /// Wohin der Serverprozess seine Ausgabe schreibt. Eine Datei, bei jedem
+    /// Start ueberschrieben: interessant ist immer der letzte Versuch.
+    fn startup_log_path(&self) -> Option<std::path::PathBuf> {
+        use tauri::Manager;
+        let base = crate::portable::data_dir()
+            .cloned()
+            .or_else(|| self.app.path().app_local_data_dir().ok())?;
+        std::fs::create_dir_all(&base).ok()?;
+        Some(base.join("fish-speech-start.log"))
+    }
 
     /// Wo die Hörproben liegen. Eigenes Verzeichnis neben `tts_cache`, damit
     /// `prune_disk_cache` sie nicht wegräumt — der Cache ist nach Größe
@@ -2242,6 +2329,57 @@ mod tests {
             "  TCP    0.0.0.0:8080           0.0.0.0:0              ABHÖREN         222\r\n"
         );
         assert_eq!(parse_listening_pid(text, 8080), None);
+    }
+
+    /// Der echte Fall vom 21.08.2026: Startprotokoll eines Servers, den ein
+    /// zerstoerter Compile-Cache umgebracht hat. Die Meldung muss die
+    /// Ursachenzeile tragen, nicht die Rahmenzeilen des Tracebacks.
+    #[test]
+    fn die_ursachenzeile_wird_aus_dem_startprotokoll_gezogen() {
+        let log = concat!(
+            "Traceback (most recent call last):\r\n",
+            r#"  File "C:\AI\fish-speech\tools\api_server.py", line 89, in initialize_app"#,
+            "\r\n",
+            "    app.state.model_manager = ModelManager(\r\n",
+            "torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised:\r\n",
+            "JSONDecodeError: Expecting value: line 1 column 1 (char 0)\r\n",
+            "\r\n",
+            "ERROR:    Application startup failed. Exiting.\r\n"
+        );
+        let summary = startup_error_summary(log).expect("Zusammenfassung");
+        assert!(summary.contains("Application startup failed"), "{summary}");
+        assert!(
+            !summary.starts_with("File \""),
+            "Rahmenzeile gewaehlt: {summary}"
+        );
+    }
+
+    /// Ohne Fehlerwort bleibt die letzte nicht leere Zeile — irgendetwas ist
+    /// immer besser als eine nackte Nummer.
+    #[test]
+    fn ohne_fehlerwort_bleibt_die_letzte_zeile() {
+        let log = "lade Modell\r\n\r\nfertig\r\n\r\n";
+        assert_eq!(startup_error_summary(log).as_deref(), Some("fertig"));
+    }
+
+    #[test]
+    fn ein_leeres_protokoll_ergibt_keine_zusammenfassung() {
+        assert_eq!(startup_error_summary(""), None);
+        assert_eq!(startup_error_summary("   \r\n\r\n  "), None);
+    }
+
+    /// Eine Fehlermeldung ist kein Protokollfenster: sehr lange Zeilen werden
+    /// gekappt, damit sie im Fehlerband der Oberflaeche noch lesbar sind.
+    #[test]
+    fn sehr_lange_zeilen_werden_gekappt() {
+        let log = format!("Error: {}", "x".repeat(500));
+        let summary = startup_error_summary(&log).expect("Zusammenfassung");
+        assert!(
+            summary.chars().count() <= 301,
+            "{} Zeichen",
+            summary.chars().count()
+        );
+        assert!(summary.ends_with('…'));
     }
 
     /// Minimaler HTTP-Server: beantwortet GET /v1/health mit ok und
