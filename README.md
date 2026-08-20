@@ -34,7 +34,7 @@ im Fenster unten rechts an („Nach Updates suchen"). Der Download wird gegen ei
 Signaturschlüssel geprüft und dann installiert — es ist kein manueller Download
 nötig.
 
-Automatische Prüfung abschalten: **Einstellungen → Erweitert → App**.
+Automatische Prüfung abschalten: **Einstellungen → App → Updates**.
 
 > Technisch: die App liest
 > `https://github.com/MrP42/local-voice/releases/latest/download/latest.json`.
@@ -130,8 +130,12 @@ Updater sie weder anbieten noch als installiert erkennen.
 cd apps/local-voice
 node scripts/set-version.mjs 0.3.0   # package.json + Cargo.toml + tauri.conf.json
 git commit -am "chore: v0.3.0"
-git tag v0.3.0 && git push --follow-tags
+git tag app-v0.3.0 && git push --follow-tags
 ```
+
+Der Präfix ist **`app-v`**, nicht `v`: im Repo stecken 63 Tags aus dem
+Handy-Subtree, deren Nummern bis v0.9.4 laufen. Ein blankes `v0.3.1` ist dort
+die Veröffentlichung eines anderen Programms.
 
 Der Tag startet [`.github/workflows/release-windows.yml`](.github/workflows/release-windows.yml):
 Windows-Build, Signatur des Update-Artefakts mit dem Repository-Secret

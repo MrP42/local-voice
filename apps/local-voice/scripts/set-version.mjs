@@ -54,6 +54,8 @@ for (const { file, pattern } of edits) {
   console.log(`${file} -> ${version}`);
 }
 
+// `app-v`, not `v`: bare `v*` tags belong to the Handy subtree this repo
+// carries (its own versions ran to v0.9.4) — see AGENTS.md.
 console.log(
-  `\nNext: commit, then \`git tag v${version} && git push --tags\` to trigger the release workflow.`,
+  `\nNext: commit, then \`git tag app-v${version} && git push --follow-tags\` to trigger the release workflow.`,
 );

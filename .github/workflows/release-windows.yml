@@ -15,10 +15,14 @@
 # — hence `draft: false` below.
 name: "Release (Windows)"
 
+# `app-v*`, not `v*`: this repo carries 63 tags from the Handy subtree, and
+# Handy's own versions ran up to v0.9.4 — `v0.3.1` there is a release of a
+# different program. Our releases get their own namespace so the two can never
+# be confused, and so re-pushing an upstream tag cannot trigger a build.
 on:
   push:
     tags:
-      - "v*"
+      - "app-v*"
   workflow_dispatch:
 
 concurrency:
@@ -58,12 +62,12 @@ jobs:
       # compares against a version that was never built and either loops or
       # never fires. Fail loudly instead of shipping a mismatched release.
       - name: Verify tag matches version
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/app-v')
         shell: bash
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
+          TAG="${GITHUB_REF#refs/tags/app-v}"
           if [ "$TAG" != "${{ steps.version.outputs.version }}" ]; then
-            echo "Tag v$TAG does not match tauri.conf.json version ${{ steps.version.outputs.version }}" >&2
+            echo "Tag app-v$TAG does not match tauri.conf.json version ${{ steps.version.outputs.version }}" >&2
             exit 1
           fi
 
@@ -157,8 +161,8 @@ jobs:
           # ever replaced by a password-protected one, add the matching secret here.
         with:
           projectPath: apps/local-voice
-          tagName: v${{ steps.version.outputs.version }}
-          releaseName: v${{ steps.version.outputs.version }}
+          tagName: app-v${{ steps.version.outputs.version }}
+          releaseName: Local Voice AI ${{ steps.version.outputs.version }}
           releaseBody: "Automatischer Windows-Build. Die App aktualisiert sich hierauf selbst."
           # Published, not draft: `releases/latest/download/latest.json` — the
           # updater endpoint — does not resolve to a draft.

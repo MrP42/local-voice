@@ -83,8 +83,13 @@ cannot recognise as installed.
 ```bash
 node scripts/set-version.mjs 0.3.0   # package.json + Cargo.toml + tauri.conf.json
 git commit -am "…"
-git tag v0.3.0 && git push --follow-tags
+git tag app-v0.3.0 && git push --follow-tags
 ```
+
+**The tag prefix is `app-v`, not `v`.** This repo carries 63 tags from the Handy
+subtree, whose own versions ran to v0.9.4 — a bare `v0.3.1` there is a release
+of a different program, and force-moving one onto our code silently rewrites
+upstream history. Our releases live in their own namespace.
 
 The tag triggers `.github/workflows/release-windows.yml` **at the repo root**
 (the workflows under `apps/local-voice/.github/` came with the Handy subtree
