@@ -982,5 +982,10 @@
       "running": "Transkribiere…",
       "runningHint": "Das bisherige Transkript wird nach dem Lauf ersetzt. Bei langen Aufzeichnungen dauert das eine Weile."
     }
+  },
+  "micSelector": {
+    "title": "Mikrofon: {{device}}",
+    "default": "Systemvorgabe",
+    "level": "Pegel"
   }
 }

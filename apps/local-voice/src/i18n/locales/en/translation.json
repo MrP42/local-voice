@@ -982,5 +982,10 @@
       "running": "Transcribing…",
       "runningHint": "The existing transcript is replaced when the run finishes. This can take a while for long recordings."
     }
+  },
+  "micSelector": {
+    "title": "Microphone: {{device}}",
+    "default": "System default",
+    "level": "Level"
   }
 }
