@@ -23,6 +23,7 @@ import {
 import Badge from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { ModelOptions } from "@/components/settings/models/ModelOptions";
 
 // Get display text for model's language support
 const getLanguageDisplayText = (
@@ -75,6 +76,9 @@ interface ModelCardProps {
   downloadProgress?: number;
   downloadSpeed?: number; // MB/s
   showRecommended?: boolean;
+  /** Render the active model's own options (language, translation) in the card.
+   *  Off during onboarding, where the job is to pick a model, not tune one. */
+  showOptions?: boolean;
 }
 
 const ModelCard: React.FC<ModelCardProps> = ({
@@ -90,6 +94,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
   downloadProgress,
   downloadSpeed,
   showRecommended = true,
+  showOptions = false,
 }) => {
   const { t } = useTranslation();
   const debugMode = useSettingsStore(
@@ -349,6 +354,9 @@ const ModelCard: React.FC<ModelCardProps> = ({
           </p>
         </div>
       )}
+      {/* Only the model actually in use: the settings behind this are global
+          and apply to whichever engine is loaded. */}
+      {showOptions && status === "active" && <ModelOptions model={model} />}
     </div>
   );
 };

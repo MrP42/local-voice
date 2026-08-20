@@ -1,21 +1,10 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Cog,
-  FlaskConical,
-  History,
-  Sparkles,
-  Cpu,
-  Users,
-  Volume2,
-} from "lucide-react";
+import { Cog, History, Cpu, Users, Volume2 } from "lucide-react";
 import LocalVoiceAiLogo from "./icons/LocalVoiceAiLogo";
-import { useSettings } from "../hooks/useSettings";
 import {
   AppSettings,
   HistorySettings,
-  DebugSettings,
-  PostProcessingSettings,
   ModelsSettings,
   TtsSettings,
   MeetingsSettings,
@@ -35,7 +24,6 @@ interface SectionConfig {
   labelKey: string;
   icon: React.ComponentType<IconProps>;
   component: React.ComponentType;
-  enabled: (settings: any) => boolean;
 }
 
 // The sidebar lists what you DO with the app; everything that merely
@@ -47,43 +35,26 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
-    enabled: () => true,
   },
   meetings: {
     labelKey: "sidebar.meetings",
     icon: Users,
     component: MeetingsSettings,
-    enabled: () => true,
   },
   models: {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
-    enabled: () => true,
   },
   tts: {
     labelKey: "sidebar.tts",
     icon: Volume2,
     component: TtsSettings,
-    enabled: () => true,
   },
   settings: {
     labelKey: "sidebar.settings",
     icon: Cog,
     component: AppSettings,
-    enabled: () => true,
-  },
-  postprocessing: {
-    labelKey: "sidebar.postProcessing",
-    icon: Sparkles,
-    component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
-  },
-  debug: {
-    labelKey: "sidebar.debug",
-    icon: FlaskConical,
-    component: DebugSettings,
-    enabled: (settings) => settings?.debug_mode ?? false,
   },
 } as const satisfies Record<string, SectionConfig>;
 
@@ -100,11 +71,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSectionChange,
 }) => {
   const { t } = useTranslation();
-  const { settings } = useSettings();
 
-  const availableSections = Object.entries(SECTIONS_CONFIG)
-    .filter(([_, config]) => config.enabled(settings))
-    .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
+  const sections = Object.entries(SECTIONS_CONFIG).map(([id, config]) => ({
+    id: id as SidebarSection,
+    ...config,
+  }));
 
   return (
     // Two widths, one breakpoint: below `sm` the rail is icons only (a label
@@ -123,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
       <div className="sm:hidden h-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
-        {availableSections.map((section) => {
+        {sections.map((section) => {
           const Icon = section.icon;
           const isActive = activeSection === section.id;
           const label = t(section.labelKey);

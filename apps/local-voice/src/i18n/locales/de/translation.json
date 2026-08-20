@@ -324,6 +324,9 @@
       "rescan": {
         "label": "Neu scannen",
         "tooltip": "Erneut nach Modellen scannen, die außerhalb von Local Voice AI zum Modellordner oder Hugging-Face-Cache hinzugefügt wurden"
+      },
+      "options": {
+        "title": "Optionen dieses Modells"
       }
     },
     "general": {
@@ -572,7 +575,8 @@
         "cancel": "Abbrechen",
         "selectToEdit": "Wähle oben einen Prompt aus, um dessen Details anzuzeigen und zu bearbeiten.",
         "createFirst": "Klicke oben auf 'Neuen Prompt erstellen', um deinen ersten Nachbearbeitungs-Prompt zu erstellen."
-      }
+      },
+      "disabledHint": "Die Nachbearbeitung ist aus. Einschalten, damit ein Sprachmodell diktierten Text aufräumt — und um den Anbieter zu wählen, den auch die Besprechungsprotokolle nutzen."
     },
     "history": {
       "title": "Verlauf",
@@ -722,7 +726,18 @@
     },
     "app": {
       "tabs": {
-        "app": "Erweitert"
+        "app": "App",
+        "dictation": "Diktat",
+        "sound": "Ton"
+      },
+      "groups": {
+        "shortcuts": "Tastenkürzel",
+        "appearance": "Erscheinungsbild",
+        "startup": "Start",
+        "storage": "Speicher und Dateien",
+        "updates": "Updates",
+        "input": "Mikrofon",
+        "feedback": "Hörbare Rückmeldung"
       }
     }
   },

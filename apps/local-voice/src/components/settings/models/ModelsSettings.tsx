@@ -380,6 +380,7 @@ export const ModelsSettings: React.FC = () => {
                 downloadProgress={getDownloadProgress(model.id)}
                 downloadSpeed={getDownloadSpeed(model.id)}
                 showRecommended={false}
+                showOptions
               />
             ))}
           </div>

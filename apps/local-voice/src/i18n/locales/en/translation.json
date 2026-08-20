@@ -365,7 +365,10 @@
         "label": "Rescan",
         "tooltip": "Rescan for models added to the models folder or Hugging Face cache outside Local Voice AI"
       },
-      "noModelsMatch": "No models match this filter."
+      "noModelsMatch": "No models match this filter.",
+      "options": {
+        "title": "Options for this model"
+      }
     },
     "sound": {
       "title": "Sound",
@@ -572,7 +575,8 @@
         "cancel": "Cancel",
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
-      }
+      },
+      "disabledHint": "Post-processing is off. Turn it on to have a language model clean up dictated text — and to pick the provider that meeting minutes use."
     },
     "history": {
       "title": "History",
@@ -722,7 +726,18 @@
     },
     "app": {
       "tabs": {
-        "app": "Advanced"
+        "app": "App",
+        "dictation": "Dictation",
+        "sound": "Sound"
+      },
+      "groups": {
+        "shortcuts": "Shortcuts",
+        "appearance": "Appearance",
+        "startup": "Start-up",
+        "storage": "Storage and files",
+        "updates": "Updates",
+        "input": "Microphone",
+        "feedback": "Audible feedback"
       }
     }
   },

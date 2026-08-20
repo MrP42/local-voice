@@ -49,6 +49,30 @@ curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.compute
 
 For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
 
+## Where a new setting goes
+
+**Never add a sidebar entry for a setting, and never add a tab for one.** The
+sidebar lists what the user *does* — history, meetings, models, read aloud —
+plus a single **Einstellungen** entry. Everything configurable lives in that
+entry's tabs (`src/components/settings/app-settings/`):
+
+| Tab | What belongs there |
+|---|---|
+| `DictationTab` | Shortcuts, recognition, how the text is inserted |
+| `SoundTab` | Input/output devices, audible feedback |
+| `PostProcessingSettings` | The LLM provider, its switch, the prompts |
+| `AppTab` | Appearance, start-up, storage and files, updates, experimental |
+| `DictationTest` / `AboutSettings` / `DebugSettings` | Tools and information |
+
+A new setting goes into the group inside one of these tabs where a user would
+go looking for it. If none fits, that is a signal the grouping is wrong — fix
+the grouping, do not open a new surface.
+
+**Options belonging to a *model* are not app settings.** They render on the
+model's own card under Modelle (`settings/models/ModelOptions.tsx`), for the
+active model only. A setting that changes its meaning when the active model
+changes is a property of the model.
+
 ## Versioning and releases
 
 **Every change that ships gets a new version number.** Not "when it feels
