@@ -30,6 +30,16 @@
     "inputPlaceholder": "Type or paste text to read aloud…",
     "tabOriginal": "Original",
     "tabTranslation": "Translation",
+    "tabSummary": "Summary",
+    "summaryPlaceholder": "No summary yet — pick length, detail and audience below and press “Summarize”. The text stays editable.",
+    "summarize": "Summarize",
+    "summarizing": "Summarizing…",
+    "saveSeed": "Save voice",
+    "saveSeedHint": "Saves the current seed voice under a name. It then appears in the voice list like a cloned voice — and the roll is no longer lost when you keep rolling.",
+    "saveSeedTitle": "Save seed voice",
+    "saveSeedBody": "The voice of the current seed is saved under this name and appears in the voice list. All voices and their origins are listed in stimmen.md in the references folder.",
+    "saveSeedPlaceholder": "Name of the voice, e.g. “narrator”",
+    "saveSeedBusy": "Saving…",
     "translationPlaceholder": "No translation yet — pick a language and press “Translate”. The text stays editable.",
     "translate": {
       "title": "Audio Translation",
@@ -206,7 +216,33 @@
     "dialogHint": "Dialogue: start a line with the name of a voice and a colon (e.g. \"olga:\") — everything up to the next such line is spoken in that voice.",
     "previousSentence": "Previous sentence",
     "nextSentence": "Next sentence",
-    "cancelExport": "Cancel export"
+    "cancelExport": "Cancel export",
+    "pages": {
+      "title": "Pages",
+      "create": "New page",
+      "rename": "Rename",
+      "delete": "Delete page",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "collapse": "Collapse page list",
+      "expand": "Expand page list",
+      "deleteConfirmTitle": "Delete this page?",
+      "deleteConfirm": "“{{title}}” will be deleted with everything that belongs to it: text, translations, summary and the project folder with its files. This cannot be undone."
+    },
+    "files": {
+      "title": "Files",
+      "add": "Add file (copied in)",
+      "openFolder": "Show folder in Explorer",
+      "refresh": "Refresh",
+      "collapse": "Collapse file list",
+      "expand": "Expand file list",
+      "empty": "No files yet. Saved audio lands here by itself; documents join via the plus.",
+      "openHint": "Click opens the file, double-click renames it",
+      "rename": "Rename",
+      "delete": "Delete file",
+      "deleteConfirmTitle": "Delete this file?",
+      "deleteConfirm": "“{{name}}” will be deleted permanently — not moved to the recycle bin."
+    }
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",

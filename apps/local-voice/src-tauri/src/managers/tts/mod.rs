@@ -1520,6 +1520,7 @@ impl TtsManager {
             *self.pending_reference.lock().unwrap() = Some(samples);
             return Err(e);
         }
+        voices::update_registry(&self.fish_dir());
         Ok(id)
     }
 
@@ -1559,6 +1560,7 @@ impl TtsManager {
             &transcript,
             *self.core.enhance.lock().unwrap(),
         )?;
+        voices::update_registry(&self.fish_dir());
         Ok((id, transcript))
     }
 
@@ -1989,6 +1991,47 @@ impl TtsManager {
         }
         log::info!("Standardstimme fuer Seed {seed} als Referenz {id} festgehalten");
         Some(id)
+    }
+
+    /// Die aktuelle Seed-Stimme unter einem Namen festhalten.
+    ///
+    /// Ein Seed ist fluechtig: wer weiterwuerfelt, verliert die Stimme, die
+    /// ihm eben gefiel — und denselben Zahlenwert wiederzufinden ist
+    /// aussichtslos. Speichern macht aus dem Wurf eine benannte Stimme, die
+    /// in der Auswahl steht wie jede geklonte.
+    ///
+    /// Umgesetzt als Kopie der Seed-Referenz: `ensure_seed_reference` erzeugt
+    /// (oder findet) die interne Referenz dieses Seeds, und die wird unter
+    /// dem Namen abgelegt. Kein zweiter Synthese-Weg, der eigene Fehler
+    /// haben koennte. Dazu der Seed als Herkunftsvermerk und ein frisches
+    /// Stimmen-Register.
+    pub async fn save_seed_voice(&self, name: &str) -> Result<String, String> {
+        let id = voices::sanitize_voice_id(name)
+            .ok_or_else(|| "Der Name ergibt keinen brauchbaren Stimmennamen".to_string())?;
+        let fish_dir = self.fish_dir();
+        if voices::voice_is_complete(&fish_dir, &id) {
+            return Err(format!("Die Stimme '{id}' existiert bereits"));
+        }
+        self.refresh_from_settings();
+        self.ensure_server().await?;
+        let port = *self.core.port.lock().unwrap();
+        let seed = *self.core.seed.lock().unwrap();
+        let source_id = self
+            .ensure_seed_reference(port, seed)
+            .await
+            .ok_or_else(|| "Die Seed-Referenz liess sich nicht erzeugen".to_string())?;
+        let source = voices::voice_dir(&fish_dir, &source_id);
+        let target = voices::voice_dir(&fish_dir, &id);
+        std::fs::create_dir_all(&target)
+            .map_err(|e| format!("could not create {}: {e}", target.display()))?;
+        for file in ["sample.wav", "sample.lab"] {
+            std::fs::copy(source.join(file), target.join(file))
+                .map_err(|e| format!("could not copy {file}: {e}"))?;
+        }
+        voices::write_seed_marker(&fish_dir, &id, seed);
+        voices::update_registry(&fish_dir);
+        log::info!("Seed {seed} als Stimme '{id}' gespeichert");
+        Ok(id)
     }
 
     /// `core.voice` auf die Seed-Referenz setzen, wenn keine Stimme gewaehlt
@@ -2540,7 +2583,8 @@ impl TtsManager {
     /// Stimme löschen; war sie aktiv, fällt die Auswahl auf die
     /// Seed-Standardstimme zurück.
     pub fn delete_voice_id(&self, id: &str) -> Result<(), String> {
-        voices::delete_voice(&self.fish_dir(), id)?;
+        voices::delete_voice(&self.fish_dir(), id)
+            .inspect(|_| voices::update_registry(&self.fish_dir()))?;
         let mut settings = crate::settings::get_settings(&self.app);
         if settings.tts_voice.as_deref() == Some(id) {
             settings.tts_voice = None;

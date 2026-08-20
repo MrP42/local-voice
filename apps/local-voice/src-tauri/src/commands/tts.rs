@@ -168,6 +168,15 @@ pub fn tts_cached_translation(app: AppHandle, text: String, target_lang: String)
         .cached_translation(text.trim(), &target_lang)
 }
 
+/// Den aktuellen Stimm-Seed unter einem Namen als Stimme sichern.
+/// Rueckgabe: die bereinigte Stimmen-Kennung.
+#[tauri::command]
+#[specta::specta]
+pub async fn tts_save_seed_voice(app: AppHandle, name: String) -> Result<String, String> {
+    let tts = app.state::<Arc<TtsManager>>().inner().clone();
+    tts.save_seed_voice(&name).await
+}
+
 /// Diktat fuer das Vorlesefeld: Aufnahme starten.
 #[tauri::command]
 #[specta::specta]

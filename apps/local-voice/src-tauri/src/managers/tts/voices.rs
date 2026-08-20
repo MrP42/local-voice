@@ -475,6 +475,64 @@ pub fn load_wav_mono_16k(path: &Path) -> Result<Vec<f32>, String> {
     Ok(out)
 }
 
+/// Name der Registerdatei: eine Markdown-Übersicht aller Stimmen, direkt im
+/// Referenzverzeichnis. Für Menschen gedacht — die Quelle der Wahrheit
+/// bleiben die Verzeichnisse selbst.
+const REGISTRY_MD: &str = "stimmen.md";
+
+/// Dateiname, in dem eine aus einem Seed gesicherte Stimme ihren Seed trägt.
+/// Nur solche Stimmen haben einen: eine aufgenommene Stimme hat eine
+/// Aufnahme als Herkunft, keinen Zahlenwert.
+const SEED_FILE: &str = "seed.txt";
+
+/// Den Seed einer gesicherten Stimme ablegen.
+pub fn write_seed_marker(fish_dir: &Path, id: &str, seed: i64) {
+    let path = voice_dir(fish_dir, id).join(SEED_FILE);
+    if let Err(e) = std::fs::write(&path, seed.to_string()) {
+        log::warn!("could not record seed for {id}: {e}");
+    }
+}
+
+/// Das Stimmen-Register neu schreiben.
+///
+/// Immer vollständig aus dem Bestand erzeugt, nie fortgeschrieben: eine
+/// angehängte Zeile kann veralten (Stimme gelöscht, umbenannt), ein
+/// Neuaufbau kann es nicht. Bei einer Handvoll Stimmen kostet das nichts.
+pub fn update_registry(fish_dir: &Path) {
+    let mut lines: Vec<String> = vec![
+        "# Stimmen".to_string(),
+        String::new(),
+        "Automatisch gepflegt von Local Voice AI — Änderungen hier werden beim".to_string(),
+        "nächsten Speichern oder Löschen einer Stimme überschrieben.".to_string(),
+        String::new(),
+        "| Stimme | Herkunft | Transkript der Referenz |".to_string(),
+        "|---|---|---|".to_string(),
+    ];
+    for id in list_voices(fish_dir) {
+        let dir = voice_dir(fish_dir, &id);
+        let origin = std::fs::read_to_string(dir.join(SEED_FILE))
+            .map(|s| format!("Seed {}", s.trim()))
+            .unwrap_or_else(|_| "Aufnahme/Import".to_string());
+        let transcript = voice_sample(fish_dir, &id)
+            .map(|(_, t)| {
+                let short: String = t.chars().take(80).collect();
+                if t.chars().count() > 80 {
+                    format!("{short}…")
+                } else {
+                    short
+                }
+            })
+            .unwrap_or_default()
+            // Ein | im Transkript zerrisse die Tabelle.
+            .replace('|', "/");
+        lines.push(format!("| {id} | {origin} | {transcript} |"));
+    }
+    let path = references_dir(fish_dir).join(REGISTRY_MD);
+    if let Err(e) = std::fs::write(&path, lines.join("\n") + "\n") {
+        log::warn!("could not write {}: {e}", path.display());
+    }
+}
+
 /// Referenzverzeichnis entfernen. Eine nicht (mehr) existierende Stimme ist
 /// kein Fehler — das Ziel „weg" ist erreicht.
 pub fn delete_voice(fish_dir: &Path, id: &str) -> Result<(), String> {

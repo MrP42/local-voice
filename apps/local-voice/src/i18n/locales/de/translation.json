@@ -30,6 +30,16 @@
     "inputPlaceholder": "Text zum Vorlesen eingeben oder einfügen…",
     "tabOriginal": "Original",
     "tabTranslation": "Übersetzung",
+    "tabSummary": "Zusammenfassung",
+    "summaryPlaceholder": "Noch keine Zusammenfassung — unten Umfang, Detailgrad und Zielgruppe wählen und auf „Zusammenfassen“ klicken. Der Text bleibt änderbar.",
+    "summarize": "Zusammenfassen",
+    "summarizing": "Fasse zusammen …",
+    "saveSeed": "Stimme speichern",
+    "saveSeedHint": "Sichert die aktuelle Seed-Stimme unter einem Namen. Danach steht sie in der Stimmenauswahl wie eine geklonte Stimme — und der Wurf ist nicht mehr verloren, wenn Sie weiterwürfeln.",
+    "saveSeedTitle": "Seed-Stimme speichern",
+    "saveSeedBody": "Die Stimme des aktuellen Seeds wird unter diesem Namen gesichert und erscheint in der Stimmenauswahl. Alle Stimmen samt Herkunft stehen in der Datei stimmen.md im Referenzordner.",
+    "saveSeedPlaceholder": "Name der Stimme, z. B. „erzähler“",
+    "saveSeedBusy": "Speichere …",
     "translationPlaceholder": "Noch keine Übersetzung — Sprache wählen und auf „Übersetzen“ klicken. Der Text bleibt änderbar.",
     "translate": {
       "title": "Audio-Übersetzung",
@@ -206,7 +216,33 @@
     "dialogHint": "Dialog: eine Zeile mit dem Namen einer Stimme und Doppelpunkt beginnen (z. B. „olga:\") — alles bis zur nächsten solchen Zeile spricht diese Stimme.",
     "previousSentence": "Vorheriger Satz",
     "nextSentence": "Nächster Satz",
-    "cancelExport": "Export abbrechen"
+    "cancelExport": "Export abbrechen",
+    "pages": {
+      "title": "Seiten",
+      "create": "Neue Seite",
+      "rename": "Umbenennen",
+      "delete": "Seite löschen",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "collapse": "Seitenliste einklappen",
+      "expand": "Seitenliste ausklappen",
+      "deleteConfirmTitle": "Seite löschen?",
+      "deleteConfirm": "„{{title}}“ wird mit allem gelöscht, was dazugehört: Text, Übersetzungen, Zusammenfassung und der Projektordner samt seiner Dateien. Das lässt sich nicht rückgängig machen."
+    },
+    "files": {
+      "title": "Dateien",
+      "add": "Datei hinzufügen (wird kopiert)",
+      "openFolder": "Ordner im Explorer zeigen",
+      "refresh": "Aktualisieren",
+      "collapse": "Dateileiste einklappen",
+      "expand": "Dateileiste ausklappen",
+      "empty": "Noch keine Dateien. Gespeicherte Audios landen hier von selbst; Dokumente kommen über das Plus dazu.",
+      "openHint": "Klick öffnet die Datei, Doppelklick benennt sie um",
+      "rename": "Umbenennen",
+      "delete": "Datei löschen",
+      "deleteConfirmTitle": "Datei löschen?",
+      "deleteConfirm": "„{{name}}“ wird endgültig gelöscht — nicht in den Papierkorb."
+    }
   },
   "onboarding": {
     "subtitle": "Wähle ein Transkriptionsmodell, um loszulegen",

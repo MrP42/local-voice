@@ -53,6 +53,9 @@ export const VoicesCard = () => {
   const refreshVoices = useCallback(async () => {
     const result = await commands.ttsListVoices();
     if (result.status === "ok") setVoices(result.data);
+    // Das Dropdown an der Transportleiste haelt seine eigene Liste — dieses
+    // Ereignis haelt beide zusammen, ohne dass sie sich kennen muessen.
+    window.dispatchEvent(new CustomEvent("lv-voices-changed"));
   }, []);
 
   useEffect(() => {
