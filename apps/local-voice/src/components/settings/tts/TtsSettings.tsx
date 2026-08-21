@@ -70,6 +70,9 @@ export const TtsSettings = () => {
   /** Erst nach dem Laden einer Seite darf gespeichert werden — sonst
    *  ueberschriebe der leere Anfangszustand den echten. */
   const pageLoaded = useRef(false);
+  /** Zu welchem Reiter die laufende Sprechsitzung gehoert. Fortsetzen und
+   *  Satzspruenge gelten nur fuer sie — ein anderer Reiter startet neu. */
+  const sessionTab = useRef<"original" | "translation" | "summary">("original");
   /** Zielsprache der Uebersetzung — dieselbe Einstellung wie in der
    *  Audio-Uebersetzung, damit man sie nicht an zwei Stellen pflegt. */
   const targetLang = getSetting("tts_translate_lang") ?? "English";
@@ -396,13 +399,18 @@ export const TtsSettings = () => {
   const starting = phase === "starting";
 
   const speak = async () => {
-    if (canResume) {
+    // Fortgesetzt wird nur die Sitzung DESSELBEN Reiters. Ohne diese
+    // Pruefung galt nach einer Pause im Original "Fortsetzen moeglich" —
+    // und Play auf dem Uebersetzungs-Reiter setzte die alte Sitzung fort,
+    // las also das Original, obwohl die Uebersetzung offen war.
+    if (canResume && sessionTab.current === tab) {
       await resumeSpeaking();
       return;
     }
     setLastError(null);
     setSpeakProgress(null);
     setTruncated(null);
+    sessionTab.current = tab;
     const result = await commands.ttsSpeakText(spokenText);
     if (result.status === "error") setLastError(result.error);
   };
@@ -476,6 +484,9 @@ export const TtsSettings = () => {
 
   /** One sentence back or forward — the unit spoken text moves in. */
   const seekSentence = (delta: number) => {
+    // Springen bewegt die laufende Sitzung — auf einem anderen Reiter gibt
+    // es nichts, worin man springen koennte.
+    if (sessionTab.current !== tab) return;
     void commands.ttsSpeakSeek(delta);
   };
 
