@@ -256,8 +256,16 @@ export const TtsSettings = () => {
           setText(result.data);
         }
       } else {
-        const legacy = (key: string) =>
-          window.localStorage.getItem(`lva.ui.${key}`) ?? "";
+        // Einmalige Uebernahme der Werte aus der Zeit vor den Seiten — und
+        // zwar wirklich EINmalig: die Schluessel werden nach dem Lesen
+        // geloescht. Ohne das erbte jede neue, leere Seite denselben alten
+        // Text, und "jede Seite hat ihren eigenen Inhalt" waere gelogen.
+        const legacy = (key: string) => {
+          const storageKey = `lva.ui.${key}`;
+          const value = window.localStorage.getItem(storageKey) ?? "";
+          window.localStorage.removeItem(storageKey);
+          return value;
+        };
         setText(legacy("tts.text"));
         setSummary(legacy("tts.summary"));
         setSourceUrl(legacy("tts.summary.url"));
@@ -1075,14 +1083,23 @@ export const TtsSettings = () => {
                   (aufnehmen, importieren, loeschen) unten bei den
                   Einstellungen. */}
                 <div className="w-40" title={t("tts.voices.title")}>
+                  {/* Kennwert statt leerem Text fuer die Standardstimme:
+                      "" gilt der Select-Komponente als "nichts gewaehlt" und
+                      zeigte den Platzhalter "Select…" statt des Namens. */}
                   <Select
-                    value={getSetting("tts_voice") ?? ""}
+                    value={getSetting("tts_voice") ?? "@default"}
                     options={[
-                      { value: "", label: t("tts.voices.defaultVoice") },
+                      {
+                        value: "@default",
+                        label: t("tts.voices.defaultVoice"),
+                      },
                       ...voices.map((id) => ({ value: id, label: id })),
                     ]}
                     onChange={(value) =>
-                      updateSetting("tts_voice", value || null)
+                      updateSetting(
+                        "tts_voice",
+                        value === "@default" ? null : value,
+                      )
                     }
                     isClearable={false}
                   />

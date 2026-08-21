@@ -339,7 +339,15 @@ function App() {
                   to a readable ceiling, and never forces the page to scroll
                   sideways (`min-w-0` on the flex child above does the same for
                   the column itself). */}
-              <div className="flex flex-col w-full max-w-5xl mx-auto p-3 sm:p-4 gap-4 min-w-0">
+              <div
+                className={`flex flex-col w-full mx-auto p-3 sm:p-4 gap-4 min-w-0 ${
+                  // Vorlesen ist eine dreispaltige Arbeitsflaeche (Seiten,
+                  // Inhalt, Dateien) — der Lese-Deckel wuerde dort die MITTE
+                  // verjuengen, denn die Leisten haben feste Breiten. Alle
+                  // anderen Bereiche behalten die lesefreundliche Obergrenze.
+                  currentSection === "tts" ? "" : "max-w-5xl"
+                }`}
+              >
                 <AccessibilityPermissions />
                 {renderSettingsContent(currentSection)}
               </div>
