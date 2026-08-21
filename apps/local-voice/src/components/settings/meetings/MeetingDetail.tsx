@@ -371,9 +371,14 @@ export const MeetingDetail: React.FC<MeetingDetailProps> = ({
                 ? t("meetings.detail.copied")
                 : t("meetings.detail.copyTranscript")}
             </Button>
-            <Button variant="secondary" size="sm" onClick={exportTranscript}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={exportTranscript}
+              title={t("meetings.detail.exportTranscript")}
+              aria-label={t("meetings.detail.exportTranscript")}
+            >
               <Download width={14} height={14} />
-              {t("meetings.detail.exportTranscript")}
             </Button>
           </div>
         )}

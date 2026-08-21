@@ -1001,7 +1001,7 @@
       "minutesTab": "Protokoll",
       "generate": "Erzeugen",
       "regenerate": "Neu erzeugen",
-      "export": "Als .md exportieren",
+      "export": "Exportieren — als Word (.docx), Text oder Markdown",
       "editSegment": "Segment bearbeiten",
       "save": "Speichern",
       "cancel": "Abbrechen",
@@ -1009,7 +1009,7 @@
       "back": "Zurück zur Liste",
       "copyTranscript": "Transkript kopieren",
       "copied": "Kopiert!",
-      "exportTranscript": "Als Datei speichern…",
+      "exportTranscript": "Transkript exportieren — als Word (.docx), Text oder Markdown",
       "renameTitle": "Umbenennen",
       "titleLabel": "Titel der Besprechung"
     },

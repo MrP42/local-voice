@@ -155,9 +155,13 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
                 ? t("meetings.detail.copied")
                 : t("meetings.minutes.copy")}
             </Button>
-            <Button variant="secondary" onClick={exportMinutes}>
-              <Download width={14} height={14} />
-              {t("meetings.detail.export")}
+            <Button
+              variant="secondary"
+              onClick={exportMinutes}
+              title={t("meetings.detail.export")}
+              aria-label={t("meetings.detail.export")}
+            >
+              <Download width={16} height={16} />
             </Button>
           </>
         )}

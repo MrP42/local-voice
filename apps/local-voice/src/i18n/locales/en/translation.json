@@ -1001,7 +1001,7 @@
       "minutesTab": "Minutes",
       "generate": "Generate",
       "regenerate": "Regenerate",
-      "export": "Export as .md",
+      "export": "Export — as Word (.docx), text or Markdown",
       "editSegment": "Edit segment",
       "save": "Save",
       "cancel": "Cancel",
@@ -1009,7 +1009,7 @@
       "back": "Back to list",
       "copyTranscript": "Copy transcript",
       "copied": "Copied!",
-      "exportTranscript": "Save as file…",
+      "exportTranscript": "Export transcript — as Word (.docx), text or Markdown",
       "renameTitle": "Rename",
       "titleLabel": "Meeting title"
     },

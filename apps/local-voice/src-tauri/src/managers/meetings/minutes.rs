@@ -736,28 +736,55 @@ pub async fn generate_minutes_with_settings(
         .ok_or_else(|| "Protokoll wurde gespeichert, ist aber nicht lesbar".to_string())
 }
 
-/// Dateiname des automatisch abgelegten Protokolls im Ordner der Besprechung.
-const MINUTES_FILENAME: &str = "protokoll.md";
+/// Präfix der automatisch abgelegten Protokolle im Ordner der Besprechung.
+/// Der volle Name trägt den Erzeugungszeitpunkt: `protokoll_2026-08-21_14-30-05.md`.
+const MINUTES_PREFIX: &str = "protokoll";
 
-/// Wo das Protokoll dieser Besprechung als Datei liegt — unabhaengig davon, ob
-/// es schon existiert. Ein Ort, den beide Seiten (Schreiben und Anzeigen)
-/// benutzen, damit sie nicht auseinanderlaufen koennen.
-pub fn minutes_file_path(
+/// Das jüngste abgelegte Protokoll dieser Besprechung — oder keines.
+///
+/// Jede Erzeugung schreibt ihre eigene Datei (siehe `write_minutes_file`);
+/// angezeigt und verlinkt wird immer die neueste. Das namenlose
+/// `protokoll.md` aus der Zeit vor den Zeitstempeln zählt mit, sortiert sich
+/// aber hinter jede gestempelte Fassung — lexikographisch liegt
+/// `protokoll.md` vor `protokoll_…`, deshalb wird über den Zeitstempel im
+/// Namen verglichen, nicht über Datei-Metadaten: die ändern sich beim
+/// Kopieren, der Name nicht.
+pub fn latest_minutes_file(
     app: &tauri::AppHandle,
     meeting_id: &str,
-) -> anyhow::Result<std::path::PathBuf> {
-    Ok(super::meetings_data_dir(app)?
-        .join(meeting_id)
-        .join(MINUTES_FILENAME))
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let dir = super::meetings_data_dir(app)?.join(meeting_id);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(None);
+    };
+    let mut candidates: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension().is_some_and(|ext| ext == "md")
+                && p.file_stem()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n == MINUTES_PREFIX || n.starts_with("protokoll_"))
+        })
+        .collect();
+    candidates.sort();
+    Ok(candidates.pop())
 }
 
-/// Schreibt das Protokoll als Markdown neben die Aufzeichnung.
+/// Schreibt das Protokoll als Markdown neben die Aufzeichnung — mit dem
+/// Erzeugungszeitpunkt im Namen, damit KEINE Fassung eine frühere
+/// überschreibt. Wer dreimal neu erzeugt, hat drei Dateien und kann
+/// vergleichen; vorher gewann stillschweigend die letzte.
 fn write_minutes_file(
     app: &tauri::AppHandle,
     meeting_id: &str,
     body: &str,
 ) -> anyhow::Result<std::path::PathBuf> {
-    let path = minutes_file_path(app, meeting_id)?;
+    let stamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let path = super::meetings_data_dir(app)?
+        .join(meeting_id)
+        .join(format!("{MINUTES_PREFIX}_{stamp}.md"));
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

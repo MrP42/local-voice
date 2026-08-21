@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::managers::meetings::import::import_media_file;
-use crate::managers::meetings::minutes::{generate_minutes, minutes_file_path};
+use crate::managers::meetings::minutes::{generate_minutes, latest_minutes_file};
 use crate::managers::meetings::recorder::MeetingRecorderManager;
 use crate::managers::meetings::retention::delete_audio_files;
 use crate::managers::meetings::retranscribe::retranscribe_meeting;
@@ -182,8 +182,8 @@ pub async fn meetings_minutes_file(
     app: tauri::AppHandle,
     meeting_id: String,
 ) -> Result<Option<String>, String> {
-    let path = minutes_file_path(&app, &meeting_id).map_err(|e| e.to_string())?;
-    Ok(path.exists().then(|| path.to_string_lossy().into_owned()))
+    let path = latest_minutes_file(&app, &meeting_id).map_err(|e| e.to_string())?;
+    Ok(path.map(|p| p.to_string_lossy().into_owned()))
 }
 
 /// Writes a document the user assembled in the app to a path they picked in
