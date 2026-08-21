@@ -28,10 +28,12 @@ import {
   BrainCircuit,
   Dices,
   Download,
+  FilePlus2,
   FileText,
   Languages,
   Link,
   Mic,
+  Plus,
   Save,
   Server,
   Upload,
@@ -99,6 +101,9 @@ export const TtsSettings = () => {
   );
   const [sourceUrl, setSourceUrl] = useState<string>("");
   const [loadingSource, setLoadingSource] = useState(false);
+  /** Plus-Menue fuer Quellen (Dokument, Webseite, Projektdatei). */
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [urlDialogOpen, setUrlDialogOpen] = useState(false);
   /** Welcher Reiter offen ist. Das Original bleibt immer erhalten. */
   const [tab, setTab] = useState<"original" | "translation" | "summary">(
     "original",
@@ -640,6 +645,21 @@ export const TtsSettings = () => {
     setText(result.data);
   };
 
+  /** Beliebige Datei in den Projektordner der Seite kopieren — Kontext, der
+   *  nicht in das Textfeld gehoert (Audio, PDF-Original, Notizen). */
+  const addFileToProject = async () => {
+    if (!activePage) return;
+    const picked = await open({ multiple: false });
+    if (typeof picked !== "string") return;
+    setLastError(null);
+    const result = await commands.pageFileAdd(activePage, picked);
+    if (result.status === "error") {
+      setLastError(result.error);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("lv-files-changed"));
+  };
+
   /**
    * Zusammenfassen — nur zusammenfassen. Das Ergebnis liegt im dritten
    * Reiter; das Original bleibt unangetastet, abspielen kann man beides.
@@ -688,15 +708,11 @@ export const TtsSettings = () => {
    * verfaellt und laufendes Vorlesen abbricht, wird vorher gefragt.
    */
   const onServerIconClick = () => {
-    if (phase === "stopped") {
-      void startServer();
-      return;
-    }
-    // JEDE andere Phase fuehrt zum Dialog, auch "startet gerade" und
-    // "Fehler". Vorher tat ein Klick waehrend des Starts gar nichts — also
-    // genau in dem Moment, in dem man den Server am dringendsten stoppen
-    // will, weil er gerade den Grafikspeicher fuellt. Ein Notausgang, der
-    // sich waehrend des Notfalls verschliesst, ist keiner.
+    // IMMER der Dialog, in jeder Phase — wie beim Sprachmodell daneben.
+    // Frueher startete ein Klick bei gestopptem Server sofort: ein
+    // versehentlicher Klick belegte damit ungefragt 17 GB Grafikspeicher
+    // und zwei Minuten Ladezeit. Starten ist eine Entscheidung, keine
+    // Beruehrung.
     setConfirmStop(true);
   };
 
@@ -865,83 +881,129 @@ export const TtsSettings = () => {
               />
             )}
 
-            {/* EINE Steuerzeile: Sprache, dann die Aktionen als Symbole
-                (Beschriftung im Tooltip), dann die Quellen. Getrennt vom
-                Abspielen bleibt jede Aktion trotzdem — kein Knopf tut zwei
-                Dinge, es steht nur alles in einer Reihe. */}
+            {/* Je Reiter nur die Aktionen, die er braucht — und die Quellen
+                gebuendelt hinter EINEM Plus (Dokument, Webseite,
+                Projektdatei), wie man es aus KI-Apps kennt. Kein Knopf tut
+                zwei Dinge; es steht nur nichts mehr da, was der offene
+                Reiter nicht braucht. */}
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-36">
-                <Select
-                  value={targetLang}
-                  options={TTS_TARGET_LANGS}
-                  onChange={(value) =>
-                    value && updateSetting("tts_translate_lang", value)
+              {tab === "original" && (
+                <>
+                  <div className="relative">
+                    <Button
+                      variant="secondary"
+                      onClick={() => setAddMenuOpen((o) => !o)}
+                      title={t("tts.add.title")}
+                      aria-label={t("tts.add.title")}
+                      aria-expanded={addMenuOpen}
+                    >
+                      <Plus width={16} height={16} />
+                    </Button>
+                    {addMenuOpen && (
+                      <>
+                        {/* Unsichtbarer Fang fuer den Klick daneben. */}
+                        <div
+                          className="fixed inset-0 z-30"
+                          onClick={() => setAddMenuOpen(false)}
+                        />
+                        <div className="absolute left-0 top-full mt-1 w-64 rounded-lg border border-mid-gray/40 bg-background shadow-lg z-40 py-1">
+                          <button
+                            type="button"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text/80 hover:bg-mid-gray/15 hover:text-text cursor-pointer text-start"
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              void loadDocument();
+                            }}
+                          >
+                            <Upload width={15} height={15} />
+                            {t("tts.add.document")}
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text/80 hover:bg-mid-gray/15 hover:text-text cursor-pointer text-start"
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              setUrlDialogOpen(true);
+                            }}
+                          >
+                            <Link width={15} height={15} />
+                            {t("tts.add.url")}
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text/80 hover:bg-mid-gray/15 hover:text-text cursor-pointer text-start"
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              void addFileToProject();
+                            }}
+                          >
+                            <FilePlus2 width={15} height={15} />
+                            {t("tts.add.projectFile")}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={toggleDictation}
+                    title={
+                      dictating ? t("tts.dictateStop") : t("tts.dictateHint")
+                    }
+                    aria-label={
+                      dictating ? t("tts.dictateStop") : t("tts.dictate")
+                    }
+                  >
+                    <Mic
+                      width={16}
+                      height={16}
+                      className={
+                        dictating ? "text-red-400 animate-pulse" : undefined
+                      }
+                    />
+                  </Button>
+                </>
+              )}
+              {tab === "translation" && (
+                <>
+                  <div className="w-36">
+                    <Select
+                      value={targetLang}
+                      options={TTS_TARGET_LANGS}
+                      onChange={(value) =>
+                        value && updateSetting("tts_translate_lang", value)
+                      }
+                      isClearable={false}
+                    />
+                  </div>
+                  <Button
+                    variant="secondary"
+                    onClick={translateText}
+                    disabled={translating || !text.trim()}
+                    title={
+                      translating
+                        ? t("tts.translating")
+                        : t("tts.translateAction")
+                    }
+                    aria-label={t("tts.translateAction")}
+                  >
+                    <Languages width={16} height={16} />
+                  </Button>
+                </>
+              )}
+              {tab === "summary" && (
+                <Button
+                  variant="secondary"
+                  onClick={summarize}
+                  disabled={summarizing || !text.trim()}
+                  title={
+                    summarizing ? t("tts.summarizing") : t("tts.summarizeHint")
                   }
-                  isClearable={false}
-                />
-              </div>
-              <Button
-                variant="secondary"
-                onClick={translateText}
-                disabled={translating || !text.trim()}
-                title={
-                  translating ? t("tts.translating") : t("tts.translateAction")
-                }
-                aria-label={t("tts.translateAction")}
-              >
-                <Languages width={16} height={16} />
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={toggleDictation}
-                title={dictating ? t("tts.dictateStop") : t("tts.dictateHint")}
-                aria-label={dictating ? t("tts.dictateStop") : t("tts.dictate")}
-              >
-                <Mic
-                  width={16}
-                  height={16}
-                  className={
-                    dictating ? "text-red-400 animate-pulse" : undefined
-                  }
-                />
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={summarize}
-                disabled={summarizing || !text.trim()}
-                title={
-                  summarizing ? t("tts.summarizing") : t("tts.summarizeHint")
-                }
-                aria-label={t("tts.summarize")}
-              >
-                <FileText width={16} height={16} />
-              </Button>
-              <span className="mediabar__sep" />
-              <Button
-                variant="secondary"
-                onClick={loadDocument}
-                disabled={loadingSource}
-                title={t("tts.summary.loadDocument")}
-                aria-label={t("tts.summary.loadDocument")}
-              >
-                <Upload width={16} height={16} />
-              </Button>
-              <Input
-                type="text"
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder={t("tts.summary.urlPlaceholder")}
-                className="flex-1 min-w-40"
-              />
-              <Button
-                variant="secondary"
-                onClick={loadUrl}
-                disabled={loadingSource || sourceUrl.trim().length === 0}
-                title={t("tts.summary.loadUrl")}
-                aria-label={t("tts.summary.loadUrl")}
-              >
-                <Link width={16} height={16} />
-              </Button>
+                  aria-label={t("tts.summarize")}
+                >
+                  <FileText width={16} height={16} />
+                </Button>
+              )}
             </div>
 
             {/* Wie zusammengefasst wird — wirkt beim naechsten Klick auf
@@ -1512,40 +1574,109 @@ export const TtsSettings = () => {
         </Dialog>
 
         <Dialog
-          open={confirmStop}
-          onOpenChange={setConfirmStop}
-          title={t("tts.stopConfirmTitle")}
+          open={urlDialogOpen}
+          onOpenChange={setUrlDialogOpen}
+          title={t("tts.add.urlDialogTitle")}
           closeLabel={t("tts.stopConfirmCancel")}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setConfirmStop(false)}>
+              <Button
+                variant="secondary"
+                onClick={() => setUrlDialogOpen(false)}
+              >
                 {t("tts.stopConfirmCancel")}
               </Button>
               <Button
-                variant="secondary"
                 onClick={() => {
-                  setConfirmStop(false);
-                  void restartServer();
+                  setUrlDialogOpen(false);
+                  void loadUrl();
                 }}
+                disabled={loadingSource || sourceUrl.trim().length === 0}
               >
-                {t("tts.stopConfirmRestart")}
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setConfirmStop(false);
-                  void killServer();
-                }}
-              >
-                {t("tts.stopConfirmAccept")}
+                {t("tts.summary.loadUrl")}
               </Button>
             </>
           }
         >
+          <Input
+            type="text"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            placeholder={t("tts.summary.urlPlaceholder")}
+            className="w-full"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && sourceUrl.trim()) {
+                setUrlDialogOpen(false);
+                void loadUrl();
+              }
+            }}
+          />
+        </Dialog>
+
+        <Dialog
+          open={confirmStop}
+          onOpenChange={setConfirmStop}
+          title={
+            phase === "stopped" || phase === "error"
+              ? t("tts.serverStartTitle")
+              : t("tts.stopConfirmTitle")
+          }
+          closeLabel={t("tts.stopConfirmCancel")}
+          footer={
+            phase === "stopped" || phase === "error" ? (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setConfirmStop(false)}
+                >
+                  {t("tts.stopConfirmCancel")}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setConfirmStop(false);
+                    void startServer();
+                  }}
+                >
+                  {t("tts.serverStart")}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setConfirmStop(false)}
+                >
+                  {t("tts.stopConfirmCancel")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setConfirmStop(false);
+                    void restartServer();
+                  }}
+                >
+                  {t("tts.stopConfirmRestart")}
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => {
+                    setConfirmStop(false);
+                    void killServer();
+                  }}
+                >
+                  {t("tts.stopConfirmAccept")}
+                </Button>
+              </>
+            )
+          }
+        >
           <p className="text-sm text-text/80">
-            {phase === "starting"
-              ? t("tts.stopConfirmBodyStarting")
-              : t("tts.stopConfirmBody")}
+            {phase === "stopped" || phase === "error"
+              ? t("tts.serverStartBody")
+              : phase === "starting"
+                ? t("tts.stopConfirmBodyStarting")
+                : t("tts.stopConfirmBody")}
           </p>
         </Dialog>
       </div>

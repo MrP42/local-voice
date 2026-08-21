@@ -254,7 +254,16 @@
       "dialogEmpty": "No model is loaded right now; translating and summarizing load it on demand and free the memory afterwards. Warming up loads it now for ten minutes so the next job starts without loading time.",
       "warm": "Warm up",
       "unload": "Unload"
-    }
+    },
+    "add": {
+      "title": "Add — document, web page, or a file for the project",
+      "document": "Load document (TXT, MD, PDF, DOCX)",
+      "url": "Load web page (URL)…",
+      "projectFile": "Copy a file into the project files",
+      "urlDialogTitle": "Load a web page as text"
+    },
+    "serverStartTitle": "Start the Fish Speech server?",
+    "serverStartBody": "The server loads the speech model into graphics memory — roughly 17 GB — and takes up to two minutes depending on your settings. While it runs, translation computes on the CPU. Stop it via the same icon, or it stops itself after the configured idle time."
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
