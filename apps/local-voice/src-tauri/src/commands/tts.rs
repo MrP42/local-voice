@@ -168,6 +168,101 @@ pub fn tts_cached_translation(app: AppHandle, text: String, target_lang: String)
         .cached_translation(text.trim(), &target_lang)
 }
 
+/// Welche Modelle das lokale Ollama gerade geladen hat.
+///
+/// Grundlage der Sprachmodell-Anzeige neben dem Serversymbol. Kein lokales
+/// Ollama konfiguriert oder nicht erreichbar → leere Liste: fuer die Anzeige
+/// ist "nichts geladen" und "nichts da" derselbe graue Zustand.
+#[tauri::command]
+#[specta::specta]
+pub async fn llm_ps(app: AppHandle) -> Vec<String> {
+    let settings = crate::settings::get_settings(&app);
+    let Some(provider) = settings.active_post_process_provider() else {
+        return Vec::new();
+    };
+    let Some(chat) = crate::llm_client::ollama_native_url(&provider.base_url) else {
+        return Vec::new();
+    };
+    let url = chat.replace("/api/chat", "/api/ps");
+    let Ok(resp) = reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(2))
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(value) = resp.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    value
+        .get("models")
+        .and_then(|m| m.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+                .map(|n| n.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Alle geladenen Ollama-Modelle sofort entladen. Rueckgabe: wie viele.
+#[tauri::command]
+#[specta::specta]
+pub async fn llm_unload(app: AppHandle) -> Result<u32, String> {
+    let settings = crate::settings::get_settings(&app);
+    let Some(provider) = settings.active_post_process_provider().cloned() else {
+        return Ok(0);
+    };
+    let loaded = llm_ps(app).await;
+    let count = loaded.len() as u32;
+    for model in loaded {
+        crate::llm_client::ollama_unload(&provider.base_url, &model).await;
+    }
+    Ok(count)
+}
+
+/// Das konfigurierte Modell vorwaermen: laden, ohne etwas zu erzeugen.
+///
+/// Fuer den Fall "gleich uebersetze ich mehrmals": das Laden passiert jetzt,
+/// nicht mitten im ersten Auftrag. keep_alive bewusst begrenzt — wer es
+/// laenger halten will, waermt erneut oder laesst die Uebersetzung selbst
+/// laden.
+#[tauri::command]
+#[specta::specta]
+pub async fn llm_warm(app: AppHandle) -> Result<String, String> {
+    let settings = crate::settings::get_settings(&app);
+    let provider = settings
+        .active_post_process_provider()
+        .cloned()
+        .ok_or("Kein Post-Processing-Provider konfiguriert")?;
+    let model = settings
+        .post_process_models
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+    if model.trim().is_empty() {
+        return Err("Kein Modell eingetragen (Einstellungen → Nachbearbeitung)".to_string());
+    }
+    let chat = crate::llm_client::ollama_native_url(&provider.base_url)
+        .ok_or("Vorwaermen geht nur mit einem lokalen Ollama")?;
+    let url = chat.replace("/api/chat", "/api/generate");
+    let body = serde_json::json!({ "model": model, "keep_alive": "10m" });
+    let resp = reqwest::Client::new()
+        .post(&url)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(300))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama nicht erreichbar: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Ollama antwortete {}", resp.status()));
+    }
+    Ok(model)
+}
+
 /// Den aktuellen Stimm-Seed unter einem Namen als Stimme sichern.
 /// Rueckgabe: die bereinigte Stimmen-Kennung.
 #[tauri::command]

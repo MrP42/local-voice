@@ -102,7 +102,7 @@ pub async fn translate_on(
         }
     }
 
-    match crate::llm_client::send_chat_completion(
+    let outcome = match crate::llm_client::send_chat_completion(
         &provider,
         api_key,
         &model,
@@ -122,7 +122,14 @@ pub async fn translate_on(
         }
         Ok(None) => Err("Übersetzungsantwort ohne Inhalt".into()),
         Err(e) => Err(format!("Übersetzung fehlgeschlagen: {e}")),
-    }
+    };
+    // Ein lokales Ollama-Modell sofort wieder entladen — der Speicher gehört
+    // dem Fish-Speech-Server. Der kompatible Pfad kennt kein keep_alive,
+    // deshalb der Nachschuss; bei entfernten Anbietern läuft er ins Leere
+    // (ollama_native_url liefert dort None). Auch nach einem FEHLER: gerade
+    // ein abgebrochener Lauf lässt das Modell sonst geladen stehen.
+    crate::llm_client::ollama_unload(&provider.base_url, &model).await;
+    outcome
 }
 
 #[cfg(test)]

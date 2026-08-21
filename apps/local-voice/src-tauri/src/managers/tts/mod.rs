@@ -1603,8 +1603,22 @@ impl TtsManager {
         // Nicht "gehört der Server uns", sondern "läuft überhaupt einer":
         // ein fremd gestarteter belegt dieselbe Grafikkarte.
         let gpu_busy = self.core.phase() != TtsPhase::Stopped;
-        let translated =
-            crate::translator::translate_on(&settings, trimmed, target_lang, gpu_busy).await?;
+        // Die Sprachmodell-Anzeige lebt von diesen beiden Ereignissen: Gelb,
+        // solange uebersetzt wird, danach zurueck (oder Orange bei Fehler).
+        use tauri::Emitter;
+        let _ = self
+            .app
+            .emit("llm-activity", serde_json::json!({ "busy": true }));
+        let outcome =
+            crate::translator::translate_on(&settings, trimmed, target_lang, gpu_busy).await;
+        let _ = self.app.emit(
+            "llm-activity",
+            serde_json::json!({
+                "busy": false,
+                "error": outcome.as_ref().err().cloned(),
+            }),
+        );
+        let translated = outcome?;
         self.store_translation(trimmed, target_lang, &translated);
         Ok(translated)
     }

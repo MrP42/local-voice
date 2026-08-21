@@ -304,8 +304,11 @@ pub fn ollama_native_url(base_url: &str) -> Option<String> {
 /// Grafikspeicher; ein zweites Modell daneben bringt beide zum Straucheln
 /// oder den Treiber zum Absturz.
 ///
-/// `keep_alive` hält es danach im RAM geladen, damit ein Sprachwechsel nicht
-/// jedes Mal das Laden bezahlt.
+/// `keep_alive: 0` entlädt das Modell direkt nach der Antwort. Der warme
+/// Zwischenspeicher wäre bequem — aber neben dem Fish-Speech-Server ist
+/// jedes Gigabyte eines, das fehlt, und die Übersetzungen selbst liegen
+/// ohnehin je Text und Sprache auf Platte: ein Sprachwechsel zurück kostet
+/// keinen zweiten Modelllauf.
 pub async fn send_ollama_native(
     url: &str,
     model: &str,
@@ -320,7 +323,7 @@ pub async fn send_ollama_native(
         "model": model,
         "messages": [{ "role": "user", "content": prompt }],
         "stream": false,
-        "keep_alive": "10m",
+        "keep_alive": 0,
         "options": options,
     });
     let client = reqwest::Client::new();
@@ -342,4 +345,28 @@ pub async fn send_ollama_native(
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str())
         .map(|s| s.to_string()))
+}
+
+/// Ein bei Ollama geladenes Modell sofort entladen (best effort).
+///
+/// Der OpenAI-kompatible Pfad kennt kein `keep_alive`: eine Übersetzung, die
+/// darüber lief, lässt das Modell nach Ollamas Voreinstellung noch Minuten
+/// im Speicher stehen — Grafikspeicher, den der Fish-Speech-Server braucht.
+/// Ein leerer `/api/generate`-Aufruf mit `keep_alive: 0` räumt es ab.
+///
+/// Scheitern ist kein Fehler des Aufrufers: dann läuft eben Ollamas eigene
+/// Frist ab. Deshalb kein Rückgabewert, nur ein Protokolleintrag.
+pub async fn ollama_unload(base_url: &str, model: &str) {
+    let Some(chat_url) = ollama_native_url(base_url) else {
+        return;
+    };
+    let url = chat_url.replace("/api/chat", "/api/generate");
+    let body = serde_json::json!({ "model": model, "keep_alive": 0 });
+    match reqwest::Client::new().post(&url).json(&body).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            log::info!("Ollama-Modell '{model}' nach der Übersetzung entladen");
+        }
+        Ok(resp) => log::warn!("Ollama unload answered {}", resp.status()),
+        Err(e) => log::warn!("Ollama unload failed: {e}"),
+    }
 }

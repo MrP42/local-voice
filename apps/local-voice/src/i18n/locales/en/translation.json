@@ -242,6 +242,18 @@
       "delete": "Delete file",
       "deleteConfirmTitle": "Delete this file?",
       "deleteConfirm": "“{{name}}” will be deleted permanently — not moved to the recycle bin."
+    },
+    "translateAction": "Translate — writes the translation into the second tab, plays nothing",
+    "summarizeHint": "Summarize — writes the summary into the third tab, plays nothing",
+    "llm": {
+      "busy": "Language model is working — translating or summarizing",
+      "idle": "No language model loaded. Click to warm it up — otherwise it loads on the first job by itself.",
+      "loaded": "Loaded: {{models}}. Click to unload or reload.",
+      "dialogTitle": "Language model (post-processing)",
+      "dialogLoaded": "Loaded: {{models}}. Unloading frees the memory at once — the next job loads again and takes correspondingly longer. Warming up loads the configured model for ten minutes so the next job starts without loading time.",
+      "dialogEmpty": "No model is loaded right now; translating and summarizing load it on demand and free the memory afterwards. Warming up loads it now for ten minutes so the next job starts without loading time.",
+      "warm": "Warm up",
+      "unload": "Unload"
     }
   },
   "onboarding": {

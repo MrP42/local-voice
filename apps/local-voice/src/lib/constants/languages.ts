@@ -177,15 +177,24 @@ export const getLanguageLabel = (languageCode: string): string | undefined =>
 ///
 /// An dieser Stelle, weil zwei Bildschirme sie brauchen: das Vorlesen (Reiter
 /// Übersetzung) und die Audio-Übersetzung.
+/// `code` ist der BCP-47-Sprachcode. Er landet als `lang`-Attribut am
+/// Übersetzungsfeld, damit die Rechtschreibprüfung des WebViews in der
+/// Zielsprache prüft — ohne ihn prüft sie in der App-Sprache und
+/// unterstreicht eine englische Übersetzung komplett rot.
 export const TTS_TARGET_LANGS = [
-  { value: "German", label: "Deutsch" },
-  { value: "English", label: "English" },
-  { value: "French", label: "Français" },
-  { value: "Spanish", label: "Español" },
-  { value: "Italian", label: "Italiano" },
-  { value: "Portuguese", label: "Português" },
-  { value: "Dutch", label: "Nederlands" },
-  { value: "Polish", label: "Polski" },
-  { value: "Japanese", label: "日本語" },
-  { value: "Chinese", label: "中文" },
+  { value: "German", label: "Deutsch", code: "de" },
+  { value: "English", label: "English", code: "en" },
+  { value: "French", label: "Français", code: "fr" },
+  { value: "Spanish", label: "Español", code: "es" },
+  { value: "Italian", label: "Italiano", code: "it" },
+  { value: "Portuguese", label: "Português", code: "pt" },
+  { value: "Dutch", label: "Nederlands", code: "nl" },
+  { value: "Polish", label: "Polski", code: "pl" },
+  { value: "Japanese", label: "日本語", code: "ja" },
+  { value: "Chinese", label: "中文", code: "zh" },
 ];
+
+/// Sprachcode zur Zielsprache — Rückfall Englisch, nie die App-Sprache:
+/// eine unbekannte Zielsprache ist sicher nicht Deutsch.
+export const targetLangCode = (value: string): string =>
+  TTS_TARGET_LANGS.find((l) => l.value === value)?.code ?? "en";

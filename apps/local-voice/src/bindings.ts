@@ -1280,6 +1280,25 @@ async pageFileOpen(id: string, name: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async llmPs() : Promise<string[]> {
+    return await TAURI_INVOKE("llm_ps");
+},
+async llmUnload() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("llm_unload") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async llmWarm() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("llm_warm") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async ttsSaveSeedVoice(name: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("tts_save_seed_voice", { name }) };

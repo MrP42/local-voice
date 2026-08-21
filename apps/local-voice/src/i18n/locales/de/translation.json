@@ -242,6 +242,18 @@
       "delete": "Datei löschen",
       "deleteConfirmTitle": "Datei löschen?",
       "deleteConfirm": "„{{name}}“ wird endgültig gelöscht — nicht in den Papierkorb."
+    },
+    "translateAction": "Übersetzen — erzeugt die Übersetzung im zweiten Reiter, spielt nichts ab",
+    "summarizeHint": "Zusammenfassen — erzeugt die Zusammenfassung im dritten Reiter, spielt nichts ab",
+    "llm": {
+      "busy": "Sprachmodell arbeitet — übersetzt oder fasst gerade zusammen",
+      "idle": "Kein Sprachmodell geladen. Klicken zum Vorwärmen — sonst lädt es beim ersten Auftrag von selbst.",
+      "loaded": "Geladen: {{models}}. Klicken zum Entladen oder Neuladen.",
+      "dialogTitle": "Sprachmodell (Nachbearbeitung)",
+      "dialogLoaded": "Geladen ist: {{models}}. Entladen gibt den Speicher sofort frei — der nächste Auftrag lädt neu und dauert entsprechend länger. Vorwärmen lädt das konfigurierte Modell für zehn Minuten, damit der nächste Auftrag ohne Ladezeit beginnt.",
+      "dialogEmpty": "Zurzeit ist kein Modell geladen; Übersetzen und Zusammenfassen laden es bei Bedarf und geben den Speicher danach wieder frei. Vorwärmen lädt es jetzt für zehn Minuten, damit der nächste Auftrag ohne Ladezeit beginnt.",
+      "warm": "Vorwärmen",
+      "unload": "Entladen"
     }
   },
   "onboarding": {

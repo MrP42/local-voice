@@ -18,14 +18,19 @@ import { Slider } from "../../ui/Slider";
 import { Select } from "../../ui/Select";
 import { ReadingCard } from "./ReadingCard";
 import { usePersistentState } from "../../../hooks/usePersistentState";
-import { TTS_TARGET_LANGS } from "../../../lib/constants/languages";
+import {
+  TTS_TARGET_LANGS,
+  targetLangCode,
+} from "../../../lib/constants/languages";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { Glyph } from "../../ui/AudioPlayer";
 import {
+  BrainCircuit,
   Dices,
   Download,
   FileText,
   Languages,
+  Link,
   Mic,
   Save,
   Server,
@@ -107,6 +112,13 @@ export const TtsSettings = () => {
     limit: number;
     total: number;
   } | null>(null);
+  /** Sprachmodell-Anzeige: was Ollama geladen hat, ob gerade uebersetzt
+   *  wird, und der letzte Fehler. */
+  const [llmLoaded, setLlmLoaded] = useState<string[]>([]);
+  const [llmBusy, setLlmBusy] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [llmDialog, setLlmDialog] = useState(false);
+  const [llmWorking, setLlmWorking] = useState(false);
   /** Offene Rueckfrage vor dem Beenden des Servers. */
   const [confirmStop, setConfirmStop] = useState(false);
   const [speakProgress, setSpeakProgress] = useState<{
@@ -268,6 +280,72 @@ export const TtsSettings = () => {
     }, 500);
     return () => window.clearTimeout(handle);
   }, [activePage, text, summary, sourceUrl, tab]);
+
+  // Sprachmodell-Anzeige: Ereignis waehrend der Uebersetzung, dazu eine
+  // Abfrage alle zehn Sekunden — billig (lokaler Aufruf mit kurzem Timeout)
+  // und noetig, weil auch Ollamas eigene Frist ein Modell entlaedt, ohne
+  // dass die App davon erfuehre.
+  useEffect(() => {
+    const poll = () => {
+      void commands.llmPs().then(setLlmLoaded);
+    };
+    poll();
+    const timer = window.setInterval(poll, 10_000);
+    const un = listen<{ busy: boolean; error?: string | null }>(
+      "llm-activity",
+      (e) => {
+        setLlmBusy(e.payload.busy);
+        if (!e.payload.busy) {
+          setLlmError(e.payload.error ?? null);
+          poll();
+        }
+      },
+    );
+    return () => {
+      window.clearInterval(timer);
+      un.then((f) => f());
+    };
+  }, []);
+
+  /** Farbe des Sprachmodell-Symbols — dieselbe Sprache wie das Serversymbol:
+   *  grau aus, gelb pulsierend arbeitet, gruen geladen, orange Fehler. */
+  const llmIconClass = llmBusy
+    ? "text-yellow-400 animate-pulse"
+    : llmError
+      ? "text-orange-500 animate-pulse"
+      : llmLoaded.length > 0
+        ? "text-green-500"
+        : "text-text/40";
+
+  const llmTitle = llmBusy
+    ? t("tts.llm.busy")
+    : llmError
+      ? llmError
+      : llmLoaded.length > 0
+        ? t("tts.llm.loaded", { models: llmLoaded.join(", ") })
+        : t("tts.llm.idle");
+
+  const llmUnloadNow = async () => {
+    setLlmWorking(true);
+    setLlmError(null);
+    const result = await commands.llmUnload();
+    setLlmWorking(false);
+    setLlmDialog(false);
+    if (result.status === "error") setLlmError(result.error);
+    setLlmLoaded(await commands.llmPs());
+  };
+
+  const llmWarmNow = async () => {
+    setLlmWorking(true);
+    setLlmError(null);
+    setLlmDialog(false);
+    setLlmBusy(true);
+    const result = await commands.llmWarm();
+    setLlmBusy(false);
+    setLlmWorking(false);
+    if (result.status === "error") setLlmError(result.error);
+    setLlmLoaded(await commands.llmPs());
+  };
 
   // Stimmenliste fuer das Dropdown. Die Verwaltung unten meldet
   // Aenderungen ueber ein Fensterereignis, damit beide nie auseinanderlaufen.
@@ -641,6 +719,23 @@ export const TtsSettings = () => {
             layout="horizontal"
           >
             <div className="flex items-center">
+              {/* Das Sprachmodell der Nachbearbeitung (Uebersetzen,
+                  Zusammenfassen), in derselben Farbsprache wie der Server
+                  daneben. Klick: entladen oder vorwaermen. */}
+              <button
+                type="button"
+                onClick={() => setLlmDialog(true)}
+                title={llmTitle}
+                aria-label={llmTitle}
+                className="p-1.5 rounded-md hover:bg-mid-gray/20 transition-colors cursor-pointer"
+              >
+                <BrainCircuit
+                  width={20}
+                  height={20}
+                  className={llmIconClass}
+                  aria-hidden="true"
+                />
+              </button>
               {/* Ein einziges Element traegt Zustand UND Bedienung. Die Farbe
                 sagt, woran man ist — grau (aus), gelb (faehrt hoch), gruen
                 (laeuft), orange blinkend (Fehler) —, der Klick tut, was in
@@ -739,6 +834,7 @@ export const TtsSettings = () => {
                 placeholder={t("tts.translationPlaceholder")}
                 rows={5}
                 className="w-full"
+                lang={targetLangCode(targetLang)}
               />
             ) : (
               <Textarea
@@ -750,11 +846,12 @@ export const TtsSettings = () => {
               />
             )}
 
-            {/* Sprachwahl und Uebersetzen — getrennt vom Abspielen. Ein Knopf,
-              der beides taete, naehme die Entscheidung ab, welches von beiden
-              man wollte; abspielen kann man den Text danach jederzeit. */}
+            {/* EINE Steuerzeile: Sprache, dann die Aktionen als Symbole
+                (Beschriftung im Tooltip), dann die Quellen. Getrennt vom
+                Abspielen bleibt jede Aktion trotzdem — kein Knopf tut zwei
+                Dinge, es steht nur alles in einer Reihe. */}
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-40">
+              <div className="w-36">
                 <Select
                   value={targetLang}
                   options={TTS_TARGET_LANGS}
@@ -768,52 +865,63 @@ export const TtsSettings = () => {
                 variant="secondary"
                 onClick={translateText}
                 disabled={translating || !text.trim()}
+                title={
+                  translating ? t("tts.translating") : t("tts.translateAction")
+                }
+                aria-label={t("tts.translateAction")}
               >
                 <Languages width={16} height={16} />
-                {translating ? t("tts.translating") : t("tts.translate")}
               </Button>
               <Button
                 variant="secondary"
                 onClick={toggleDictation}
-                title={t("tts.dictateHint")}
+                title={dictating ? t("tts.dictateStop") : t("tts.dictateHint")}
+                aria-label={dictating ? t("tts.dictateStop") : t("tts.dictate")}
               >
-                <Mic width={16} height={16} />
-                {dictating ? t("tts.dictateStop") : t("tts.dictate")}
+                <Mic
+                  width={16}
+                  height={16}
+                  className={
+                    dictating ? "text-red-400 animate-pulse" : undefined
+                  }
+                />
               </Button>
               <Button
                 variant="secondary"
                 onClick={summarize}
                 disabled={summarizing || !text.trim()}
+                title={
+                  summarizing ? t("tts.summarizing") : t("tts.summarizeHint")
+                }
+                aria-label={t("tts.summarize")}
               >
                 <FileText width={16} height={16} />
-                {summarizing ? t("tts.summarizing") : t("tts.summarize")}
               </Button>
-            </div>
-
-            {/* Woher der Text kommt: einfuegen, Dokument oder URL. Laedt immer
-              ins Original — Uebersetzung und Zusammenfassung leiten sich ab. */}
-            <div className="flex items-center gap-2 flex-wrap">
+              <span className="mediabar__sep" />
               <Button
                 variant="secondary"
                 onClick={loadDocument}
                 disabled={loadingSource}
+                title={t("tts.summary.loadDocument")}
+                aria-label={t("tts.summary.loadDocument")}
               >
-                <Upload width={14} height={14} />
-                {t("tts.summary.loadDocument")}
+                <Upload width={16} height={16} />
               </Button>
               <Input
                 type="text"
                 value={sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
                 placeholder={t("tts.summary.urlPlaceholder")}
-                className="flex-1 min-w-48"
+                className="flex-1 min-w-40"
               />
               <Button
                 variant="secondary"
                 onClick={loadUrl}
                 disabled={loadingSource || sourceUrl.trim().length === 0}
+                title={t("tts.summary.loadUrl")}
+                aria-label={t("tts.summary.loadUrl")}
               >
-                {t("tts.summary.loadUrl")}
+                <Link width={16} height={16} />
               </Button>
             </div>
 
@@ -1339,6 +1447,40 @@ export const TtsSettings = () => {
               className="w-full"
             />
           </div>
+        </Dialog>
+
+        <Dialog
+          open={llmDialog}
+          onOpenChange={setLlmDialog}
+          title={t("tts.llm.dialogTitle")}
+          closeLabel={t("tts.stopConfirmCancel")}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setLlmDialog(false)}>
+                {t("tts.stopConfirmCancel")}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={llmWarmNow}
+                disabled={llmWorking}
+              >
+                {t("tts.llm.warm")}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={llmUnloadNow}
+                disabled={llmWorking || llmLoaded.length === 0}
+              >
+                {t("tts.llm.unload")}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-text/80">
+            {llmLoaded.length > 0
+              ? t("tts.llm.dialogLoaded", { models: llmLoaded.join(", ") })
+              : t("tts.llm.dialogEmpty")}
+          </p>
         </Dialog>
 
         <Dialog
