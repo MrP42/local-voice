@@ -39,8 +39,15 @@ enum Msg {
 /// Eigenständige Mikrofonaufnahme für Meetings. Kein VAD, kein
 /// RAM-Gesamtpuffer — jeder resamplete Block geht sofort per Callback an den
 /// Aufrufer (der ihn z. B. streamend in eine WAV-Datei schreibt).
+///
+/// Der `cpal::Stream` lebt NICHT in diesem Struct: auf macOS ist der
+/// CoreAudio-Stream `!Send`/`!Sync`, und dieses Struct steckt (über den
+/// `MeetingRecorderManager`) im Tauri-State, der `Send + Sync` verlangt.
+/// Deshalb besitzt ein eigener Thread den Stream und hält ihn am Leben, bis
+/// `stop_tx` signalisiert (oder gedroppt) wird.
 pub struct MeetingMicCapture {
-    stream: Option<cpal::Stream>,
+    stream_stop_tx: Option<mpsc::Sender<()>>,
+    stream_handle: Option<JoinHandle<()>>,
     consumer_handle: Option<JoinHandle<()>>,
     msg_tx: Option<mpsc::Sender<Msg>>,
     error_flag: Arc<AtomicBool>,
@@ -57,20 +64,57 @@ impl MeetingMicCapture {
         device_name: Option<String>,
         mut on_samples: impl FnMut(&[i16]) + Send + 'static,
     ) -> Result<Self> {
-        let device = resolve_device(device_name.as_deref())?;
-        let config = device
-            .default_input_config()
-            .map_err(|e| anyhow!("Failed to get default input config: {e}"))?;
-        let sample_rate = config.sample_rate().0 as usize;
-        let channels = config.channels() as usize;
-
         let error_flag = Arc::new(AtomicBool::new(false));
         let (msg_tx, msg_rx) = mpsc::channel::<Msg>();
+        let (stream_stop_tx, stream_stop_rx) = mpsc::channel::<()>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(usize, usize)>>();
 
-        let stream = build_stream(&device, &config, msg_tx.clone(), Arc::clone(&error_flag))?;
-        stream
-            .play()
-            .map_err(|e| anyhow!("Failed to start meeting mic stream: {e}"))?;
+        // Gerät auflösen, Stream bauen und BESITZEN passiert komplett auf
+        // diesem Thread (cpal::Stream ist auf macOS !Send). Der Thread parkt
+        // dann auf `stream_stop_rx` und droppt den Stream beim Aufwachen —
+        // recv() endet sowohl bei send(()) als auch beim Drop des Senders.
+        let stream_msg_tx = msg_tx.clone();
+        let stream_error_flag = Arc::clone(&error_flag);
+        let stream_handle = std::thread::Builder::new()
+            .name("meeting-mic-stream".to_string())
+            .spawn(move || {
+                let setup = (|| -> Result<(cpal::Stream, usize, usize)> {
+                    let device = resolve_device(device_name.as_deref())?;
+                    let config = device
+                        .default_input_config()
+                        .map_err(|e| anyhow!("Failed to get default input config: {e}"))?;
+                    let sample_rate = config.sample_rate().0 as usize;
+                    let channels = config.channels() as usize;
+                    let stream = build_stream(&device, &config, stream_msg_tx, stream_error_flag)?;
+                    stream
+                        .play()
+                        .map_err(|e| anyhow!("Failed to start meeting mic stream: {e}"))?;
+                    Ok((stream, sample_rate, channels))
+                })();
+                match setup {
+                    Ok((stream, sample_rate, channels)) => {
+                        let _ = ready_tx.send(Ok((sample_rate, channels)));
+                        let _ = stream_stop_rx.recv();
+                        drop(stream);
+                    }
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                    }
+                }
+            })
+            .map_err(|e| anyhow!("Failed to spawn meeting mic stream thread: {e}"))?;
+
+        let (sample_rate, channels) = match ready_rx.recv() {
+            Ok(Ok(rates)) => rates,
+            Ok(Err(e)) => {
+                let _ = stream_handle.join();
+                return Err(e);
+            }
+            Err(_) => {
+                let _ = stream_handle.join();
+                return Err(anyhow!("Meeting mic stream thread died during setup"));
+            }
+        };
 
         let consumer_handle = std::thread::Builder::new()
             .name("meeting-mic-consumer".to_string())
@@ -91,7 +135,8 @@ impl MeetingMicCapture {
             .map_err(|e| anyhow!("Failed to spawn meeting mic consumer thread: {e}"))?;
 
         Ok(Self {
-            stream: Some(stream),
+            stream_stop_tx: Some(stream_stop_tx),
+            stream_handle: Some(stream_handle),
             consumer_handle: Some(consumer_handle),
             msg_tx: Some(msg_tx),
             error_flag,
@@ -114,7 +159,12 @@ impl MeetingMicCapture {
     fn stop_inner(&mut self) {
         // Stream zuerst droppen: cpal stoppt den Audio-Client synchron, damit
         // danach garantiert keine weiteren `Msg::Samples` mehr eintrudeln.
-        self.stream.take();
+        // Das Droppen macht der Besitzer-Thread; der join() stellt sicher,
+        // dass es passiert ist, BEVOR wir `Msg::End` senden.
+        self.stream_stop_tx.take();
+        if let Some(handle) = self.stream_handle.take() {
+            let _ = handle.join();
+        }
         if let Some(tx) = self.msg_tx.take() {
             let _ = tx.send(Msg::End);
         }
